@@ -76,6 +76,7 @@ fun ArtistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMo
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
+    val currentSource by playbackManager.currentSource.collectAsState()
 
     Scaffold(
         topBar = {
@@ -127,7 +128,7 @@ fun ArtistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMo
                 ) {
                     Button(
                         onClick = {
-                            playbackManager.playSong(artistsMusic, 0)
+                            playbackManager.playSong(artistsMusic, 0, sourceId = "artist_$artistId", sourceName = artist.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
@@ -141,7 +142,7 @@ fun ArtistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMo
 
                     Button(
                         onClick = {
-                            playbackManager.playShuffled(artistsMusic)
+                            playbackManager.playShuffled(artistsMusic, sourceId = "artist_$artistId", sourceName = artist.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White),
@@ -193,11 +194,21 @@ fun ArtistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMo
 
             // Track Items
             itemsIndexed(artistsMusic) { idx, music ->
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "artist_$artistId"
                 ListItem(
-                    headlineContent = { Text(music.title) },
-                    modifier = Modifier.clickable {
-                        playbackManager.playSong(artistsMusic, idx)
+                    headlineContent = {
+                        Text(
+                            text = music.title,
+                            color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                            fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                        )
                     },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isPlaying) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable {
+                            playbackManager.playSong(artistsMusic, idx, sourceId = "artist_$artistId", sourceName = artist.name)
+                        },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(formatDuration(music.duration))
@@ -206,7 +217,7 @@ fun ArtistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMo
                     },
                     leadingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (currentMediaItem?.mediaId == music.id.toString()) {
+                            if (isPlaying) {
                                 Icon(
                                     painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
                                     contentDescription = "Playing",

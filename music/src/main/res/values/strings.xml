@@ -13,6 +13,7 @@
 
     <!-- Now Playing screen -->
     <string name="now_playing">Now Playing</string>
+    <string name="go_to_source">Go to %1$s</string>
     <string name="unknown_title">Unknown Title</string>
     <string name="unknown_artist">Unknown Artist</string>
     <string name="content_desc_repeat">Repeat</string>

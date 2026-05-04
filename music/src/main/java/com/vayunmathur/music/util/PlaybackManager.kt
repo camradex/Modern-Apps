@@ -39,6 +39,12 @@ class PlaybackManager private constructor(context: Context) {
     private val _currentMediaItem = MutableStateFlow<MediaItem?>(null)
     val currentMediaItem = _currentMediaItem.asStateFlow()
 
+    private val _currentSource = MutableStateFlow<String?>(null)
+    val currentSource = _currentSource.asStateFlow()
+
+    private val _currentSourceName = MutableStateFlow<String?>(null)
+    val currentSourceName = _currentSourceName.asStateFlow()
+
     init {
         val appContext = context.applicationContext
         val sessionToken = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
@@ -83,11 +89,15 @@ class PlaybackManager private constructor(context: Context) {
         }
     }
 
-    fun playSong(songs: List<Music>, startWithIndex: Int) {
+    fun playSong(songs: List<Music>, startWithIndex: Int, sourceId: String? = null, sourceName: String? = null) {
+        _currentSource.value = sourceId
+        _currentSourceName.value = sourceName
         playSongsInternal(songs, startWithIndex, shuffle = false)
     }
 
-    fun playShuffled(songs: List<Music>) {
+    fun playShuffled(songs: List<Music>, sourceId: String? = null, sourceName: String? = null) {
+        _currentSource.value = sourceId
+        _currentSourceName.value = sourceName
         val startWithIndex = Random.nextInt(songs.size)
         playSongsInternal(songs, startWithIndex, shuffle = true)
     }

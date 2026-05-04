@@ -21,6 +21,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +70,8 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
     crossinline otherActions: @Composable () -> Unit = {},
     crossinline leadingContent: @Composable (T) -> Unit = {},
     crossinline trailingContent: @Composable (T) -> Unit = {},
+    noinline itemModifier: @Composable (T) -> Modifier = { Modifier },
+    noinline itemColors: @Composable (T) -> ListItemColors = { ListItemDefaults.colors() },
     searchEnabled: Boolean = false,
     sortOrder: Comparator<T>? = null,
     crossinline searchString: (T) -> String = {it.toString()},
@@ -139,7 +142,8 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
                 )
             ) {
                 items(dbData, key = { it.id }) { item ->
-                    ListItem({ headlineContent(item) }, Modifier.clickable {
+                    val modifier = itemModifier(item)
+                    ListItem({ headlineContent(item) }, modifier.clickable {
                         coroutineScope.launch {
                             backStack.add(viewPage(item.id))
                         }
@@ -147,7 +151,7 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
                         Row {
                             trailingContent(item)
                         }
-                    }, ListItemDefaults.colors())
+                    }, itemColors(item))
                 }
             }
         }

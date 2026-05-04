@@ -55,6 +55,7 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
+    val currentSource by playbackManager.currentSource.collectAsState()
 
     Scaffold(
         topBar = {
@@ -102,7 +103,7 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
                 ) {
                     Button(
                         onClick = {
-                            playbackManager.playSong(musicInAlbum, 0)
+                            playbackManager.playSong(musicInAlbum, 0, sourceId = "album_$albumId", sourceName = album.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
@@ -116,7 +117,7 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
 
                     Button(
                         onClick = {
-                            playbackManager.playShuffled(musicInAlbum)
+                            playbackManager.playShuffled(musicInAlbum, sourceId = "album_$albumId", sourceName = album.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White),
@@ -150,40 +151,54 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
 
             // Track Items
             itemsIndexed(musicInAlbum) { idx, music ->
-                ListItem({
-                    Text(music.title)
-                }, Modifier.clickable{
-                    playbackManager.playSong(musicInAlbum, idx)
-                }, trailingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatDuration(music.duration))
-                        AddToPlaylistButton(backStack, music)
-                    }
-                }, leadingContent = {Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (currentMediaItem?.mediaId == music.id.toString()) {
-                        Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-                            Icon(
-                                painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
-                                contentDescription = "Playing",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else {
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "album_$albumId"
+                ListItem(
+                    headlineContent = {
                         Text(
-                            text = music.trackNumber.toString(),
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 16.sp,
-                            modifier = Modifier.width(28.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            text = music.title,
+                            color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                            fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
                         )
+                    },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isPlaying) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable {
+                            playbackManager.playSong(musicInAlbum, idx, sourceId = "album_$albumId", sourceName = album.name)
+                        },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDuration(music.duration))
+                            AddToPlaylistButton(backStack, music)
+                        }
+                    },
+                    leadingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isPlaying) {
+                                Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
+                                        contentDescription = "Playing",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = music.trackNumber.toString(),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.width(28.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
+                        }
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
-                }
-                })
+                )
             }
         }
     }

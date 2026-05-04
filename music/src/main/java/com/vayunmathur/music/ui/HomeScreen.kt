@@ -1,5 +1,6 @@
 package com.vayunmathur.music.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -56,6 +58,8 @@ import kotlin.random.Random
 fun HomeScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
+    val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
+    val currentSource by playbackManager.currentSource.collectAsState()
 
     LaunchedEffect(Unit) {
         SyncWorker.runOnce(context)
@@ -70,19 +74,25 @@ fun HomeScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
             BottomBarItem(stringResource(R.string.nav_playlists), Route.Playlists, R.drawable.baseline_library_music_24),
         ), Route.Home)
     }) { paddingValues ->
-        val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
-
         Box(Modifier.padding(paddingValues).consumeWindowInsets(paddingValues)) {
-            ListPage<Music, Route, Route.Song>(backStack, viewModel, stringResource(R.string.page_title_music), { Text(it.title) }, {
+            ListPage<Music, Route, Route.Song>(backStack, viewModel, stringResource(R.string.page_title_music), { music ->
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "all_songs"
+                Text(
+                    text = music.title,
+                    color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                )
+            }, {
                 Text(it.artist)
             }, { toPlay ->
                 val allSongs = viewModel.getAll<Music>()
                 val toPlayIndex = allSongs.indexOfFirst { it.id == toPlay }
-                playbackManager.playSong(allSongs, toPlayIndex)
+                playbackManager.playSong(allSongs, toPlayIndex, sourceId = "all_songs", sourceName = "All Songs")
                 Route.Song
             }, leadingContent = { music ->
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "all_songs"
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (currentMediaItem?.mediaId == music.id.toString()) {
+                    if (isPlaying) {
                         Icon(
                             painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
                             contentDescription = "Playing",
@@ -95,6 +105,10 @@ fun HomeScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
             }, trailingContent = {
 music ->
                 AddToPlaylistButton(backStack, music)
+            }, itemModifier = { music ->
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "all_songs"
+                if (isPlaying) Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
+                else Modifier
             }, searchEnabled = true, bottomBar = {
                 PlayingBottomBar(playbackManager, backStack)
             }, fab = {
@@ -110,7 +124,7 @@ fun ShufflePlayFab(viewModel: DatabaseViewModel, playbackManager: PlaybackManage
 
     if(allSongs.isNotEmpty()) {
         FloatingActionButton({
-            playbackManager.playShuffled(allSongs)
+            playbackManager.playShuffled(allSongs, sourceId = "all_songs", sourceName = "All Songs")
         }) {
             Icon(painterResource(R.drawable.ic_shuffle), null)
         }

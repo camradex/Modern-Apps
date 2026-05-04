@@ -62,6 +62,9 @@ fun SongScreen(backStack: NavBackStack<Route>) {
     var showLyrics by remember { mutableStateOf(false) }
     var rawLyrics by remember { mutableStateOf("") }
 
+    val currentSource by playbackManager.currentSource.collectAsState()
+    val currentSourceName by playbackManager.currentSourceName.collectAsState()
+
     // Parse lyrics whenever rawLyrics changes
     val parsedLyrics = remember(rawLyrics) { parseLyrics(rawLyrics) }
 
@@ -82,8 +85,38 @@ fun SongScreen(backStack: NavBackStack<Route>) {
         containerColor = Color(0xFF0A0A0A),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.now_playing), style = MaterialTheme.typography.labelLarge) },
+                title = { },
                 navigationIcon = { IconNavigation(backStack) },
+                actions = {
+                    if (currentSource != null && currentSourceName != null) {
+                        TextButton(onClick = {
+                            val route = when {
+                                currentSource == "all_songs" -> Route.Home
+                                currentSource!!.startsWith("album_") -> Route.AlbumDetail(currentSource!!.removePrefix("album_").toLong())
+                                currentSource!!.startsWith("playlist_") -> Route.PlaylistDetail(currentSource!!.removePrefix("playlist_").toLong())
+                                currentSource!!.startsWith("artist_") -> Route.ArtistDetail(currentSource!!.removePrefix("artist_").toLong())
+                                else -> null
+                            }
+                            if (route != null) {
+                                backStack.clear()
+                                backStack.add(route)
+                                if (route != Route.Home && route != Route.Song) {
+                                    // if it's a detail page, we might want to be able to go back to home?
+                                    // MainNavigation handles the backstack. 
+                                    // clear() then add(Home) then add(detail) would be better?
+                                    // But clear() removes everything.
+                                }
+                                // Let's just add it for now.
+                            }
+                        }) {
+                            Text(
+                                stringResource(R.string.go_to_source, currentSourceName!!),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     titleContentColor = Color.White

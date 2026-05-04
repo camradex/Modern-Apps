@@ -48,6 +48,7 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
+    val currentSource by playbackManager.currentSource.collectAsState()
 
     Scaffold(
         topBar = {
@@ -131,7 +132,7 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
                 ) {
                     Button(
                         onClick = {
-                            playbackManager.playSong(musicInPlaylist, 0)
+                            playbackManager.playSong(musicInPlaylist, 0, sourceId = "playlist_$playlistId", sourceName = playlist.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
@@ -145,7 +146,7 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
 
                     Button(
                         onClick = {
-                            playbackManager.playShuffled(musicInPlaylist)
+                            playbackManager.playShuffled(musicInPlaylist, sourceId = "playlist_$playlistId", sourceName = playlist.name)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White),
@@ -161,34 +162,48 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
 
             // Track List
             itemsIndexed(musicInPlaylist) { idx, music ->
-                ListItem({
-                    Text(music.title)
-                }, Modifier.clickable{
-                    playbackManager.playSong(musicInPlaylist, idx)
-                }, {}, {
-                }, trailingContent = {
-                    IconButton({
-                        scope.launch {
-                            viewModel.unmatch<Playlist, Music>(playlistId, music.id)
-                            val musicIds = viewModel.getMatches<Playlist, Music>(playlistId)
-                            musicInPlaylist = allMusic.filter { musicIds.contains(it.id) }
+                val isPlaying = currentMediaItem?.mediaId == music.id.toString() && currentSource == "playlist_$playlistId"
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = music.title,
+                            color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                            fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isPlaying) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable {
+                            playbackManager.playSong(musicInPlaylist, idx, sourceId = "playlist_$playlistId", sourceName = playlist.name)
+                        },
+                    trailingContent = {
+                        IconButton({
+                            scope.launch {
+                                viewModel.unmatch<Playlist, Music>(playlistId, music.id)
+                                val musicIds = viewModel.getMatches<Playlist, Music>(playlistId)
+                                musicInPlaylist = allMusic.filter { musicIds.contains(it.id) }
+                            }
+                        }) {
+                            IconClose()
                         }
-                    }) {
-                        IconClose()
-                    }
-                }, leadingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (currentMediaItem?.mediaId == music.id.toString()) {
-                            Icon(
-                                painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
-                                contentDescription = "Playing",
-                                modifier = Modifier.size(24.dp).padding(end = 8.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                    },
+                    leadingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isPlaying) {
+                                Icon(
+                                    painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
+                                    contentDescription = "Playing",
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .padding(end = 8.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
                         }
-                        AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
                     }
-                })
+                )
             }
         }
     }
