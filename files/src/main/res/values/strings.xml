@@ -20,4 +20,5 @@
     <string name="unzipping">Unzipping...</string>
     <string name="zip_channel_name">Zip Operations</string>
     <string name="archiving">Archiving...</string>
+    <string name="files_saved">Files saved successfully</string>
 </resources>
