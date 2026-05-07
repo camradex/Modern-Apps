@@ -1,11 +1,9 @@
- SEND  
- T    N
-TEN S E
- L  LET
-DENSE  
-  E E S
-  S TEE
-  T   E
- ELSE  
-  E    
-  DEN  
+      YES  
+           
+     S    S
+S    I S  P
+I S SPINNEY
+NIP P  I   
+  I I  PSI 
+  NINE E N 
+    Y    N 

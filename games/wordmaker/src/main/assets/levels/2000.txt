@@ -1,10 +1,7 @@
-    NET  
-      H  
-     TIE 
-      N  
- IF-THEN 
-  E H  T 
-  I I THE
-FEN E    
-I T FIE  
-T        
+     SUP
+NUT    U
+  E  N N
+ UNSWEPT
+   P W  
+  PENT  
+   W    

@@ -1,11 +1,10 @@
-  M      
-MAID     
-  C D   M
- MAGI   I
- I  G MAC
- D  I A  
-   ACID  
-    A    
-  CAM    
-  A      
-  DAM    
+      BLEU 
+         M 
+     R   B 
+    BUMBLER
+     M   R 
+     BURL  
+  R  L  U  
+  UMBEL R  
+  L U  BEL 
+RUE M      

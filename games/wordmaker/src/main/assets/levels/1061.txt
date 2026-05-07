@@ -1,11 +1,9 @@
-  I   
-  O   
-PIN   
- P   N
-POND O
- D RID
-   O  
-DRIP D
-I  - O
-N PION
-   N  
+SODA      
+ A F  DRAW
+ R R S  R 
+  FORWARDS
+     A  O 
+F DWARF R 
+ADO  D    
+R S       
+ FAD      

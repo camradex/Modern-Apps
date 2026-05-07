@@ -1,10 +1,11 @@
-PSI P    
-I  KISS  
-S P N INK
-SPINE N  
-  N  SKI 
-  K      
-PINK     
-  E P    
-  SKIP   
-  S N    
+  S R     
+  O O     
+  SOD S L 
+   D  O O 
+  DOORLESS
+   R  O E 
+ SOLE  D  
+   E   O  
+O  SOLDER 
+LESS   R  
+D         

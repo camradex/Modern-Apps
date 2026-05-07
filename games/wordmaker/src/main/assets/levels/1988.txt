@@ -1,11 +1,10 @@
-    N  M   
-    A RAIL 
-    I  I  O
-    LIANA R
-        N A
-   MANORIAL
-NORI    M  
-   N LANAI 
-   O  L L  
-   ROMAN   
-      R    
+    D 
+R DROP
+E E E 
+POWER 
+  D   
+  REDD
+  O   
+  PROD
+   E  
+ POD  

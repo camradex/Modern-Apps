@@ -1,11 +1,9 @@
-NUN     
-  O   I 
-  UNBIND
-DUN O B 
-O   U O 
-G B N U 
- BONDING
-  U I D 
- UDON   
-  I G   
- INN    
+ L    LONE 
+NODULE I  L
+ D N   LINE
+ E OLDIE  I
+ N I U D   
+N  L E     
+OLDEN      
+D  D       
+E          

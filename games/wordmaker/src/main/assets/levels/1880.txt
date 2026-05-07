@@ -1,11 +1,10 @@
-       COST
-         E 
-  S    S E 
-  ESCORTED 
-  C    E   
-  T  R R   
-  O RESECT 
-CORE C O E 
-O    T   E 
-R  STORE   
-D          
+PAST  S 
+A   A L 
+S  SPLIT
+T   L P 
+APICAL  
+    S   
+  L T  A
+ CAPITAL
+  P C  A
+ CAP   S

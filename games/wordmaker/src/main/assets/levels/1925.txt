@@ -1,11 +1,7 @@
-  NOR    
- D  O    
-RONDO  T 
- C   ROOT
- T     R 
-DOT-CORN 
- R  R    
-   CODON 
-    T    
-   CONDO 
-    N    
+    GOAL   
+    O  O   
+TIL L  A  H
+A ALIGHT  A
+G T A  HAIL
+ GHAT     O
+    HALT   

@@ -1,11 +1,9 @@
-NAN   
- N P  
-PINE  
-A  C  
-NIP   
-I I I 
-CANINE
-  N C 
-  A A 
-  CANE
-ICE   
+    ODE    
+     H  H  
+     O  O  
+   COWSHED 
+H  H  H  O 
+O  ECHO  S 
+SHOW  E SEW
+E       H  
+        E  

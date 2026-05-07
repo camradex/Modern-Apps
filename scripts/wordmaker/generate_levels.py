@@ -268,7 +268,7 @@ if __name__ == "__main__":
         words = []
         seen = set()
         for w in raw_words:
-            if w not in seen:
+            if w.isalpha() and w not in seen:
                 words.append(w)
                 seen.add(w)
     

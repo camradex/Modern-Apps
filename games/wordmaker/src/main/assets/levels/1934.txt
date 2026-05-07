@@ -1,11 +1,6 @@
-   LIP P 
-     S L 
-    SINCE
-    P    
-   SLICE 
-  N E    
-  I N P  
- SPLINE  
- L  C CEL
-LINE     
- P       
+    NET S  
+      U U S
+S F FUNNEST
+USE U E T U
+E NEST    N
+    E      

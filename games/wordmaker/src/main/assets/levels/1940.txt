@@ -1,9 +1,9 @@
-      L UFO
-     LOP O 
-      U  U 
-   FOUR-PLY
-   L    O  
- FLOP   L  
- R U       
-YOUR       
-   YUP     
+ AIR      
+   O   A E
+   AVOIDER
+VOID   O A
+ V   V R  
+ A DRIVE  
+     D    
+   DOER   
+     O    

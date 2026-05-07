@@ -1,11 +1,9 @@
-         C 
-     COL O 
-    C  A A 
-   CONICAL 
-    N  O   
-  LOIN N   
-  O C LINAC
-CIAO   C  O
-  N     I C
-        OLA
-        N  
+    ABLE 
+      A  
+    C C C
+   FLUE L
+  F U   U
+ CLUBFACE
+  U  A A 
+CUB  C L 
+   ACE F 

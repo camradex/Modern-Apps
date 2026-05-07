@@ -1,9 +1,8 @@
-    B      
-  BLACK C F
-  A L A A I
-  C K L LIB
-C K  KILL  
-A FAB      
-L I        
-FILL       
-  L        
+   BASE
+    B  
+ S  A S
+BAGASSE
+ G  E A
+BEG    
+  AGE  
+  B    

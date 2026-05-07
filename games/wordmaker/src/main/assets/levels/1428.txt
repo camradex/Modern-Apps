@@ -1,11 +1,10 @@
-   P P   
-  TIRE S 
-   E R P 
-    STRIP
-    P  T 
-  SPRITE 
-    I    
-SPRITZ   
-    Z    
-    E    
-TRIER    
+ BASH BLAH
+ L     A  
+BAH BRASH 
+ H  R  H  
+ SYRAH    
+    S     
+  ASHY    
+  B L     
+  L Y     
+SHY       
