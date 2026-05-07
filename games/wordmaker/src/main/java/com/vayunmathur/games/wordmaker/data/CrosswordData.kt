@@ -49,7 +49,18 @@ data class CrosswordData(
     companion object {
         fun fromAsset(context: Context, fileName: String): CrosswordData? {
             return try {
-                val lines = context.assets.open(fileName).bufferedReader().use { it.readLines() }
+                val content = context.assets.open(fileName).bufferedReader().use { it.readText() }
+                fromString(content)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+
+        fun fromString(content: String): CrosswordData? {
+            return try {
+                val lines = content.lines().filter { it.isNotEmpty() }
+                if (lines.isEmpty()) return null
                 val maxLength = lines.maxOf { it.length }
                 val grid = lines.map { it.padEnd(maxLength).replace(' ', '.') }
                 val (words, positions) = extractWordsAndPositions(grid)

@@ -1,6 +1,7 @@
 package com.vayunmathur.games.wordmaker.data
 
 import android.content.Context
+import java.io.File
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -49,5 +50,15 @@ class LevelDataStore(context: Context) {
             settings[FOUND_WORDS_KEY] = emptySet()
             settings[BONUS_WORDS_KEY] = emptySet()
         }
+    }
+
+    fun saveGeneratedLevel(level: Int, content: String) {
+        val file = File(appContext.filesDir, "level_$level.txt")
+        file.writeText(content)
+    }
+
+    fun loadGeneratedLevel(level: Int): String? {
+        val file = File(appContext.filesDir, "level_$level.txt")
+        return if (file.exists()) file.readText() else null
     }
 }

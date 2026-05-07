@@ -85,6 +85,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import com.vayunmathur.games.wordmaker.util.Dictionary
+import com.vayunmathur.games.wordmaker.util.LevelGenerator
 import com.vayunmathur.games.wordmaker.data.CrosswordData
 
 class MainActivity : ComponentActivity() {
@@ -107,18 +108,33 @@ fun WordMakerGameLoader() {
     var crosswordData by remember { mutableStateOf<CrosswordData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val dictionary by remember { mutableStateOf(Dictionary()) }
+    var commonWords by remember { mutableStateOf<List<String>>(emptyList()) }
     val coroutineScope = rememberCoroutineScope { Dispatchers.IO }
-    val isGameComplete = currentLevel > 861
 
     LaunchedEffect(Unit) {
         coroutineScope.launch {
             dictionary.init(context)
+            commonWords = context.assets.open("common_words_list.txt").bufferedReader().use { it.readLines() }
         }
     }
 
-    LaunchedEffect(currentLevel) { // Use currentLevel as key
+    LaunchedEffect(currentLevel, commonWords) { // Use currentLevel and commonWords as key
+        if (commonWords.isEmpty()) return@LaunchedEffect
+        
         try {
-            crosswordData = CrosswordData.fromAsset(context, "levels/$currentLevel.txt")
+            var levelContent: String? = null
+            if (currentLevel > 861) {
+                levelContent = levelDataStore.loadGeneratedLevel(currentLevel)
+                if (levelContent == null) {
+                    val generator = LevelGenerator(commonWords)
+                    levelContent = generator.generateLevel(currentLevel)
+                    levelDataStore.saveGeneratedLevel(currentLevel, levelContent)
+                }
+                crosswordData = CrosswordData.fromString(levelContent)
+            } else {
+                crosswordData = CrosswordData.fromAsset(context, "levels/$currentLevel.txt")
+            }
+            
             if (crosswordData == null) {
                 error = context.getString(R.string.error_parse_level)
             }
@@ -129,14 +145,6 @@ fun WordMakerGameLoader() {
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
-            isGameComplete -> {
-                Scaffold {
-                    Column(Modifier.padding(it).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Text(stringResource(R.string.all_levels_completed))
-                        Text(stringResource(R.string.stay_tuned_new_levels))
-                    }
-                }
-            }
             error != null -> {
                 Text(text = error!!, color = colorScheme.error)
             }
