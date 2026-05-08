@@ -71,4 +71,6 @@
     <string name="delete_selected_contacts_title">Kustuta valitud kontaktid</string>
     <string name="delete_selected_contacts_confirm">Kas oled kindel, et soovid kustutada %1$d valitud kontakti? Seda tegevust ei saa tagasi pöörata.</string>
     <string name="selected_count">%1$d on valitud</string>
+    <string name="display">Ekraanivaade</string>
+    <string name="show_account_labels">Näita kontakti kasutajakontosid</string>
 </resources>
