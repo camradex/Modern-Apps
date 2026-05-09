@@ -59,6 +59,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.text.HtmlCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -168,25 +169,25 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                 }
 
                 videoData = VideoData(
-                    streamExtractor.name,
+                    HtmlCompat.fromHtml(streamExtractor.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                     streamExtractor.viewCount,
                     streamExtractor.length,
                     streamExtractor.uploadDate!!.instant.toKotlinInstant(),
                     streamExtractor.thumbnails.first().url,
-                    streamExtractor.uploaderName,
+                    HtmlCompat.fromHtml(streamExtractor.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                     channelURLtoID(streamExtractor.uploaderUrl),
                     streamExtractor.uploaderAvatars.first().url
                 )
                 val relatedVideosEx = streamExtractor.relatedItems ?: return@withContext
                 relatedVideos = relatedVideosEx.items.filterIsInstance<StreamInfoItem>().map {
                     VideoInfo(
-                        it.name,
+                        HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                         videoURLtoID(it.url),
                         it.duration,
                         it.viewCount,
                         it.uploadDate!!.instant.toKotlinInstant(),
                         it.thumbnails.first().url,
-                        it.uploaderName
+                        HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
                     )
                 }
             }
@@ -197,9 +198,9 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     val content = if (it.commentText.type == Description.HTML) {
                         it.commentText.content.fromHTML()
                     } else {
-                        it.commentText.content
+                        HtmlCompat.fromHtml(it.commentText.content, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
                     }
-                    Comment(content, it.uploaderName, it.likeCount, 0)
+                    Comment(content, HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), it.likeCount, 0)
                 }
             }
         } catch(e: Exception) {
@@ -605,10 +606,8 @@ fun countString(context: android.content.Context, count: Long): String {
 }
 
 fun String.fromHTML(): String {
-    return this.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("<br>", "\n")
+    return HtmlCompat.fromHtml(
+        this.replace("<br>", "\n"),
+        HtmlCompat.FROM_HTML_MODE_LEGACY
+    ).toString()
 }

@@ -1,5 +1,6 @@
 package com.vayunmathur.youpipe.util
 import androidx.core.net.toUri
+import androidx.core.text.HtmlCompat
 import com.vayunmathur.youpipe.ui.ChannelInfo
 import com.vayunmathur.youpipe.ui.VideoInfo
 import kotlinx.coroutines.coroutineScope
@@ -42,13 +43,13 @@ suspend fun getVideoInfo(videoId: Long): VideoInfo = coroutineScope {
     val ex = ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$idString")
     ex.fetchPage()
     VideoInfo(
-        ex.name,
+        HtmlCompat.fromHtml(ex.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
         videoId,
         ex.length,
         ex.viewCount,
         ex.uploadDate!!.instant.toKotlinInstant(),
         ex.thumbnails.first().url,
-        ex.uploaderName
+        HtmlCompat.fromHtml(ex.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
     )
 }
 
@@ -60,13 +61,13 @@ fun getChannelVideos(channelId: String): Sequence<VideoInfo> = sequence {
         page.items.filterIsInstance<StreamInfoItem>().forEach {
             yield(
             VideoInfo(
-                it.name,
+                HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                 videoURLtoID(it.url),
                 it.duration,
                 it.viewCount,
                 it.uploadDate!!.instant.toKotlinInstant(),
                 it.thumbnails.first().url,
-                it.uploaderName
+                HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
             ))
         }
         if(page.hasNextPage()) {
@@ -83,7 +84,7 @@ suspend fun getChannelInfoFromURL(url: String): ChannelInfo = coroutineScope {
     val ex = ServiceList.YouTube.getChannelExtractor(url)
     ex.fetchPage()
     ChannelInfo(
-        ex.name,
+        HtmlCompat.fromHtml(ex.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
         ex.id,
         ex.subscriberCount,
         0,

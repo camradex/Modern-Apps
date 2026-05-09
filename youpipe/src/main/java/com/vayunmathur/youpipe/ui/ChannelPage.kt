@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.text.HtmlCompat
 import com.vayunmathur.library.util.NavBackStack
 import coil.compose.AsyncImage
 import com.vayunmathur.library.ui.invisibleClickable
@@ -151,13 +152,13 @@ fun VideoItem(
         }
         Box(Modifier.weight(1.5f)) {
             ListItem({
-                Text(videoInfo.name, style = MaterialTheme.typography.titleMedium)
+                Text(HtmlCompat.fromHtml(videoInfo.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), style = MaterialTheme.typography.titleMedium)
             }, Modifier, {
 
             }, {
                 Column {
                     if(showAuthor) {
-                        Text(videoInfo.author, style = MaterialTheme.typography.bodySmall)
+                        Text(HtmlCompat.fromHtml(videoInfo.author, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), style = MaterialTheme.typography.bodySmall)
                     }
                     Text(
                         stringResource(R.string.video_stat_format, countString(context, videoInfo.views), uploadTimeAgo(context, videoInfo.uploadDate)),
@@ -173,7 +174,7 @@ fun VideoItem(
 fun ChannelHeader(channelInfo: ChannelInfo) {
     val context = LocalContext.current
     ListItem({
-        Text(channelInfo.name, style = MaterialTheme.typography.titleLarge)
+        Text(HtmlCompat.fromHtml(channelInfo.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), style = MaterialTheme.typography.titleLarge)
     }, Modifier, {
 
     }, {

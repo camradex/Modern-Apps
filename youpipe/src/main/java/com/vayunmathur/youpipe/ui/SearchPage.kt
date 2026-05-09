@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.core.text.HtmlCompat
 import com.vayunmathur.library.util.NavBackStack
 import coil.compose.AsyncImage
 import com.vayunmathur.library.util.BottomNavBar
@@ -71,18 +72,18 @@ fun SearchPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
                                     is StreamInfoItem -> {
                                         if(it.uploadDate == null) return@mapNotNull null
                                         VideoInfo(
-                                            it.name,
+                                            HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                                             videoURLtoID(it.url),
                                             it.duration,
                                             it.viewCount,
                                             it.uploadDate!!.instant.toKotlinInstant(),
                                             it.thumbnails.first().url,
-                                            it.uploaderName
+                                            HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
                                         )
                                     }
                                     is ChannelInfoItem -> {
                                         ChannelInfo(
-                                            it.name,
+                                            HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                                             channelURLtoID(it.url),
                                             it.subscriberCount,
                                             0,
@@ -116,6 +117,7 @@ fun SearchPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
                                     suggestions = ServiceList.YouTube
                                         .suggestionExtractor
                                         .suggestionList(newValue)
+                                        .map { HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_LEGACY).toString() }
                                 } else {
                                     suggestions = emptyList()
                                 }

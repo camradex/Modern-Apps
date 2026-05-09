@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.text.HtmlCompat
 import coil.compose.AsyncImage
 import com.vayunmathur.library.ui.IconAdd
 import com.vayunmathur.library.ui.IconBackup
@@ -122,7 +123,15 @@ fun SubscriptionsPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
                                             HistoryVideo(
                                                 id = videoID,
                                                 progress = 0,
-                                                videoItem = VideoInfo(title, videoID, 0, 0, time, "", author),
+                                                videoItem = VideoInfo(
+                                                    HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
+                                                    videoID,
+                                                    0,
+                                                    0,
+                                                    time,
+                                                    "",
+                                                    HtmlCompat.fromHtml(author, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+                                                ),
                                                 timestamp = time
                                             )
                                         )
@@ -148,7 +157,15 @@ fun SubscriptionsPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
                                             HistoryVideo(
                                                 id = videoID,
                                                 progress = 0,
-                                                videoItem = VideoInfo(title, videoID, 0, 0, Clock.System.now(), "", author),
+                                                videoItem = VideoInfo(
+                                                    HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
+                                                    videoID,
+                                                    0,
+                                                    0,
+                                                    Clock.System.now(),
+                                                    "",
+                                                    HtmlCompat.fromHtml(author, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+                                                ),
                                                 timestamp = Clock.System.now()
                                             )
                                         )
@@ -323,7 +340,7 @@ fun SubscriptionsPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
                 }
                 items(subscriptions) {
                     ListItem({
-                        Text(it.name)
+                        Text(HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString())
                     }, Modifier.clickable {
                         backStack.add(Route.ChannelPage(it.channelID))
                     }, {}, {}, {
