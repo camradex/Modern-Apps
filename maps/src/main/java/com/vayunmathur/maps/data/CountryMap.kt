@@ -1,6 +1,5 @@
 package com.vayunmathur.maps.data
 import android.content.Context
-import com.vayunmathur.maps.data.Feature1
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -64,7 +63,7 @@ private fun extractRings(fgbGeom: FgbGeometry): List<List<Position>> {
 }
 
 object CountryMap {
-    fun getAdmin0(context: Context, iso3166_1: String): Feature1? {
+    fun getAdmin0(context: Context, iso: String): Feature1? {
         context.assets.open("admin0.fgb").use { inputStream ->
             val bytes = inputStream.readBytes()
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -108,7 +107,7 @@ object CountryMap {
                 // We can use the wololo helper to parse JUST the properties
                 val properties = JsonObject(getProperties(fgbFeature, header))
 
-                if (properties["ISO_A2"]?.jsonPrimitive?.content.equals(iso3166_1, ignoreCase = true)) {
+                if (properties["ISO_A2"]?.jsonPrimitive?.content.equals(iso, ignoreCase = true)) {
                     // Found it! Convert only this ONE feature to wololo GeoJSON
                     val skGeometry = fgbToSpatialK(fgbFeature.geometry(),
                         fgbFeature.geometry().type()
@@ -124,7 +123,7 @@ object CountryMap {
         }
     }
     @OptIn(ExperimentalSerializationApi::class)
-    fun getAdmin1(context: Context, iso3166_2: String): Feature1? {
+    fun getAdmin1(context: Context, iso: String): Feature1? {
         context.assets.open("admin1.fgb").use { inputStream ->
             val bytes = inputStream.readBytes()
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -168,7 +167,7 @@ object CountryMap {
                 // We can use the wololo helper to parse JUST the properties
                 val properties = JsonObject(getProperties(fgbFeature, header))
 
-                if (properties["iso_3166_2"]?.jsonPrimitive?.content.equals(iso3166_2, ignoreCase = true)) {
+                if (properties["iso_3166_2"]?.jsonPrimitive?.content.equals(iso, ignoreCase = true)) {
                     // Found it! Convert only this ONE feature to wololo GeoJSON
                     val skGeometry = fgbToSpatialK(fgbFeature.geometry(), fgbFeature.geometry().type())
                     return Feature1(skGeometry, properties)
@@ -187,8 +186,6 @@ fun getProperties(fgbFeature: FgbFeature, header: Header): Map<String, JsonEleme
     val properties = mutableMapOf<String, JsonElement>()
     val bb = fgbFeature.propertiesAsByteBuffer() ?: return properties
     bb.order(ByteOrder.LITTLE_ENDIAN)
-
-    val columnCount = header.columnsLength()
 
     while (bb.hasRemaining()) {
         val keyIndex = bb.short.toInt() and 0xFFFF

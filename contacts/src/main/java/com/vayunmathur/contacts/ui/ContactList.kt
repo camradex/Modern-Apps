@@ -78,6 +78,7 @@ import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import okio.buffer
 import android.content.Intent
+import androidx.compose.ui.platform.LocalResources
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +89,7 @@ fun ContactList(
     onAddContactClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     
     LaunchedEffect(Unit) {
@@ -162,7 +164,7 @@ fun ContactList(
                                     putExtra(Intent.EXTRA_STREAM, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_contact)))
+                                context.startActivity(Intent.createChooser(intent, resources.getString(R.string.share_contact)))
                             }
                         }) {
                             IconShare()
@@ -188,7 +190,7 @@ fun ContactList(
                                     putExtra(Intent.EXTRA_STREAM, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_contact)))
+                                context.startActivity(Intent.createChooser(intent, resources.getString(R.string.share_contact)))
                             }
                         }) {
                             IconShare()

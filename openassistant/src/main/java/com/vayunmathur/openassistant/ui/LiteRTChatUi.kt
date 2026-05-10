@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.vayunmathur.openassistant.R
@@ -67,6 +68,7 @@ fun LiteRTChatUi(backStack: NavBackStack<Route>, conversationId: Long, viewModel
     }
 
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
@@ -91,7 +93,7 @@ fun LiteRTChatUi(backStack: NavBackStack<Route>, conversationId: Long, viewModel
                 isRecording = true
             } catch (e: Exception) {
                 scope.launch {
-                    snackbarHostState.showSnackbar(context.getString(R.string.mic_error_format, e.localizedMessage ?: ""))
+                    snackbarHostState.showSnackbar(resources.getString(R.string.mic_error_format, e.localizedMessage ?: ""))
                 }
             }
         }
@@ -176,7 +178,7 @@ fun LiteRTChatUi(backStack: NavBackStack<Route>, conversationId: Long, viewModel
                         },
                         onSend = {
                             if (isRecording) { audioRecorder?.stop(); audioRecorder = null; isRecording = false }
-                            val newConv = context.getString(R.string.new_conversation)
+                            val newConv = resources.getString(R.string.new_conversation)
                             scope.launch {
                                 var currentId = conversationId
                                 if (currentId == 0L) {

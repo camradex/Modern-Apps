@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -66,28 +67,28 @@ import kotlinx.coroutines.launch
 fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: () -> Unit) {
     val pdfState = remember { PdfViewerState() }
     val context = LocalContext.current
+    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
 
     val pdfSavedMessage = stringResource(R.string.pdf_saved)
     val pdfSaveErrorMessage = stringResource(R.string.pdf_save_error)
-    val downloadLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/pdf")
-        ) { uri ->
-            uri?.let {
-                coroutineScope.launch {
-                    try {
-                        context.contentResolver.openFileDescriptor(it, "w")?.use { pfd ->
-                            pdfDocument.createWriteHandle().writeTo(pfd)
-                            Toast.makeText(context, pdfSavedMessage, Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: Exception) {
-                        Log.e("PdfViewerScreen", "Error saving PDF", e)
-                        Toast.makeText(context, pdfSaveErrorMessage, Toast.LENGTH_SHORT).show()
+    val downloadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                try {
+                    context.contentResolver.openFileDescriptor(it, "w")?.use { pfd ->
+                        pdfDocument.createWriteHandle().writeTo(pfd)
+                        Toast.makeText(context, pdfSavedMessage, Toast.LENGTH_SHORT).show()
                     }
+                } catch (e: Exception) {
+                    Log.e("PdfViewerScreen", "Error saving PDF", e)
+                    Toast.makeText(context, pdfSaveErrorMessage, Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
 
     var showSearchBar by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<PdfRect>()) }
@@ -129,8 +130,7 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
                 resultsFinal.addAll(
                     result.mapNotNull {
                         it.bounds.firstOrNull()?.let { rect -> PdfRect(page, rect) }
-                    }
-                )
+                    })
             }
             searchResults = resultsFinal
         }
@@ -142,15 +142,12 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
         pdfState.setHighlights(
             searchResults.mapIndexed { idx, it ->
                 Highlight(
-                    it,
-                    if (idx == searchIndex) 0xFFFFA500.toInt() else Color.Yellow.toArgb()
+                    it, if (idx == searchIndex) 0xFFFFA500.toInt() else Color.Yellow.toArgb()
                 )
-            }
-        )
+            })
         if (searchResults.isNotEmpty()) {
             pdfState.scrollToPosition(
-                searchResults[searchIndex].let { PdfPoint(it.pageNum, it.left, it.top) }
-            )
+                searchResults[searchIndex].let { PdfPoint(it.pageNum, it.left, it.top) })
         }
     }
 
@@ -165,8 +162,7 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
     }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
+        modifier = Modifier.fillMaxSize(), topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.pdf_viewer_title)) },
                 navigationIcon = { IconNavigation(onBack) },
@@ -175,16 +171,14 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
                         IconButton({ showSearchBar = true }) { IconSearch() }
                         IconButton({ downloadLauncher.launch(pdfName) }) { IconSave() }
                         IconButton({
-                            val intent =
-                                Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, pdfDocument.uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"
+                                putExtra(Intent.EXTRA_STREAM, pdfDocument.uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
                             context.startActivity(
                                 Intent.createChooser(
-                                    intent,
-                                    context.getString(R.string.share_pdf)
+                                    intent, resources.getString(R.string.share_pdf)
                                 )
                             )
                         }) { IconShare() }
@@ -195,17 +189,14 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
                                     R.string.search_result_counter,
                                     searchIndex + 1,
                                     searchResults.size
-                                ),
-                                modifier = Modifier.padding(end = 12.dp)
+                                ), modifier = Modifier.padding(end = 12.dp)
                             )
                         }
                     }
-                }
-            )
-        },
-        bottomBar = {
+                })
+        }, bottomBar = {
             if (showSearchBar) {
-                BottomAppBar() {
+                BottomAppBar {
                     OutlinedTextField(
                         searchText,
                         {
@@ -221,8 +212,7 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
                     )
                 }
             }
-        },
-        floatingActionButton = {
+        }, floatingActionButton = {
             Column {
                 if (showSearchBar) {
                     Column {
@@ -246,18 +236,16 @@ fun PdfViewerScreen(pdfDocument: EditablePdfDocument, pdfName: String, onBack: (
                     }) { IconSave() }
                 }
             }
-        },
-        contentWindowInsets = WindowInsets(0)
+        }, contentWindowInsets = WindowInsets(0)
     ) { innerPadding ->
         Column(Modifier.padding(innerPadding)) {
             Box(Modifier.fillMaxSize()) {
                 PdfViewer(
                     pdfDocument = pdfDocument,
                     state = pdfState,
-                    modifier =
-                        Modifier.onGloballyPositioned { coordinates ->
-                            center = coordinates.size.center.toOffset()
-                        },
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        center = coordinates.size.center.toOffset()
+                    },
                     fastScrollConfig = FastScrollConfiguration.withDrawableIdsAndDp(
                         fastScrollPageIndicatorBackgroundDrawableRes = R.drawable.pdf_page_indicator_background,
                         fastScrollVerticalThumbDrawableRes = R.drawable.pdf_fast_scroll_thumb,

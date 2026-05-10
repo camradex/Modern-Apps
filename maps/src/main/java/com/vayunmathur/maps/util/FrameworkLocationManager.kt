@@ -91,9 +91,4 @@ class FrameworkLocationManager(context: Context) : SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
-    fun stopUpdates(listener: LocationListener) {
-        locationManager.removeUpdates(listener)
-        sensorManager.unregisterListener(this)
-    }
 }

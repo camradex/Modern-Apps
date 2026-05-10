@@ -1,7 +1,6 @@
 package com.vayunmathur.calendar.ui
 
 import android.text.format.DateFormat
-import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -63,7 +61,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -79,7 +76,6 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.format.MonthNames
@@ -92,12 +88,6 @@ import kotlinx.datetime.format
 import kotlinx.datetime.todayIn
 import kotlin.time.Clock
 import kotlin.time.Instant
-
-private val monthHeaderFormat = LocalDate.Format {
-    monthName(MonthNames.ENGLISH_FULL)
-    chars(" ")
-    year()
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -521,7 +511,9 @@ fun MonthWeekRow(
 
     Row(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         weekDays.forEach { date ->
-            val dayInstances = allInstances.filter { date in it.spanDays }.sortedBy { it.startDateTime }
+            val dayInstances = allInstances.filter { date in it.spanDays }
+                .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+                .sortedBy { it.startDateTime }
             val isToday = date == Clock.System.todayIn(TimeZone.currentSystemDefault())
             val isPartOfViewingMonth = date.month.number == viewingMonth
             

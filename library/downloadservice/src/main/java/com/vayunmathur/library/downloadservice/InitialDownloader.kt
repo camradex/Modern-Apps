@@ -71,7 +71,7 @@ fun InitialDownloadScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(filesToDownload) { (url, fileName, desc) ->
+                items(filesToDownload) { (_, fileName, desc) ->
                     // Each item observes its own specific progress and speed from DataStore
                     val progress by ds.doubleFlow("progress_$fileName").collectAsState(0.0)
                     val speedMbps by ds.doubleFlow("speed_$fileName").collectAsState(0.0)

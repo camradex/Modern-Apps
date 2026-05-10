@@ -62,6 +62,7 @@ import com.vayunmathur.health.Route
 import com.vayunmathur.health.data.RecordType
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import com.vayunmathur.health.util.displayString
 import com.vayunmathur.library.ui.IconCheck
@@ -93,35 +94,179 @@ enum class HealthMetricConfig(
     val useDecimals: Boolean = false,
     val isDualSeries: Boolean = false
 ) {
-    ENERGY(R.string.metric_energy_burned, RecordType.CaloriesTotal, "cal", 2470.0),
-    ACTIVE_CALORIES(R.string.metric_active_calories, RecordType.CaloriesActive, "cal", 500.0),
-    BASAL_METABOLIC_RATE(R.string.metric_basal_metabolic_rate, RecordType.CaloriesBasal, "cal", 1800.0),
-    STEPS(R.string.metric_steps, RecordType.Steps, "steps", 10000.0),
-    WHEELCHAIR_PUSHES(R.string.metric_wheelchair_pushes, RecordType.Wheelchair, "pushes", 3000.0),
-    DISTANCE(R.string.metric_distance, RecordType.Distance, "km", 5.0, isLineChart = false, useDecimals = true),
-    ELEVATION(R.string.metric_elevation_gained, RecordType.Elevation, "m", 50.0, isLineChart = false, useDecimals = true),
-    FLOORS(R.string.metric_floors_climbed, RecordType.Floors, "floors", 10.0, isLineChart = false, useDecimals = true),
-    HYDRATION(R.string.metric_hydration, RecordType.Hydration, "L", 2.5, isLineChart = false, useDecimals = true),
+    ENERGY(R.string.metric_energy_burned, RecordType.CaloriesTotal, "cal", 2470.0), ACTIVE_CALORIES(
+        R.string.metric_active_calories,
+        RecordType.CaloriesActive,
+        "cal",
+        500.0
+    ),
+    BASAL_METABOLIC_RATE(
+        R.string.metric_basal_metabolic_rate, RecordType.CaloriesBasal, "cal", 1800.0
+    ),
+    STEPS(
+        R.string.metric_steps,
+        RecordType.Steps,
+        "steps",
+        10000.0
+    ),
+    WHEELCHAIR_PUSHES(
+        R.string.metric_wheelchair_pushes,
+        RecordType.Wheelchair,
+        "pushes",
+        3000.0
+    ),
+    DISTANCE(
+        R.string.metric_distance,
+        RecordType.Distance,
+        "km",
+        5.0,
+        isLineChart = false,
+        useDecimals = true
+    ),
+    ELEVATION(
+        R.string.metric_elevation_gained,
+        RecordType.Elevation,
+        "m",
+        50.0,
+        isLineChart = false,
+        useDecimals = true
+    ),
+    FLOORS(
+        R.string.metric_floors_climbed,
+        RecordType.Floors,
+        "floors",
+        10.0,
+        isLineChart = false,
+        useDecimals = true
+    ),
+    HYDRATION(
+        R.string.metric_hydration,
+        RecordType.Hydration,
+        "L",
+        2.5,
+        isLineChart = false,
+        useDecimals = true
+    ),
 
     // Biological & Medical (Line Charts)
-    BLOOD_PRESSURE(R.string.metric_blood_pressure, RecordType.BloodPressure, "mmHg", 120.0, secondaryGoal = 80.0, isLineChart = true, isDualSeries = true),
-    GLUCOSE(R.string.metric_blood_glucose, RecordType.BloodGlucose, "mg/dL", 100.0, isLineChart = true, useDecimals = true),
-    VO2_MAX(R.string.metric_vo2_max, RecordType.Vo2Max, "ml/kg/min", 45.0, isLineChart = true, useDecimals = true),
-    SKIN_TEMP(R.string.metric_skin_temp_variation, RecordType.SkinTemperature, "°C", 0.0, isLineChart = true, useDecimals = true),
-    BREATHING_RATE(R.string.metric_breathing_rate, RecordType.RespiratoryRate, "brpm", 16.0, isLineChart = true, useDecimals = true),
-    RESTING_HEART_RATE(R.string.metric_resting_heart_rate, RecordType.RestingHeartRate, "bpm", 60.0, isLineChart = true),
-    OXYGEN_SATURATION(R.string.metric_oxygen_saturation, RecordType.OxygenSaturation, "%", 95.0, isLineChart = true, useDecimals = true),
-    HRV(R.string.metric_heart_rate_variability, RecordType.HeartRateVariabilityRmssd, "ms", 50.0, isLineChart = true, useDecimals = true),
+    BLOOD_PRESSURE(
+        R.string.metric_blood_pressure,
+        RecordType.BloodPressure,
+        "mmHg",
+        120.0,
+        secondaryGoal = 80.0,
+        isLineChart = true,
+        isDualSeries = true
+    ),
+    GLUCOSE(
+        R.string.metric_blood_glucose,
+        RecordType.BloodGlucose,
+        "mg/dL",
+        100.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    VO2_MAX(
+        R.string.metric_vo2_max,
+        RecordType.Vo2Max,
+        "ml/kg/min",
+        45.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    SKIN_TEMP(
+        R.string.metric_skin_temp_variation,
+        RecordType.SkinTemperature,
+        "°C",
+        0.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    BREATHING_RATE(
+        R.string.metric_breathing_rate,
+        RecordType.RespiratoryRate,
+        "brpm",
+        16.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    RESTING_HEART_RATE(
+        R.string.metric_resting_heart_rate,
+        RecordType.RestingHeartRate,
+        "bpm",
+        60.0,
+        isLineChart = true
+    ),
+    OXYGEN_SATURATION(
+        R.string.metric_oxygen_saturation,
+        RecordType.OxygenSaturation,
+        "%",
+        95.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    HRV(
+        R.string.metric_heart_rate_variability,
+        RecordType.HeartRateVariabilityRmssd,
+        "ms",
+        50.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
     HEART_RATE(R.string.metric_heart_rate, RecordType.HeartRate, "bpm", 100.0, isLineChart = true),
 
     // Physical Measurements
-    HEIGHT(R.string.metric_height, RecordType.Height, "cm", 175.0, isLineChart = true, useDecimals = true),
-    WEIGHT(R.string.metric_weight, RecordType.Weight, "kg", 75.0, isLineChart = true, useDecimals = true),
-    BODY_FAT(R.string.metric_body_fat, RecordType.BodyFat, "%", 20.0, isLineChart = true, useDecimals = true),
-    LEAN_BODY_MASS(R.string.metric_lean_body_mass, RecordType.LeanBodyMass, "kg", 60.0, isLineChart = true, useDecimals = true),
-    BONE_MASS(R.string.metric_bone_mass, RecordType.BoneMass, "kg", 3.0, isLineChart = true, useDecimals = true),
-    BODY_WATER_MASS(R.string.metric_body_water_mass, RecordType.BodyWaterMass, "kg", 45.0, isLineChart = true, useDecimals = true),
-    SLEEP(R.string.metric_sleep, RecordType.Sleep, "hr", 8.0, isLineChart = false, useDecimals = true)
+    HEIGHT(
+        R.string.metric_height,
+        RecordType.Height,
+        "cm",
+        175.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    WEIGHT(
+        R.string.metric_weight,
+        RecordType.Weight,
+        "kg",
+        75.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    BODY_FAT(
+        R.string.metric_body_fat,
+        RecordType.BodyFat,
+        "%",
+        20.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    LEAN_BODY_MASS(
+        R.string.metric_lean_body_mass,
+        RecordType.LeanBodyMass,
+        "kg",
+        60.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    BONE_MASS(
+        R.string.metric_bone_mass,
+        RecordType.BoneMass,
+        "kg",
+        3.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    BODY_WATER_MASS(
+        R.string.metric_body_water_mass,
+        RecordType.BodyWaterMass,
+        "kg",
+        45.0,
+        isLineChart = true,
+        useDecimals = true
+    ),
+    SLEEP(
+        R.string.metric_sleep, RecordType.Sleep, "hr", 8.0, isLineChart = false, useDecimals = true
+    )
 }
 
 data class MetricDashboardData(
@@ -147,10 +292,9 @@ data class HistoryItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BarChartDetails(
-    backStack: NavBackStack<Route>,
-    config: HealthMetricConfig
+    backStack: NavBackStack<Route>, config: HealthMetricConfig
 ) {
-    var selectedTab by remember { mutableIntStateOf(if(config == HealthMetricConfig.HEART_RATE) 0 else 1) }
+    var selectedTab by remember { mutableIntStateOf(if (config == HealthMetricConfig.HEART_RATE) 0 else 1) }
     val tabs = listOf(
         stringResource(R.string.tab_day),
         stringResource(R.string.tab_week),
@@ -163,22 +307,37 @@ fun BarChartDetails(
 
     val tz = TimeZone.currentSystemDefault()
     val context = LocalContext.current
+    val resources = LocalResources.current
 
     val dayLabelFormat = stringResource(R.string.history_day_label)
     val monthLabelFormat = stringResource(R.string.history_month_label)
 
     LaunchedEffect(selectedTab, anchorDate, config) {
         val (startDate, endDate, periodType, periodType2) = when (selectedTab) {
-            0 -> Tuple4(anchorDate, anchorDate.plus(1, DateTimeUnit.DAY), HealthAPI.PeriodType.Hourly, HealthAPI.PeriodType.Hourly)
+            0 -> Tuple4(
+                anchorDate,
+                anchorDate.plus(1, DateTimeUnit.DAY),
+                HealthAPI.PeriodType.Hourly,
+                HealthAPI.PeriodType.Hourly
+            )
+
             1 -> {
-                val start = anchorDate.minus((anchorDate.dayOfWeek.ordinal+1)%7, DateTimeUnit.DAY)
-                Tuple4(start, start.plus(7, DateTimeUnit.DAY), HealthAPI.PeriodType.Daily, HealthAPI.PeriodType.Daily)
+                val start =
+                    anchorDate.minus((anchorDate.dayOfWeek.ordinal + 1) % 7, DateTimeUnit.DAY)
+                Tuple4(
+                    start,
+                    start.plus(7, DateTimeUnit.DAY),
+                    HealthAPI.PeriodType.Daily,
+                    HealthAPI.PeriodType.Daily
+                )
             }
+
             2 -> {
                 val start = LocalDate(anchorDate.year, anchorDate.month, 1)
                 val end = start.plus(1, DateTimeUnit.MONTH)
                 Tuple4(start, end, HealthAPI.PeriodType.Daily, HealthAPI.PeriodType.Weekly)
             }
+
             else -> {
                 val start = LocalDate(anchorDate.year, 1, 1)
                 val end = start.plus(1, DateTimeUnit.YEAR)
@@ -188,7 +347,7 @@ fun BarChartDetails(
         val startTime = startDate.atStartOfDayIn(tz)
         val endTime = endDate.atStartOfDayIn(tz)
 
-        val endTimeNow = if(Clock.System.now() < endTime) Clock.System.now() else endTime
+        val endTimeNow = if (Clock.System.now() < endTime) Clock.System.now() else endTime
 
         // Both functions now return List<Pair<Double?, Double?>>
         val rawPairs = if (config.isLineChart) {
@@ -209,17 +368,20 @@ fun BarChartDetails(
                     if (hour % 6 == 0) {
                         val amPm = if (hour < 12) "AM" else "PM"
                         val h = if (hour % 12 == 0) 12 else hour % 12
-                        context.getString(R.string.hour_am_pm_format, h, amPm)
+                        resources.getString(R.string.hour_am_pm_format, h, amPm)
                     } else ""
                 }
+
                 1 -> { // Weekly
                     val date = LocalDate.fromEpochDays(p.first.toInt())
                     date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
                 }
+
                 2 -> { // Monthly
                     val date = LocalDate.fromEpochDays(p.first.toInt())
                     if (date.day % 7 == 1) date.day.toString() else ""
                 }
+
                 else -> { // Yearly
                     val date = LocalDate.fromEpochDays(p.first.toInt())
                     date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
@@ -235,17 +397,20 @@ fun BarChartDetails(
                         if (hour % 6 == 0) {
                             val amPm = if (hour < 12) "AM" else "PM"
                             val h = if (hour % 12 == 0) 12 else hour % 12
-                            context.getString(R.string.hour_am_pm_format, h, amPm)
+                            resources.getString(R.string.hour_am_pm_format, h, amPm)
                         } else ""
                     }
+
                     1 -> { // Weekly
                         val date = LocalDate.fromEpochDays(p.first.toInt())
                         date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
                     }
+
                     2 -> { // Monthly
                         val date = LocalDate.fromEpochDays(p.first.toInt())
                         if (date.day % 7 == 1) date.day.toString() else ""
                     }
+
                     else -> { // Yearly
                         val date = LocalDate.fromEpochDays(p.first.toInt())
                         date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
@@ -255,16 +420,26 @@ fun BarChartDetails(
             }
         } else null
 
-        val history = if(selectedTab != 0) rawPairsHistory.mapIndexed { index, triple ->
+        val history = if (selectedTab != 0) rawPairsHistory.mapIndexed { index, triple ->
             val label = when (selectedTab) {
                 0 -> ""
-                1 -> startTime.plus(index.toLong(), DateTimeUnit.DAY, tz).toLocalDateTime(tz).dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+                1 -> startTime.plus(index.toLong(), DateTimeUnit.DAY, tz)
+                    .toLocalDateTime(tz).dayOfWeek.name.lowercase()
+                    .replaceFirstChar { it.uppercase() }
+
                 2 -> {
-                    val date = startTime.plus(index.toLong(), DateTimeUnit.DAY, tz).toLocalDateTime(tz).date
-                    context.getString(R.string.month_year_format, date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }, date.day)
+                    val date = startTime.plus(index.toLong(), DateTimeUnit.DAY, tz)
+                        .toLocalDateTime(tz).date
+                    resources.getString(
+                        R.string.month_year_format,
+                        date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
+                        date.day
+                    )
                 }
+
                 else -> {
-                    val date = startTime.plus(index.toLong(), DateTimeUnit.MONTH, tz).toLocalDateTime(tz).date
+                    val date = startTime.plus(index.toLong(), DateTimeUnit.MONTH, tz)
+                        .toLocalDateTime(tz).date
                     date.month.name.lowercase().replaceFirstChar { it.uppercase() }
                 }
             }
@@ -278,7 +453,8 @@ fun BarChartDetails(
             )
         }.reversed() else listOf()
 
-        val nonNullPrimary = if (selectedTab == 0) rawPairs.map { it.second } else history.map { it.value }
+        val nonNullPrimary =
+            if (selectedTab == 0) rawPairs.map { it.second } else history.map { it.value }
         val nonNullSecondary = if (selectedTab == 0) {
             if (config.isDualSeries) rawPairs.map { it.third } else emptyList()
         } else {
@@ -287,8 +463,8 @@ fun BarChartDetails(
 
         dataState = MetricDashboardData(
             totalValue = nonNullPrimary.sum(),
-            dailyAverage = if (nonNullPrimary.isEmpty()) 0.0 else (if(selectedTab == 0) nonNullPrimary.sum() else nonNullPrimary.average()),
-            secondaryAverage = if (nonNullSecondary.isEmpty()) null else (if(selectedTab == 0) nonNullSecondary.sum() else nonNullSecondary.average()),
+            dailyAverage = if (nonNullPrimary.isEmpty()) 0.0 else (if (selectedTab == 0) nonNullPrimary.sum() else nonNullPrimary.average()),
+            secondaryAverage = if (nonNullSecondary.isEmpty()) null else (if (selectedTab == 0) nonNullSecondary.sum() else nonNullSecondary.average()),
             chartData = mappedChart,
             secondaryChartData = mappedSecondaryChart,
             historyItems = history,
@@ -300,20 +476,21 @@ fun BarChartDetails(
                         if (min < max) min..max else if (min > max) max..min else min..min + 1.0
                     }
                 }
-            }
-        )
+            })
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(config.titleRes)) },
-                navigationIcon = { IconNavigation(backStack) }
-            )
-        }
-    ) { padding ->
-        Column(modifier = Modifier.padding(top = padding.calculateTopPadding()).fillMaxSize()) {
-            if(config != HealthMetricConfig.HEART_RATE) {
+                navigationIcon = { IconNavigation(backStack) })
+        }) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(top = padding.calculateTopPadding())
+                .fillMaxSize()
+        ) {
+            if (config != HealthMetricConfig.HEART_RATE) {
                 SecondaryTabRow(selectedTabIndex = selectedTab, divider = {}) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
@@ -324,21 +501,34 @@ fun BarChartDetails(
                                     title,
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
                                 )
-                            }
-                        )
+                            })
                     }
                 }
             }
 
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 16.dp)) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp)
+            ) {
                 val headerLabel = when (selectedTab) {
                     0 -> anchorDate.displayString()
                     1 -> {
-                        val start = anchorDate.minus((anchorDate.dayOfWeek.ordinal + 1) % 7, DateTimeUnit.DAY)
+                        val start = anchorDate.minus(
+                            (anchorDate.dayOfWeek.ordinal + 1) % 7, DateTimeUnit.DAY
+                        )
                         val end = start.plus(6, DateTimeUnit.DAY)
-                        stringResource(R.string.week_range, start.displayString(), end.displayString())
+                        stringResource(
+                            R.string.week_range, start.displayString(), end.displayString()
+                        )
                     }
-                    2 -> stringResource(R.string.month_year_format, anchorDate.month.name.lowercase().replaceFirstChar { it.uppercase() }, anchorDate.year)
+
+                    2 -> stringResource(
+                        R.string.month_year_format,
+                        anchorDate.month.name.lowercase().replaceFirstChar { it.uppercase() },
+                        anchorDate.year
+                    )
+
                     else -> anchorDate.year.toString()
                 }
 
@@ -348,53 +538,79 @@ fun BarChartDetails(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     IconButton(onClick = {
-                        anchorDate = when(selectedTab) {
+                        anchorDate = when (selectedTab) {
                             0 -> anchorDate.minus(1, DateTimeUnit.DAY)
                             1 -> anchorDate.minus(1, DateTimeUnit.WEEK)
                             2 -> anchorDate.minus(1, DateTimeUnit.MONTH)
                             else -> anchorDate.minus(1, DateTimeUnit.YEAR)
                         }
                     }) {
-                        Icon(painterResource(R.drawable.baseline_arrow_back_24), stringResource(R.string.nav_prev))
+                        Icon(
+                            painterResource(R.drawable.baseline_arrow_back_24),
+                            stringResource(R.string.nav_prev)
+                        )
                     }
 
-                    Text(headerLabel, style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 140.dp), textAlign = TextAlign.Center)
+                    Text(
+                        headerLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.widthIn(min = 140.dp),
+                        textAlign = TextAlign.Center
+                    )
 
-                    val nextDate = when(selectedTab) {
+                    val nextDate = when (selectedTab) {
                         0 -> anchorDate.plus(1, DateTimeUnit.DAY)
                         1 -> anchorDate.plus(1, DateTimeUnit.WEEK)
                         2 -> anchorDate.plus(1, DateTimeUnit.MONTH)
                         else -> anchorDate.plus(1, DateTimeUnit.YEAR)
                     }
 
-                    IconButton(onClick = {
-                        anchorDate = when(selectedTab) {
-                            0 -> anchorDate.plus(1, DateTimeUnit.DAY)
-                            1 -> anchorDate.plus(1, DateTimeUnit.WEEK)
-                            2 -> anchorDate.plus(1, DateTimeUnit.MONTH)
-                            else -> anchorDate.plus(1, DateTimeUnit.YEAR)
-                        }
-                    }, enabled = nextDate <= Clock.System.todayIn(TimeZone.currentSystemDefault())) {
-                        Icon(painterResource(R.drawable.outline_arrow_forward_24), stringResource(R.string.nav_next))
+                    IconButton(
+                        onClick = {
+                            anchorDate = when (selectedTab) {
+                                0 -> anchorDate.plus(1, DateTimeUnit.DAY)
+                                1 -> anchorDate.plus(1, DateTimeUnit.WEEK)
+                                2 -> anchorDate.plus(1, DateTimeUnit.MONTH)
+                                else -> anchorDate.plus(1, DateTimeUnit.YEAR)
+                            }
+                        },
+                        enabled = nextDate <= Clock.System.todayIn(TimeZone.currentSystemDefault())
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.outline_arrow_forward_24),
+                            stringResource(R.string.nav_next)
+                        )
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
 
                 val hasData = dataState.chartData.any { it.second != null }
-                val chartGoalValue = if (config.isLineChart) config.dailyGoal else when (selectedTab) {
-                    0 -> config.dailyGoal / 24.0
-                    3 -> config.dailyGoal * 30.0
-                    else -> config.dailyGoal
-                }
+                val chartGoalValue =
+                    if (config.isLineChart) config.dailyGoal else when (selectedTab) {
+                        0 -> config.dailyGoal / 24.0
+                        3 -> config.dailyGoal * 30.0
+                        else -> config.dailyGoal
+                    }
 
                 if (hasData) {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        val formatVal = { v: Double -> if (config.useDecimals) v.round(1).toString() else v.toLong().toStringCommas() }
-                        val avgString = if(config == HealthMetricConfig.HEART_RATE) {
-                            stringResource(R.string.dash_value_format, formatVal(dataState.primaryRange?.start ?: 0.0), formatVal(dataState.primaryRange?.endInclusive ?: 0.0))
+                        val formatVal = { v: Double ->
+                            if (config.useDecimals) v.round(1).toString() else v.toLong()
+                                .toStringCommas()
+                        }
+                        val avgString = if (config == HealthMetricConfig.HEART_RATE) {
+                            stringResource(
+                                R.string.dash_value_format,
+                                formatVal(dataState.primaryRange?.start ?: 0.0),
+                                formatVal(dataState.primaryRange?.endInclusive ?: 0.0)
+                            )
                         } else if (dataState.secondaryAverage != null && config.isDualSeries) {
-                            stringResource(R.string.slash_value_format, formatVal(dataState.dailyAverage), formatVal(dataState.secondaryAverage!!))
+                            stringResource(
+                                R.string.slash_value_format,
+                                formatVal(dataState.dailyAverage),
+                                formatVal(dataState.secondaryAverage!!)
+                            )
                         } else {
                             formatVal(dataState.dailyAverage)
                         }
@@ -405,7 +621,9 @@ fun BarChartDetails(
                             fontWeight = FontWeight.Light
                         )
                         Text(
-                            text = if (selectedTab != 0 && !config.isLineChart) stringResource(R.string.unit_per_day_avg_format, config.unit) else stringResource(R.string.unit_only_format, config.unit),
+                            text = if (selectedTab != 0 && !config.isLineChart) stringResource(
+                                R.string.unit_per_day_avg_format, config.unit
+                            ) else stringResource(R.string.unit_only_format, config.unit),
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(bottom = 12.dp, start = 4.dp),
                             color = LocalContentColor.current.copy(alpha = 0.6f)
@@ -416,8 +634,15 @@ fun BarChartDetails(
                 Spacer(Modifier.height(24.dp))
 
                 if (!hasData) {
-                    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.no_data_available), color = MaterialTheme.colorScheme.outline)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(180.dp), contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.no_data_available),
+                            color = MaterialTheme.colorScheme.outline
+                        )
                     }
                 } else if (config.isLineChart) {
                     GenericLineChart(
@@ -442,26 +667,41 @@ fun BarChartDetails(
             }
 
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(), contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp + padding.calculateRightPadding(LayoutDirection.Ltr),
                     bottom = 24.dp + padding.calculateBottomPadding()
                 )
             ) {
                 itemsIndexed(dataState.historyItems) { idx, item ->
-                    Card(Modifier.padding(vertical = 2.dp), shape = verticalSegmentedCardShape(idx, dataState.historyItems.size)) {
+                    Card(
+                        Modifier.padding(vertical = 2.dp),
+                        shape = verticalSegmentedCardShape(idx, dataState.historyItems.size)
+                    ) {
                         ListItem({
                             Text(item.label, style = MaterialTheme.typography.bodyLarge)
                         }, trailingContent = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if(item.isGoalMet) {
+                                if (item.isGoalMet) {
                                     IconCheck()
                                     Spacer(Modifier.width(4.dp))
                                 }
-                                val format = { v: Double -> if (item.useDecimals) v.toStringDigits(1) else v.toLong().toStringCommas() }
-                                val valueString = if (item.secondaryValue != null) stringResource(R.string.slash_value_format, format(item.value), format(item.secondaryValue)) else format(item.value)
-                                Text(stringResource(R.string.value_unit_space_format, valueString, item.unit), style = MaterialTheme.typography.bodyLarge)
+                                val format = { v: Double ->
+                                    if (item.useDecimals) v.toStringDigits(1) else v.toLong()
+                                        .toStringCommas()
+                                }
+                                val valueString = if (item.secondaryValue != null) stringResource(
+                                    R.string.slash_value_format,
+                                    format(item.value),
+                                    format(item.secondaryValue)
+                                ) else format(item.value)
+                                Text(
+                                    stringResource(
+                                        R.string.value_unit_space_format, valueString, item.unit
+                                    ), style = MaterialTheme.typography.bodyLarge
+                                )
                             }
                         }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                     }
@@ -483,8 +723,10 @@ fun GenericLineChart(
 ) {
     if (data.all { it.second == null }) return
 
-    val allValues = (data.mapNotNull { it.second } + (secondaryData?.mapNotNull { it.second } ?: emptyList()))
-    val maxChartValue = (allValues.maxOrNull() ?: goalValue).coerceAtLeast(goalValue * 1.2).coerceAtLeast(10.0)
+    val allValues =
+        (data.mapNotNull { it.second } + (secondaryData?.mapNotNull { it.second } ?: emptyList()))
+    val maxChartValue =
+        (allValues.maxOrNull() ?: goalValue).coerceAtLeast(goalValue * 1.2).coerceAtLeast(10.0)
     val labelColor = LocalContentColor.current.copy(alpha = 0.6f)
 
     val chartHeight = 180.dp
@@ -493,7 +735,11 @@ fun GenericLineChart(
 
     val context = LocalContext.current
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(chartHeight)
+    ) {
         val density = LocalDensity.current
         val fullWidthPx = with(density) { maxWidth.toPx() }
         val sideLabelWidthPx = with(density) { sideLabelWidth.toPx() }
@@ -502,13 +748,27 @@ fun GenericLineChart(
 
         val spacing = chartWidthPx / (data.size - 1).coerceAtLeast(1)
 
-        Canvas(modifier = Modifier.fillMaxSize().padding(end = sideLabelWidth, bottom = xAxisHeight)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = sideLabelWidth, bottom = xAxisHeight)
+        ) {
             val height = size.height
             val width = size.width
 
             // Axis lines
-            drawLine(color = labelColor.copy(alpha = 0.15f), start = Offset(0f, height), end = Offset(width, height), strokeWidth = 1.dp.toPx())
-            drawLine(color = labelColor.copy(alpha = 0.15f), start = Offset(width, 0f), end = Offset(width, height), strokeWidth = 1.dp.toPx())
+            drawLine(
+                color = labelColor.copy(alpha = 0.15f),
+                start = Offset(0f, height),
+                end = Offset(width, height),
+                strokeWidth = 1.dp.toPx()
+            )
+            drawLine(
+                color = labelColor.copy(alpha = 0.15f),
+                start = Offset(width, 0f),
+                end = Offset(width, height),
+                strokeWidth = 1.dp.toPx()
+            )
 
             val drawSeries = { series: List<Pair<String, Double?>>, color: Color ->
                 var lastValidPoint: Offset? = null
@@ -516,10 +776,18 @@ fun GenericLineChart(
                     val value = pair.second
                     val x = index * spacing
                     if (value != null) {
-                        val y = height - (value.toFloat() / maxChartValue.toFloat() * height).coerceIn(0f, height)
+                        val y =
+                            height - (value.toFloat() / maxChartValue.toFloat() * height).coerceIn(
+                                0f, height
+                            )
                         val currentPoint = Offset(x, y)
                         if (lastValidPoint != null) {
-                            drawLine(color = color, start = lastValidPoint, end = currentPoint, strokeWidth = 3.dp.toPx())
+                            drawLine(
+                                color = color,
+                                start = lastValidPoint,
+                                end = currentPoint,
+                                strokeWidth = 3.dp.toPx()
+                            )
                         }
                         drawCircle(color = color, radius = 3.dp.toPx(), center = currentPoint)
                         lastValidPoint = currentPoint
@@ -529,13 +797,17 @@ fun GenericLineChart(
 
             // Goal lines
             val drawGoal = { goal: Double, color: Color, isSecondary: Boolean ->
-                val gy = height - (goal.toFloat() / maxChartValue.toFloat() * height).coerceIn(0f, height)
+                val gy = height - (goal.toFloat() / maxChartValue.toFloat() * height).coerceIn(
+                    0f, height
+                )
                 drawLine(
                     color = color,
                     start = Offset(0f, gy),
                     end = Offset(width, gy),
                     strokeWidth = 1.dp.toPx(),
-                    pathEffect = if (isSecondary) PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) else null
+                    pathEffect = if (isSecondary) PathEffect.dashPathEffect(
+                        floatArrayOf(10f, 10f), 0f
+                    ) else null
                 )
             }
 
@@ -562,13 +834,16 @@ fun GenericLineChart(
                             layout(placeable.width, placeable.height) {
                                 placeable.placeRelative(-(placeable.width / 2), 0)
                             }
-                        }
-                )
+                        })
             }
         }
 
         // Y-axis labels
-        val format = { v: Double -> if (v >= 10000) context.getString(R.string.k_format, (v / 1000).round(0).toString()) else v.toLong().toStringCommas() }
+        val format = { v: Double ->
+            if (v >= 10000) resources.getString(
+                R.string.k_format, (v / 1000).round(0).toString()
+            ) else v.toLong().toStringCommas()
+        }
 
         Text(
             text = format(maxChartValue),
@@ -595,8 +870,7 @@ fun GenericLineChart(
                         placeable.placeRelative(0, -(placeable.height / 2))
                     }
                 }
-                .padding(start = 4.dp)
-        )
+                .padding(start = 4.dp))
 
         Text(
             text = "0",
@@ -612,8 +886,7 @@ fun GenericLineChart(
                         placeable.placeRelative(0, -(placeable.height / 2))
                     }
                 }
-                .padding(start = 4.dp)
-        )
+                .padding(start = 4.dp))
     }
 }
 
@@ -626,7 +899,8 @@ fun GenericBarChart(
     goalColor: Color
 ) {
     val maxValueFound = data.maxOfOrNull { it.second } ?: 0.0
-    val maxChartValue = (maxValueFound.toFloat() * 1.2f).coerceAtLeast(goalValue.toFloat() * 1.2f).coerceAtLeast(10f)
+    val maxChartValue = (maxValueFound.toFloat() * 1.2f).coerceAtLeast(goalValue.toFloat() * 1.2f)
+        .coerceAtLeast(10f)
     val labelColor = LocalContentColor.current.copy(alpha = 0.6f)
 
     val chartHeight = 180.dp
@@ -635,7 +909,11 @@ fun GenericBarChart(
 
     val context = LocalContext.current
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(chartHeight)
+    ) {
         val density = LocalDensity.current
         val fullWidthPx = with(density) { maxWidth.toPx() }
         val sideLabelWidthPx = with(density) { sideLabelWidth.toPx() }
@@ -643,21 +921,42 @@ fun GenericBarChart(
         val actualChartHeightPx = with(density) { (chartHeight - xAxisHeight).toPx() }
 
         val barWidth = with(density) { 6.dp.toPx() }
-        val spacing = (chartWidthPx - (totalBarCount * barWidth)) / (totalBarCount + 1).coerceAtLeast(1)
+        val spacing =
+            (chartWidthPx - (totalBarCount * barWidth)) / (totalBarCount + 1).coerceAtLeast(1)
 
-        Canvas(modifier = Modifier.fillMaxSize().padding(end = sideLabelWidth, bottom = xAxisHeight)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = sideLabelWidth, bottom = xAxisHeight)
+        ) {
             val height = size.height
             val width = size.width
 
             // Axis lines
-            drawLine(color = labelColor.copy(alpha = 0.15f), start = Offset(0f, height), end = Offset(width, height), strokeWidth = 1.dp.toPx())
-            drawLine(color = labelColor.copy(alpha = 0.15f), start = Offset(width, 0f), end = Offset(width, height), strokeWidth = 1.dp.toPx())
+            drawLine(
+                color = labelColor.copy(alpha = 0.15f),
+                start = Offset(0f, height),
+                end = Offset(width, height),
+                strokeWidth = 1.dp.toPx()
+            )
+            drawLine(
+                color = labelColor.copy(alpha = 0.15f),
+                start = Offset(width, 0f),
+                end = Offset(width, height),
+                strokeWidth = 1.dp.toPx()
+            )
 
             val goalY = height - (goalValue.toFloat() / maxChartValue * height).coerceIn(0f, height)
-            drawLine(color = goalColor, start = Offset(0f, goalY), end = Offset(width, goalY), strokeWidth = 1.dp.toPx())
+            drawLine(
+                color = goalColor,
+                start = Offset(0f, goalY),
+                end = Offset(width, goalY),
+                strokeWidth = 1.dp.toPx()
+            )
 
             data.forEachIndexed { index, pair ->
-                val barHeight = (pair.second.toFloat() / maxChartValue * height).coerceIn(4f, height)
+                val barHeight =
+                    (pair.second.toFloat() / maxChartValue * height).coerceIn(4f, height)
                 val x = spacing + index * (barWidth + spacing)
                 val y = height - barHeight
 
@@ -686,13 +985,16 @@ fun GenericBarChart(
                             layout(placeable.width, placeable.height) {
                                 placeable.placeRelative(-(placeable.width / 2), 0)
                             }
-                        }
-                )
+                        })
             }
         }
 
         // Y-axis labels
-        val format = { v: Double -> if (v >= 10000) context.getString(R.string.k_format, (v / 1000).round(0).toString()) else v.toLong().toStringCommas() }
+        val format = { v: Double ->
+            if (v >= 10000) resources.getString(
+                R.string.k_format, (v / 1000).round(0).toString()
+            ) else v.toLong().toStringCommas()
+        }
 
         Text(
             text = format(maxChartValue.toDouble()),
@@ -719,8 +1021,7 @@ fun GenericBarChart(
                         placeable.placeRelative(0, -(placeable.height / 2))
                     }
                 }
-                .padding(start = 4.dp)
-        )
+                .padding(start = 4.dp))
 
         Text(
             text = "0",
@@ -736,7 +1037,6 @@ fun GenericBarChart(
                         placeable.placeRelative(0, -(placeable.height / 2))
                     }
                 }
-                .padding(start = 4.dp)
-        )
+                .padding(start = 4.dp))
     }
 }

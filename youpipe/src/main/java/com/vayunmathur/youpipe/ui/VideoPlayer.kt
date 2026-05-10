@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,7 +122,7 @@ fun VideoPlayer(
         }
     }
 
-    var aspectRatio by remember { mutableStateOf(16f / 9f) }
+    var aspectRatio by remember { mutableFloatStateOf(16f / 9f) }
 
     DisposableEffect(controller) {
         val player = controller ?: return@DisposableEffect onDispose {}

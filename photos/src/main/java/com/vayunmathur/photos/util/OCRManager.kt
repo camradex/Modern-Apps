@@ -29,10 +29,6 @@ import kotlinx.coroutines.Dispatchers
 class OCRManager(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun init() {
-        // No-op for Gemma 4 via OpenAssistant as it's a remote service
-    }
-
     suspend fun runOCR(uri: Uri): String? {
         var attempts = 0
         Log.d("OCRManager", "Starting OCR")
@@ -190,9 +186,5 @@ class OCRManager(private val context: Context) {
             Log.e("OCRManager", "Error resizing image: $uri", e)
             null
         }
-    }
-
-    fun release() {
-        // No-op
     }
 }

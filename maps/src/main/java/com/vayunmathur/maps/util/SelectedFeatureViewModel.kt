@@ -7,7 +7,6 @@ import com.vayunmathur.maps.data.TransitRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import org.maplibre.spatialk.geojson.Position
 
 class SelectedFeatureViewModel(application: Application): AndroidViewModel(application) {
@@ -23,8 +22,9 @@ class SelectedFeatureViewModel(application: Application): AndroidViewModel(appli
     private val _userBearing = MutableStateFlow(0f)
     val userBearing = _userBearing.asStateFlow()
 
+    val locationManager = FrameworkLocationManager(application)
+
     init {
-        val locationManager = FrameworkLocationManager(application)
         locationManager.startUpdates { position, bearing ->
             _userPosition.value = position
             _userBearing.value = bearing
@@ -61,7 +61,7 @@ class SelectedFeatureViewModel(application: Application): AndroidViewModel(appli
                             }
 //                            else -> RouteService.computeRoute(routeFeature, pos, mode)
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         RouteService.EmptyRoute()
                     }
                     // Emit the new pair

@@ -13,7 +13,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 
 @Serializable
-class OpeningHours(private val rawString: String) {
+class OpeningHours(rawString: String) {
 
     private val rules: List<OpeningRule> = parse(rawString)
 

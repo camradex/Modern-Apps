@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -33,10 +32,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme.colorScheme
-import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,6 +63,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -73,31 +72,30 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vayunmathur.games.wordmaker.data.CrosswordData
 import com.vayunmathur.games.wordmaker.data.LevelDataStore
+import com.vayunmathur.games.wordmaker.util.AppBackupAgent
+import com.vayunmathur.games.wordmaker.util.Dictionary
+import com.vayunmathur.library.ui.AchievementNotification
 import com.vayunmathur.library.ui.DynamicTheme
+import com.vayunmathur.library.ui.GameCenterScreen
+import com.vayunmathur.library.util.AchievementsManager
+import com.vayunmathur.library.util.MainNavigation
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.util.NavKey
+import com.vayunmathur.library.util.rememberNavBackStack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
-import com.vayunmathur.games.wordmaker.util.Dictionary
-import com.vayunmathur.games.wordmaker.data.CrosswordData
-import com.vayunmathur.library.util.AchievementsManager
-import com.vayunmathur.library.util.NavBackStack
-import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.library.util.rememberNavBackStack
-import com.vayunmathur.library.util.MainNavigation
-import com.vayunmathur.library.ui.GameCenterScreen
-import com.vayunmathur.library.ui.AchievementNotification
-import com.vayunmathur.games.wordmaker.util.AppBackupAgent
-import kotlinx.coroutines.flow.first
-import kotlinx.serialization.Serializable
 
 @Serializable
 sealed interface Route : NavKey {
@@ -145,6 +143,7 @@ fun rememberAchievementsManager(levelDataStore: LevelDataStore): AchievementsMan
 @Composable
 fun WordMakerGameLoader(backStack: NavBackStack<Route>, levelDataStore: LevelDataStore) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val currentLevel by levelDataStore.currentLevel.collectAsState(initial = 1)
     var crosswordData by remember { mutableStateOf<CrosswordData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -165,10 +164,10 @@ fun WordMakerGameLoader(backStack: NavBackStack<Route>, levelDataStore: LevelDat
         try {
             crosswordData = CrosswordData.fromAsset(context, "levels/$currentLevel.txt")
             if (crosswordData == null) {
-                error = context.getString(R.string.error_parse_level)
+                error = resources.getString(R.string.error_parse_level)
             }
         } catch (e: Exception) {
-            error = context.getString(R.string.error_load_level, e.message)
+            error = resources.getString(R.string.error_load_level, e.message)
         }
     }
 
@@ -672,9 +671,8 @@ fun LetterChooser(
     val letterCircleRadius = with(density) { 35.dp.toPx() }
     val boxSizePx = with(density) { 250.dp.toPx() }
     val boxCenter = Offset(boxSizePx / 2, boxSizePx / 2)
-    val minRadius = with(density) { 30.dp.toPx() }
 
-    fun getLetterAtArc(position: Offset): Int? {
+    fun getLetterAtArc(position: Offset): Int {
         val relative = position - boxCenter
 
         val angle = atan2(relative.y, relative.x)
@@ -725,9 +723,7 @@ fun LetterChooser(
                     detectDragGestures(
                         onDragStart = { startOffset ->
                             currentDragPosition = startOffset
-                            getLetterAtArc(startOffset)?.let { idx ->
-                                selectedLettersIndices = listOf(idx)
-                            }
+                            selectedLettersIndices = listOf(getLetterAtArc(startOffset))
                         },
                         onDrag = { change, _ ->
                             currentDragPosition = change.position

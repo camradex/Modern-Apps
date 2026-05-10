@@ -1,11 +1,10 @@
 package com.vayunmathur.maps.data
-import com.vayunmathur.maps.data.SpecificFeature
+import com.vayunmathur.maps.util.RouteService
 import org.maplibre.spatialk.geojson.Position
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
-import com.vayunmathur.maps.util.RouteService
 
 data class TransitRoute(val steps: List<Step>, override val duration: Duration = steps.fold(0.seconds) { a, b -> a + b.duration }, override val distanceMeters: Double = steps.sumOf { it.distanceMeters }): RouteService.RouteType {
     sealed interface Step {

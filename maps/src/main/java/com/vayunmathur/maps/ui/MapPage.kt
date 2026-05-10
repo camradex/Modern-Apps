@@ -51,24 +51,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.R
-import com.vayunmathur.maps.R as MapsR
 import com.vayunmathur.library.ui.IconClose
 import com.vayunmathur.library.ui.IconSettings
+import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.readLines
 import com.vayunmathur.maps.Route
-import com.vayunmathur.maps.util.RouteService
-import com.vayunmathur.maps.util.SelectedFeatureViewModel
-import com.vayunmathur.maps.util.ZoneDownloadManager
 import com.vayunmathur.maps.data.AmenityDatabase
 import com.vayunmathur.maps.data.SpecificFeature
 import com.vayunmathur.maps.data.parse
 import com.vayunmathur.maps.ensurePmtilesReady
-import com.vayunmathur.maps.ui.BottomSheetContent
-import com.vayunmathur.maps.ui.MyMapLayers
-import com.vayunmathur.maps.ui.drawUserIcon
-import com.vayunmathur.maps.ui.verticalShape
+import com.vayunmathur.maps.util.RouteService
+import com.vayunmathur.maps.util.SelectedFeatureViewModel
+import com.vayunmathur.maps.util.ZoneDownloadManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,6 +89,7 @@ import org.maplibre.spatialk.geojson.Position
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.io.File
+import com.vayunmathur.maps.R as MapsR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -256,7 +252,7 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
                     if(camera.projection != null) {
                         selectedFeature?.let { it as? SpecificFeature.RoutableFeature }?.let {
                             Icon(
-                                painterResource(com.vayunmathur.maps.R.drawable.location_on_24px),
+                                painterResource(R.drawable.location_on_24px),
                                 null,
                                 Modifier.size(48.dp).graphicsLayer {
                                     val offset =

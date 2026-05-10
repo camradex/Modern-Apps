@@ -2,19 +2,17 @@ package com.vayunmathur.games.chess.util
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vayunmathur.games.chess.R
+import com.vayunmathur.games.chess.data.Board
+import com.vayunmathur.games.chess.data.PieceColor
+import com.vayunmathur.games.chess.data.PieceType
+import com.vayunmathur.games.chess.data.Position
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.vayunmathur.games.chess.data.Board
-import com.vayunmathur.games.chess.data.Piece
-import com.vayunmathur.games.chess.data.PieceColor
-import com.vayunmathur.games.chess.data.PieceType
-import com.vayunmathur.games.chess.data.Position
-import com.vayunmathur.games.chess.data.Move
-import com.vayunmathur.games.chess.R
 
 sealed class GameMode {
     object TwoPlayer : GameMode()

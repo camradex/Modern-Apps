@@ -1,6 +1,7 @@
 package com.vayunmathur.maps.data
 
 import com.vayunmathur.maps.util.Wikidata
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -17,9 +18,9 @@ sealed interface SpecificFeature {
     }
 
     @Serializable
-    data class Admin0Label(val iso3166_1: String, val wikipedia: String, val name: String) : SpecificFeature
+    data class Admin0Label(@SerialName("iso3166_1") val iso: String, val wikipedia: String, val name: String) : SpecificFeature
     @Serializable
-    data class Admin1Label(val iso3166_2: String, val wikipedia: String, val name: String) : SpecificFeature
+    data class Admin1Label(@SerialName("iso3166_2") val iso: String, val wikipedia: String, val name: String) : SpecificFeature
     @Serializable
     data class Restaurant(override val name: String, val phone: String?, val website: String?, val menu: String?, val openingHours: OpeningHours?,
                           override val position: Position): RoutableFeature

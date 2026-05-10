@@ -69,7 +69,7 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
                                         createInvertedMask(
                                             CountryMap.getAdmin0(
                                                 context,
-                                                selectedFeature.iso3166_1
+                                                selectedFeature.iso
                                             )!!
                                         )
                                     )
@@ -98,7 +98,7 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
                                         createInvertedMask(
                                             CountryMap.getAdmin1(
                                                 context,
-                                                selectedFeature.iso3166_2
+                                                selectedFeature.iso
                                             )!!
                                         )
                                     )

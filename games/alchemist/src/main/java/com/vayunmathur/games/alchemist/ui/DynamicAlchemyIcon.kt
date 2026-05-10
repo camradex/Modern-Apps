@@ -1,5 +1,6 @@
 package com.vayunmathur.games.alchemist.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,27 +10,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.vayunmathur.games.alchemist.R
 
+@SuppressLint("DiscouragedApi")
 @Composable
 fun DynamicAlchemyIcon(iconId: Long, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     
     // 1. Construct the resource name string (e.g., "icon_001")
     val name = "icon_${iconId.toString().padStart(3, '0')}"
     
     // 2. Look up the internal Android resource ID
     val resId = remember(iconId) { 
-        val id = context.resources.getIdentifier(
+        val id = resources.getIdentifier(
             name,
             "drawable",
             context.packageName
         )
         if (id == 0) {
             // Fallback to explicit package name
-            context.resources.getIdentifier(
+            resources.getIdentifier(
                 name,
                 "drawable",
                 "com.vayunmathur.games.alchemist"

@@ -18,7 +18,7 @@ object DownloadManager {
     val activeDownloads: StateFlow<Map<Long, DownloadStatus>> = _activeDownloads.asStateFlow()
 
     fun enqueueDownload(context: Context, videoInfo: VideoInfo, videoUrl: String, audioUrl: String?) {
-        _activeDownloads.value = _activeDownloads.value + (videoInfo.videoID to DownloadStatus(videoInfo, 0.0))
+        _activeDownloads.value += videoInfo.videoID to DownloadStatus(videoInfo, 0.0)
         DownloadWorker.enqueue(context, videoInfo, videoUrl, audioUrl)
     }
 

@@ -22,7 +22,7 @@ dependencies {
 
     implementKtor(libs)
 
-    implementation("org.wololo:flatgeobuf:3.28.2")
+    implementation(libs.flatgeobuf)
 
     //reorderable
     implementation(libs.reorderable)

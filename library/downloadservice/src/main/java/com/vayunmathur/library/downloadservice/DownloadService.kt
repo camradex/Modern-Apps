@@ -19,6 +19,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 class DownloadService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -86,9 +87,7 @@ class DownloadService : Service() {
                         updateNotification(errorMsg)
                         ds.setString("error_$fileName", errorMsg)
 
-                        if (retryCount in 1..MAX_RETRIES) {
-                            delay(TimeUnit.SECONDS.toMillis(Math.pow(2.0, retryCount.toDouble()).toLong()))
-                        }
+                        delay(TimeUnit.SECONDS.toMillis(2.0.pow(retryCount.toDouble()).toLong()))
                     }
                 }
             }

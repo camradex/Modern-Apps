@@ -153,10 +153,8 @@ class InferenceService : Service() {
     private fun startForegroundTask() {
         val channelId = "inference_service"
         val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Inference Service", NotificationManager.IMPORTANCE_LOW)
-            manager?.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(channelId, "Inference Service", NotificationManager.IMPORTANCE_LOW)
+        manager?.createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("OpenAssistant")

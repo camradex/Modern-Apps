@@ -1,17 +1,12 @@
 package com.vayunmathur.maps.util
 import android.content.Context
-import android.util.Log
 import androidx.annotation.Keep
+import com.vayunmathur.maps.R
 import com.vayunmathur.maps.data.SpecificFeature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.maplibre.spatialk.geojson.Position
-import java.io.File
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
-import com.vayunmathur.maps.R
 
 object OfflineRouter {
     init {

@@ -35,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import androidx.core.net.toUri
+import androidx.core.graphics.createBitmap
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPersonalHealthRecordApi::class)
 @Composable
@@ -66,7 +68,8 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>) {
             text = { Text(stringResource(R.string.open_assistant_rationale)) },
             confirmButton = {
                 TextButton(onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/vayun-mathur/Modern-Apps"))
+                    val intent = Intent(Intent.ACTION_VIEW,
+                        "https://github.com/vayun-mathur/Modern-Apps".toUri())
                     context.startActivity(intent)
                     showInstallDialog = false
                 }) {
@@ -282,7 +285,7 @@ private fun convertPdfToImages(context: Context, uri: Uri): List<String> {
         val renderer = PdfRenderer(parcelFileDescriptor)
         for (i in 0 until renderer.pageCount) {
             val page = renderer.openPage(i)
-            val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(page.width, page.height)
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             val file = File(context.cacheDir, "pdf_page_$i.png")
             val out = FileOutputStream(file)

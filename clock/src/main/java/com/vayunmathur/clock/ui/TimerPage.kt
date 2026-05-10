@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,14 +25,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -48,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -167,7 +163,7 @@ fun TimerKeypadContent(
             Spacer(Modifier.width(8.dp))
             TimeUnitDisplay(m, "m", input.length >= 3)
             Spacer(Modifier.width(8.dp))
-            TimeUnitDisplay(s, "s", input.length >= 1)
+            TimeUnitDisplay(s, "s", input.isNotEmpty())
         }
 
         // Keypad
@@ -243,7 +239,7 @@ fun TimeUnitDisplay(value: String, unit: String, active: Boolean) {
 }
 
 @Composable
-fun ColumnScope.KeypadRow(k1: String, k2: String, k3: String, onClick: (String) -> Unit) {
+fun KeypadRow(k1: String, k2: String, k3: String, onClick: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         KeypadButton(k1, Modifier.weight(1f), onClick)
         KeypadButton(k2, Modifier.weight(1f), onClick)

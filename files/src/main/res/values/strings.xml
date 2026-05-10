@@ -7,7 +7,7 @@
     <string name="grant_all_files_access">Grant All Files Access</string>
     <string name="archive_selection">Archive Selection</string>
     <string name="zip_file_name_label">Zip file name</string>
-    <string name="archiving_started">Archiving started...</string>
+    <string name="archiving_started">Archiving started…</string>
     <string name="archive">Archive</string>
     <string name="cancel">Cancel</string>
     <string name="unzipping_started_to">Unzipping started to %1$s</string>
@@ -17,8 +17,8 @@
     <string name="zip_browse_only">Viewing files inside zip is limited to browsing</string>
     <string name="file_fallback">File</string>
     <string name="unzip_channel_name">Unzip Operations</string>
-    <string name="unzipping">Unzipping...</string>
+    <string name="unzipping">Unzipping…</string>
     <string name="zip_channel_name">Zip Operations</string>
-    <string name="archiving">Archiving...</string>
+    <string name="archiving">Archiving…</string>
     <string name="files_saved">Files saved successfully</string>
 </resources>

@@ -359,7 +359,6 @@ suspend fun runOCR(photos: List<Photo>, database: PhotoDatabase, context: Contex
     if (ps.isEmpty()) return@coroutineScope
 
     val ocrManager = OCRManager(context)
-    ocrManager.init()
 
     ps.forEach { photo ->
         ensureActive()
@@ -383,5 +382,4 @@ suspend fun runOCR(photos: List<Photo>, database: PhotoDatabase, context: Contex
             Log.e("SyncWorker", "Error running OCR for photo ${photo.id}", e)
         }
     }
-    ocrManager.release()
 }

@@ -41,7 +41,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.room.migration.Migration
 import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.findfamily.R
 import com.vayunmathur.findfamily.data.FFDatabase
 import com.vayunmathur.findfamily.data.LocationValue
 import com.vayunmathur.findfamily.data.TemporaryLink
@@ -50,7 +49,6 @@ import com.vayunmathur.findfamily.data.Waypoint
 import com.vayunmathur.findfamily.ui.MainPage
 import com.vayunmathur.findfamily.ui.dialogs.AddLinkDialog
 import com.vayunmathur.findfamily.ui.dialogs.AddPersonDialog
-import com.vayunmathur.findfamily.ui.SettingsPage
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.dialog.DatePickerDialog
 import com.vayunmathur.library.util.DatabaseViewModel
@@ -251,9 +249,6 @@ sealed interface Route: NavKey {
 
     @Serializable
     data object MissingFeaturesDialog: Route
-
-    @Serializable
-    data object Settings: Route
 }
 
 @Composable
@@ -282,9 +277,6 @@ fun Navigation(platform: Platform, viewModel: DatabaseViewModel, showMissingFeat
         }
         entry<Route.MissingFeaturesDialog>(metadata = DialogPage()) {
             MissingFeaturesDialog(backStack)
-        }
-        entry<Route.Settings> {
-            SettingsPage(backStack, viewModel)
         }
     }
 }

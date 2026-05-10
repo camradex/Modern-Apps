@@ -14,8 +14,8 @@ dependencies {
 
     // room
     implementRoom(libs)
-    api("net.zetetic:sqlcipher-android:4.14.1")
-    implementation("androidx.sqlite:sqlite:2.6.2")
+    api(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
 
     // datastore
     implementation(libs.androidx.datastore.preferences)

@@ -1,7 +1,6 @@
 package com.vayunmathur.games.wordmaker.data
 
 import android.content.Context
-import java.io.File
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit

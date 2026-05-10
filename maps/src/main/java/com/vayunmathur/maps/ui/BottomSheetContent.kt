@@ -10,9 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -27,12 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.vayunmathur.maps.R
 import androidx.core.graphics.toColorInt
 import com.vayunmathur.library.util.round
-import com.vayunmathur.maps.util.RouteService
-import com.vayunmathur.maps.data.TransitRoute
+import com.vayunmathur.maps.R
 import com.vayunmathur.maps.data.SpecificFeature
+import com.vayunmathur.maps.data.TransitRoute
+import com.vayunmathur.maps.util.RouteService
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.format
@@ -82,7 +80,7 @@ fun BottomSheetContent(selectedFeature: SpecificFeature?, setSelectedFeature: (S
             if(route != null) {
                 Column {
                     PrimaryTabRow(route.entries.indexOfFirst { it.key == selectedRouteType }) {
-                        route.entries.forEach { it ->
+                        route.entries.forEach {
                             Tab(
                                 selectedRouteType == it.key,
                                 { setSelectedRouteType(it.key) }) {
@@ -105,131 +103,141 @@ fun BottomSheetContent(selectedFeature: SpecificFeature?, setSelectedFeature: (S
                             Spacer(Modifier.height(8.dp))
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            if (route is TransitRoute) {
-                                val timeFormat = LocalTime.Format {
-                                    amPmHour(Padding.NONE)
-                                    chars(":")
-                                    minute()
-                                    amPmMarker(" AM", " PM")
-                                }
-                                item {
-                                    Card(shape = verticalShape(0, 2)) {
-                                        ListItem({
-                                            val origin = selectedFeature.waypoints.first()?.name
-                                                ?: stringResource(R.string.your_location)
-                                            Text(origin)
-                                        }, trailingContent = {
-                                            Text(
-                                                route.startTime()
-                                                    .toLocalDateTime(TimeZone.currentSystemDefault()).time.format(
-                                                    timeFormat
-                                                )
-                                            )
-                                        })
+                            when (route) {
+                                is TransitRoute -> {
+                                    val timeFormat = LocalTime.Format {
+                                        amPmHour(Padding.NONE)
+                                        chars(":")
+                                        minute()
+                                        amPmMarker(" AM", " PM")
                                     }
-                                }
-                                itemsIndexed(route.steps) { idx, it ->
-                                    Card {
-                                        when (it) {
-                                            is TransitRoute.Step.WalkStep -> {
-                                                ListItem({
-                                                    Text(
-                                                        stringResource(R.string.walk_duration_distance, it.duration, (it.distanceMeters / 1000).round(1))
-                                                    )
-                                                })
-                                            }
-
-                                            is TransitRoute.Step.TransitStep -> {
-                                                if (idx > 0 && route.steps[idx - 1] is TransitRoute.Step.TransitStep) {
-                                                    val prev =
-                                                        route.steps[idx - 1] as TransitRoute.Step.TransitStep
-                                                    if (prev.arrivalStation == it.departureStation) {
-                                                        ListItem({
-                                                            Text(stringResource(R.string.transfer))
-                                                        })
-                                                    }
+                                    item {
+                                        Card(shape = verticalShape(0, 2)) {
+                                            ListItem({
+                                                val origin = selectedFeature.waypoints.first()?.name
+                                                    ?: stringResource(R.string.your_location)
+                                                Text(origin)
+                                            }, trailingContent = {
+                                                Text(
+                                                    route.startTime()
+                                                        .toLocalDateTime(TimeZone.currentSystemDefault()).time.format(
+                                                            timeFormat
+                                                        )
+                                                )
+                                            })
+                                        }
+                                    }
+                                    itemsIndexed(route.steps) { idx, it ->
+                                        Card {
+                                            when (it) {
+                                                is TransitRoute.Step.WalkStep -> {
+                                                    ListItem({
+                                                        Text(
+                                                            stringResource(
+                                                                R.string.walk_duration_distance,
+                                                                it.duration,
+                                                                (it.distanceMeters / 1000).round(1)
+                                                            )
+                                                        )
+                                                    })
                                                 }
-                                                Row(Modifier.height(IntrinsicSize.Min)) {
-                                                    Surface(
-                                                        Modifier.fillMaxHeight().width(10.dp),
-                                                        RoundedCornerShape(12.dp),
-                                                        color = Color(it.lineColor.toColorInt())
-                                                    ) {}
-                                                    Column {
-                                                        ListItem({
-                                                            Text(it.departureStation)
-                                                        })
-                                                        ListItem({
-                                                            Surface(
-                                                                Modifier,
-                                                                RoundedCornerShape(12.dp),
-                                                                Color(it.lineColor.toColorInt())
-                                                            ) {
-                                                                Text(
-                                                                    it.lineName,
-                                                                    Modifier.padding(
-                                                                        horizontal = 12.dp,
-                                                                        vertical = 2.dp
+
+                                                is TransitRoute.Step.TransitStep -> {
+                                                    if (idx > 0 && route.steps[idx - 1] is TransitRoute.Step.TransitStep) {
+                                                        val prev =
+                                                            route.steps[idx - 1] as TransitRoute.Step.TransitStep
+                                                        if (prev.arrivalStation == it.departureStation) {
+                                                            ListItem({
+                                                                Text(stringResource(R.string.transfer))
+                                                            })
+                                                        }
+                                                    }
+                                                    Row(Modifier.height(IntrinsicSize.Min)) {
+                                                        Surface(
+                                                            Modifier.fillMaxHeight().width(10.dp),
+                                                            RoundedCornerShape(12.dp),
+                                                            color = Color(it.lineColor.toColorInt())
+                                                        ) {}
+                                                        Column {
+                                                            ListItem({
+                                                                Text(it.departureStation)
+                                                            })
+                                                            ListItem({
+                                                                Surface(
+                                                                    Modifier,
+                                                                    RoundedCornerShape(12.dp),
+                                                                    Color(it.lineColor.toColorInt())
+                                                                ) {
+                                                                    Text(
+                                                                        it.lineName,
+                                                                        Modifier.padding(
+                                                                            horizontal = 12.dp,
+                                                                            vertical = 2.dp
+                                                                        )
                                                                     )
+                                                                }
+                                                            }, supportingContent = {
+                                                                Text(it.lineDirection)
+                                                            }, trailingContent = {
+                                                                Text(
+                                                                    it.departureTime.toLocalDateTime(
+                                                                        TimeZone.currentSystemDefault()
+                                                                    ).time.format(timeFormat)
                                                                 )
-                                                            }
-                                                        }, supportingContent = {
-                                                            Text(it.lineDirection)
-                                                        }, trailingContent = {
-                                                            Text(
-                                                                it.departureTime.toLocalDateTime(
-                                                                    TimeZone.currentSystemDefault()
-                                                                ).time.format(timeFormat)
-                                                            )
-                                                        })
-                                                        ListItem({
-                                                            Text(it.arrivalStation)
-                                                        }, trailingContent = {
-                                                            Text(
-                                                                it.arrivalTime.toLocalDateTime(
-                                                                    TimeZone.currentSystemDefault()
-                                                                ).time.format(timeFormat)
-                                                            )
-                                                        })
+                                                            })
+                                                            ListItem({
+                                                                Text(it.arrivalStation)
+                                                            }, trailingContent = {
+                                                                Text(
+                                                                    it.arrivalTime.toLocalDateTime(
+                                                                        TimeZone.currentSystemDefault()
+                                                                    ).time.format(timeFormat)
+                                                                )
+                                                            })
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                }
-                                item {
-                                    Card(shape = verticalShape(1, 2)) {
-                                        ListItem({
-                                            val origin = selectedFeature.waypoints.last()?.name
-                                                ?: stringResource(R.string.your_location)
-                                            Text(origin)
-                                        }, trailingContent = {
-                                            Text(
-                                                route.endTime()
-                                                    .toLocalDateTime(TimeZone.currentSystemDefault()).time.format(
-                                                        timeFormat
-                                                    )
-                                            )
-                                        })
+                                    item {
+                                        Card(shape = verticalShape(1, 2)) {
+                                            ListItem({
+                                                val origin = selectedFeature.waypoints.last()?.name
+                                                    ?: stringResource(R.string.your_location)
+                                                Text(origin)
+                                            }, trailingContent = {
+                                                Text(
+                                                    route.endTime()
+                                                        .toLocalDateTime(TimeZone.currentSystemDefault()).time.format(
+                                                            timeFormat
+                                                        )
+                                                )
+                                            })
+                                        }
                                     }
                                 }
-                            } else if (route is RouteService.Route) {
-                                itemsIndexed(route.step) { idx, it ->
-                                    Card(shape = verticalShape(idx, route.step.size)) {
-                                        ListItem({
-                                            Text(it.navInstruction.instructions)
-                                        }, leadingContent = {
-                                            it.navInstruction.maneuver.icon()?.let {
-                                                Icon(painterResource(it), null)
-                                            }
-                                        })
+
+                                is RouteService.Route -> {
+                                    itemsIndexed(route.step) { idx, it ->
+                                        Card(shape = verticalShape(idx, route.step.size)) {
+                                            ListItem({
+                                                Text(it.navInstruction.instructions)
+                                            }, leadingContent = {
+                                                it.navInstruction.maneuver.icon()?.let {
+                                                    Icon(painterResource(it), null)
+                                                }
+                                            })
+                                        }
                                     }
                                 }
-                            } else if(route is RouteService.EmptyRoute) {
-                                item {
-                                    ListItem({
-                                        Text(stringResource(R.string.no_route_found))
-                                    })
+
+                                is RouteService.EmptyRoute -> {
+                                    item {
+                                        ListItem({
+                                            Text(stringResource(R.string.no_route_found))
+                                        })
+                                    }
                                 }
                             }
                         }

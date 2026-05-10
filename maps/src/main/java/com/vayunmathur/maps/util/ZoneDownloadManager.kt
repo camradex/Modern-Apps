@@ -138,10 +138,6 @@ class ZoneDownloadManager(private val context: Context) {
         .flowOn(Dispatchers.IO) // Run the disk/DB checks on a background thread
 
     fun getDownloadedZones(): List<Int> {
-        val filesDir = context.getExternalFilesDir(null) ?: return emptyList()
-
-        // We scan the grid 0-63. This is faster than a full regex file list scan
-        // and ensures we only return valid zone IDs.
         return (0..63).filter { zoneId ->
             getZoneStatus(zoneId) == ZoneStatus.FINISHED
         }

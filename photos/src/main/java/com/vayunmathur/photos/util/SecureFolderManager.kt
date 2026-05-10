@@ -45,7 +45,7 @@ class SecureFolderManager(val context: Context) {
         return cipher
     }
 
-    fun encryptAndMove(uri: Uri, name: String, password: String, isVideo: Boolean): Pair<String, String> {
+    fun encryptAndMove(uri: Uri, name: String, password: String): Pair<String, String> {
         val key = getSecretKey(password)
         val timestamp = System.currentTimeMillis()
         val fileName = "${timestamp}_${name}.enc"

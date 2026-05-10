@@ -183,11 +183,6 @@ fun PasswordDialog(
 }
 
 fun isAdvancedPdfSupported(): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-        true
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM ||
         SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) >= 13
-    } else {
-        false
-    }
 }

@@ -9,23 +9,22 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.downloadservice.InitialDownloadChecker
+import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.PermissionsChecker
 import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.MainNavigation
+import com.vayunmathur.library.util.NavKey
 import com.vayunmathur.library.util.rememberNavBackStack
 import com.vayunmathur.maps.data.AmenityDatabase
 import com.vayunmathur.maps.data.buildAmenityDatabase
-import com.vayunmathur.maps.R
 import com.vayunmathur.maps.ui.DownloadedMapsPage
 import com.vayunmathur.maps.ui.MapPage
 import com.vayunmathur.maps.ui.SearchPage
-import org.maplibre.android.log.Logger
-import java.io.File
 import com.vayunmathur.maps.util.SelectedFeatureViewModel
 import kotlinx.serialization.Serializable
+import org.maplibre.android.log.Logger
+import java.io.File
 
 fun ensurePmtilesReady(context: Context): String {
     val fileName = "world_z0-6.pmtiles"

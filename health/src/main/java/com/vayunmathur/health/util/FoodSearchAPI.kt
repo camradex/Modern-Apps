@@ -9,6 +9,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -25,7 +26,7 @@ object FoodSearchAPI {
                 }
             }
 
-    @Serializable data class SearchResult(val id: Long, val display_name: String)
+    @Serializable data class SearchResult(val id: Long, @SerialName("display_name") val displayName: String)
 
     suspend fun searchIngredients(query: String): List<SearchResult> {
         return try {

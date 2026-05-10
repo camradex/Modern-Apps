@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlaylistScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val scope = rememberCoroutineScope()
 
@@ -68,7 +70,7 @@ fun PlaylistScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel)
             }, sortOrder = Comparator.comparing { it.name }, otherActions = {
                 IconButton(onClick = {
                     scope.launch {
-                        viewModel.upsert(Playlist(name = context.getString(R.string.new_playlist)))
+                        viewModel.upsert(Playlist(name = resources.getString(R.string.new_playlist)))
                     }
                 }) {
                     IconAdd()
