@@ -9,6 +9,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextIndent
@@ -43,7 +44,7 @@ fun parseMarkdown(
 
                 val trimmed = line.trimStart()
                 val listMatch = if (process) Regex("^(\\s*)([•*+-]|\\d+[.)])(\\s+.*)").matchEntire(line) else null
-                val isCurrentSpecial = process && (trimmed.startsWith("#") || trimmed.startsWith(">") || listMatch != null)
+                val isCurrentSpecial = process && (trimmed.startsWith("#") || trimmed.startsWith(">") || trimmed.startsWith("$$") || listMatch != null)
 
                 if (isCurrentSpecial) {
                     if (listMatch != null) {
@@ -64,7 +65,7 @@ fun parseMarkdown(
                             val nextLine = lines[i + 1]
                             val nextTrimmed = nextLine.trimStart()
                             val nextListMatch = if (process) Regex("^(\\s*)([•*+-]|\\d+[.)])(\\s+.*)").matchEntire(nextLine) else null
-                            val isNextSpecial = process && (nextTrimmed.startsWith("#") || nextTrimmed.startsWith(">") || nextListMatch != null)
+                            val isNextSpecial = process && (nextTrimmed.startsWith("#") || nextTrimmed.startsWith(">") || nextTrimmed.startsWith("$$") || nextListMatch != null)
 
                             if (isNextSpecial) break
 
@@ -84,8 +85,23 @@ fun parseMarkdown(
         mdtext
     }
 
+    // 2. Math content formatting if markers are hidden
+    val finalText = if (!showMarkers) {
+        // Block Math $$ ... $$
+        Regex("""\$\$(.*?)\$\$""", RegexOption.DOT_MATCHES_ALL).replace(processedText) {
+            "$$" + formatMathContent(it.groupValues[1]) + "$$"
+        }.let { text ->
+            // Inline Math $ ... $
+            Regex("""(?<![$\\])\$([^\s$](?:[^$]*[^\s$])?)\$(?!$)""").replace(text) {
+                "$" + formatMathContent(it.groupValues[1]) + "$"
+            }
+        }
+    } else {
+        processedText
+    }
+
     return buildAnnotatedString {
-        append(processedText)
+        append(finalText)
 
         // Helper to hide formatting markers
         fun hideRange(start: Int, end: Int) {
@@ -104,7 +120,7 @@ fun parseMarkdown(
 
         // 1. Headers
         val headerRegex = Regex("(?m)^(#{1,6} )(.*(?:\\R|$))")
-        headerRegex.findAll(processedText).forEach { match ->
+        headerRegex.findAll(finalText).forEach { match ->
             val start = match.range.first
             val end = match.range.last + 1
             val markers = match.groups[1]!!
@@ -128,7 +144,7 @@ fun parseMarkdown(
 
         // 2. Lists
         val listRegex = Regex("(?m)^(\\s*)([•*+-]|\\d+[.)])\\s+(?:\\[([ xX])]\\s+)?(.*(?:\\R|$))")
-        listRegex.findAll(processedText).forEach { match ->
+        listRegex.findAll(finalText).forEach { match ->
             val start = match.range.first
             val end = match.range.last + 1
             val indentation = match.groups[1]!!.value
@@ -139,8 +155,8 @@ fun parseMarkdown(
             if (!showMarkers) {
                 hideRange(match.groups[1]!!.range.first, match.groups[1]!!.range.last + 1)
                 if (taskStatus != null) {
-                    val taskMarkerStart = processedText.indexOf('[', start)
-                    val taskMarkerEnd = processedText.indexOf(']', taskMarkerStart) + 1
+                    val taskMarkerStart = finalText.indexOf('[', start)
+                    val taskMarkerEnd = finalText.indexOf(']', taskMarkerStart) + 1
                     hideRange(taskMarkerStart, taskMarkerEnd)
                 }
             }
@@ -175,10 +191,72 @@ fun parseMarkdown(
             }
         }
 
-        // 3. Inline Formatting (Post-processing)
+        // 3. Math Formulas
+
+        // Block Math $$ ... $$
+        Regex("""\$\$(.*?)\$\$""", RegexOption.DOT_MATCHES_ALL).findAll(finalText).forEach { match ->
+            val start = match.range.first
+            val end = match.range.last + 1
+            hideRange(start, start + 2)
+            hideRange(end - 2, end)
+
+            addStyle(
+                SpanStyle(fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic),
+                start,
+                end
+            )
+            if (process) {
+                addStyle(
+                    ParagraphStyle(textAlign = TextAlign.Center),
+                    start,
+                    end
+                )
+            }
+        }
+
+        // Inline Math $ ... $
+        Regex("""(?<![$\\])\$([^\s$](?:[^$]*[^\s$])?)\$(?!$)""").findAll(finalText).forEach { match ->
+            val start = match.range.first
+            val end = match.range.last + 1
+            hideRange(start, start + 1)
+            hideRange(end - 1, end)
+
+            addStyle(
+                SpanStyle(fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic),
+                start,
+                end
+            )
+        }
+
+        // 4. LaTeX Specific Formatting (\cancel, \mathbf, etc.)
+        val latexFormatRegex = Regex("""\\(cancel|mathbf|mathrm|underline|mathtt|mathsf|mathit)\{((?:[^{}]|\{[^{}]*\})*)\}""")
+        latexFormatRegex.findAll(finalText).forEach { match ->
+            val start = match.range.first
+            val end = match.range.last + 1
+            val cmd = match.groups[1]!!.value
+            val contentStart = match.groups[2]!!.range.first
+            val contentEnd = match.groups[2]!!.range.last + 1
+
+            hideRange(start, contentStart)
+            hideRange(contentEnd, end)
+
+            val style = when (cmd) {
+                "cancel" -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+                "mathbf" -> SpanStyle(fontWeight = FontWeight.Bold)
+                "mathrm" -> SpanStyle(fontStyle = FontStyle.Normal)
+                "underline" -> SpanStyle(textDecoration = TextDecoration.Underline)
+                "mathtt" -> SpanStyle(fontFamily = FontFamily.Monospace)
+                "mathsf" -> SpanStyle(fontFamily = FontFamily.SansSerif)
+                "mathit" -> SpanStyle(fontStyle = FontStyle.Italic)
+                else -> null
+            }
+            if (style != null) addStyle(style, contentStart, contentEnd)
+        }
+
+        // 5. Inline Formatting (Post-processing)
         
         // Bold
-        Regex("(\\*\\*|__)(.*?)\\1").findAll(processedText).forEach { match ->
+        Regex("(\\*\\*|__)(.*?)\\1").findAll(finalText).forEach { match ->
             val m = match.groups[1]!!.value
             hideRange(match.range.first, match.range.first + m.length)
             hideRange(match.range.last + 1 - m.length, match.range.last + 1)
@@ -186,14 +264,14 @@ fun parseMarkdown(
         }
 
         // Italic
-        Regex("(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)|(?<!_)_(?!_)(.*?)(?<!_)_(?!_)").findAll(processedText).forEach { match ->
+        Regex("(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)|(?<!_)_(?!_)(.*?)(?<!_)_(?!_)").findAll(finalText).forEach { match ->
             hideRange(match.range.first, match.range.first + 1)
             hideRange(match.range.last, match.range.last + 1)
             addStyle(SpanStyle(fontStyle = FontStyle.Italic), match.range.first, match.range.last + 1)
         }
 
         // Code
-        Regex("`(.+?)`").findAll(processedText).forEach { match ->
+        Regex("`(.+?)`").findAll(finalText).forEach { match ->
             hideRange(match.range.first, match.range.first + 1)
             hideRange(match.range.last, match.range.last + 1)
             addStyle(
@@ -204,17 +282,102 @@ fun parseMarkdown(
         }
 
         // Strikethrough
-        Regex("~~(.+?)~~").findAll(processedText).forEach { match ->
+        Regex("~~(.+?)~~").findAll(finalText).forEach { match ->
             hideRange(match.range.first, match.range.first + 2)
             hideRange(match.range.last - 1, match.range.last + 1)
             addStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), match.range.first, match.range.last + 1)
         }
 
         // Blockquotes
-        Regex("(?m)^>\\s").findAll(processedText).forEach { match ->
+        Regex("(?m)^>\\s").findAll(finalText).forEach { match ->
             hideRange(match.range.first, match.range.last + 1)
-            val lineEnd = processedText.indexOf('\n', match.range.first).let { if (it == -1) processedText.length else it }
+            val lineEnd = finalText.indexOf('\n', match.range.first).let { if (it == -1) finalText.length else it }
             addStyle(SpanStyle(color = Color.Gray, fontStyle = FontStyle.Italic), match.range.first, lineEnd)
         }
     }
+}
+
+private val latexCommands = mapOf(
+    // Greek letters (Lowercase)
+    "\\alpha" to "α", "\\beta" to "β", "\\gamma" to "γ", "\\delta" to "δ",
+    "\\epsilon" to "ε", "\\zeta" to "ζ", "\\eta" to "η", "\\theta" to "θ",
+    "\\iota" to "ι", "\\kappa" to "κ", "\\lambda" to "λ", "\\mu" to "μ",
+    "\\nu" to "ν", "\\xi" to "ξ", "\\omicron" to "ο", "\\pi" to "π",
+    "\\rho" to "ρ", "\\sigma" to "σ", "\\tau" to "τ", "\\upsilon" to "υ",
+    "\\phi" to "φ", "\\chi" to "χ", "\\psi" to "ψ", "\\omega" to "ω",
+    "\\varepsilon" to "ε", "\\vartheta" to "ϑ", "\\varpi" to "ϖ",
+    "\\varrho" to "ϱ", "\\varsigma" to "ς", "\\varphi" to "ϕ",
+
+    // Greek letters (Uppercase)
+    "\\Alpha" to "Α", "\\Beta" to "Β", "\\Gamma" to "Γ", "\\Delta" to "Δ",
+    "\\Epsilon" to "Ε", "\\Zeta" to "Ζ", "\\Eta" to "Η", "\\Theta" to "Θ",
+    "\\Iota" to "Ι", "\\Kappa" to "Κ", "\\Lambda" to "Λ", "\\Mu" to "Μ",
+    "\\Nu" to "Ν", "\\Xi" to "Ξ", "\\Omicron" to "Ο", "\\Pi" to "Π",
+    "\\Rho" to "Ρ", "\\Sigma" to "Σ", "\\Tau" to "Τ", "\\Upsilon" to "Υ",
+    "\\Phi" to "Φ", "\\Chi" to "Χ", "\\Psi" to "Ψ", "\\Omega" to "Ω",
+
+    // Operators
+    "\\times" to "×", "\\cdot" to "·", "\\div" to "÷", "\\pm" to "±", "\\mp" to "∓",
+    "\\oplus" to "⊕", "\\ominus" to "⊖", "\\otimes" to "⊗", "\\oslash" to "⊘",
+    "\\odot" to "⊙", "\\bullet" to "•", "\\ast" to "∗", "\\star" to "★",
+    "\\circ" to "∘", "\\dagger" to "†", "\\ddagger" to "‡",
+
+    // Relations
+    "\\leq" to "≤", "\\le" to "≤", "\\geq" to "≥", "\\ge" to "≥",
+    "\\neq" to "≠", "\\ne" to "≠", "\\approx" to "≈", "\\cong" to "≅",
+    "\\equiv" to "≡", "\\sim" to "∼", "\\propto" to "∝", "\\perp" to "⊥",
+    "\\parallel" to "∥", "\\subset" to "⊂", "\\subseteq" to "⊆",
+    "\\supset" to "⊃", "\\supseteq" to "⊇", "\\in" to "∈", "\\notin" to "∉",
+    "\\ni" to "∋", "\\forall" to "∀", "\\exists" to "∃", "\\neg" to "¬",
+    "\\approxeq" to "approx", "\\mid" to "∣", "\\cap" to "∩", "\\cup" to "∪",
+
+    // Logic & Arrows
+    "\\to" to "→", "\\rightarrow" to "→", "\\leftarrow" to "←",
+    "\\Rightarrow" to "⇒", "\\Leftarrow" to "⇐", "\\iff" to "⇔",
+    "\\leftrightarrow" to "↔", "\\uparrow" to "↑", "\\downarrow" to "↓",
+    "\\mapsto" to "↦", "\\implies" to "⟹",
+
+    // Functions
+    "\\sin" to "sin", "\\cos" to "cos", "\\tan" to "tan",
+    "\\cot" to "cot", "\\sec" to "sec", "\\csc" to "csc",
+    "\\arcsin" to "arcsin", "\\arccos" to "arccos", "\\arctan" to "arctan",
+    "\\log" to "log", "\\ln" to "ln", "\\exp" to "exp",
+    "\\lim" to "lim", "\\max" to "max", "\\min" to "min",
+    "\\sup" to "sup", "\\inf" to "inf", "\\det" to "det",
+    "\\ker" to "ker", "\\deg" to "deg", "\\gcd" to "gcd",
+
+    // Delimiters
+    "\\langle" to "⟨", "\\rangle" to "⟩", "\\lceil" to "⌈", "\\rceil" to "⌉",
+    "\\lfloor" to "⌊", "\\rfloor" to "⌋",
+
+    // Others
+    "\\infty" to "∞", "\\partial" to "∂", "\\nabla" to "∇",
+    "\\triangle" to "△", "\\angle" to "∠", "\\dots" to "...",
+    "\\cdots" to "...", "\\vdots" to "⋮", "\\ddots" to "⋱",
+    "\\quad" to "  ", "\\qquad" to "    ", "\\," to " ", "\\;" to " ",
+    "\\!" to "", "\\sum" to "∑", "\\int" to "∫", "\\prod" to "∏",
+    "\\degree" to "°", "\\{" to "{", "\\}" to "}", "\\\\" to "\n",
+)
+
+private fun formatMathContent(content: String): String {
+    var result = content
+
+    // 1. Strip \left and \right
+    result = result.replace("\\left", "").replace("\\right", "")
+
+    // 2. Handle \frac{a}{b} -> ((a)/(b))
+    repeat(3) {
+        result = result.replace(Regex("""\\frac\{((?:[^{}]|\{[^{}]*\})*)\}\{((?:[^{}]|\{[^{}]*\})*)\}"""), "(($1)/($2))")
+    }
+
+    // 3. Handle \sqrt[n]{a} or \sqrt{a}
+    result = result.replace(Regex("""\\sqrt\[([^]]*)\]\{([^}]*)\}"""), "($2)^(1/$1)")
+    result = result.replace(Regex("""\\sqrt\{([^}]*)\}"""), "√($1)")
+
+    // 4. Replace known commands (Longer commands first to avoid partial matches)
+    latexCommands.entries.sortedByDescending { it.key.length }.forEach { (cmd, replacement) ->
+        result = result.replace(cmd, replacement)
+    }
+
+    return result
 }
