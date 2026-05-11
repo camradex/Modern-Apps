@@ -21,6 +21,7 @@ object OfflineRouter {
     private external fun init(basePath: String): Boolean
     private external fun findRouteNative(sLat: Double, sLon: Double, eLat: Double, eLon: Double, mode: Int): Array<RawStep>
     private external fun updateTrafficNative(zoneId: Int, edgeIds: IntArray, speeds: ByteArray)
+    private external fun ensureTrafficLoadedNative(lat: Double, lon: Double)
 
     private val trafficScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
 
@@ -52,7 +53,8 @@ object OfflineRouter {
         val roadName: String,
         val distanceMm: Long,
         val duration10ms: Long,
-        val geometry: DoubleArray
+        val geometry: DoubleArray,
+        val speedRatio: Double
     )
 
     private var isInitialized = false
@@ -118,7 +120,8 @@ object OfflineRouter {
                 staticDuration = (raw.duration10ms / 100.0).seconds,
                 polyline = positions,
                 navInstruction = RouteService.API.NavInstruction(maneuver, instructionText),
-                travelMode = mode
+                travelMode = mode,
+                speedRatio = raw.speedRatio
             )
         }
 

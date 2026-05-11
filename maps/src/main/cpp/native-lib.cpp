@@ -171,9 +171,7 @@ inline uint32_t accurate_dist_mm(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_
 inline uint32_t get_edge_time_10ms(int zone_id, uint32_t local_edge_id, uint32_t dist_mm, uint8_t type, uint8_t limit, int mode) {
     if (mode == DRIVING) {
         uint8_t traffic_speed = 0;
-        if (zone_id >= 0 && zone_id < NUM_ZONES) {
-            traffic_speed = g_traffic_zones[zone_id].get_speed(local_edge_id);
-        }
+        if (zone_id >= 0 && zone_id < NUM_ZONES) traffic_speed = g_traffic_zones[zone_id].get_speed(local_edge_id);
         uint8_t effective_limit = (traffic_speed > 0) ? traffic_speed : limit;
         if (effective_limit > 0) {
             double speed_m_s = (double)effective_limit / 3.6;
@@ -344,6 +342,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
     struct StepData {
         uint32_t name_off; uint64_t dist_mm = 0; uint64_t time_10ms = 0;
         std::vector<double> coords; int maneuver = 0;
+        double speed_ratio = 1.0;
     };
     std::vector<StepData> steps; double last_bearing = 0;
     int total_edges = 0;
@@ -369,16 +368,26 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         }
 
         total_edges++;
-        if (resolved_edge_idx != 0xFFFFFFFF && g_traffic_zones[z_u].get_speed(resolved_edge_idx) > 0) {
-            traffic_edges++;
-        }
+        uint8_t traffic_speed = 0;
+        if (resolved_edge_idx != 0xFFFFFFFF) traffic_speed = g_traffic_zones[z_u].get_speed(resolved_edge_idx);
+        if (traffic_speed > 0) traffic_edges++;
+
+        double ratio = 1.0;
+        if (traffic_speed > 0 && edge_limit > 0) ratio = (double)traffic_speed / edge_limit;
 
         if (edge_dist_mm == 0) edge_dist_mm = accurate_dist_mm(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
         uint32_t edge_time_10ms = get_edge_time_10ms(z_u, resolved_edge_idx, edge_dist_mm, edge_type, edge_limit, mode);
         double current_bearing = get_bearing(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
-        if (steps.empty() || current_name_off != steps.back().name_off) {
+
+        auto get_ratio_cat = [](double r) {
+            if (r < 0.5) return 0;
+            if (r < 0.9) return 1;
+            return 2;
+        };
+
+        if (steps.empty() || current_name_off != steps.back().name_off || get_ratio_cat(ratio) != get_ratio_cat(steps.back().speed_ratio)) {
             int maneuver = steps.empty() ? 0 : get_maneuver(last_bearing, current_bearing);
-            steps.push_back({current_name_off, 0, 0, {}, maneuver});
+            steps.push_back({current_name_off, 0, 0, {}, maneuver, ratio});
             steps.back().coords.push_back(node_u.lon_e7 / 1e7); steps.back().coords.push_back(node_u.lat_e7 / 1e7);
         }
         steps.back().dist_mm += edge_dist_mm; steps.back().time_10ms += edge_time_10ms;
@@ -392,13 +401,13 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
     }
 
     jclass stepClass = env->FindClass("com/vayunmathur/maps/util/OfflineRouter$RawStep");
-    jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[D)V");
+    jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[DD)V");
     jobjectArray res = env->NewObjectArray(steps.size(), stepClass, nullptr);
     for (size_t i = 0; i < steps.size(); ++i) {
         const char* name_ptr = (steps[i].name_off < g_road_names_size) ? (g_road_names + steps[i].name_off) : "Unknown Road";
         jstring jName = env->NewStringUTF(name_ptr); jdoubleArray jGeom = env->NewDoubleArray(steps[i].coords.size());
         env->SetDoubleArrayRegion(jGeom, 0, steps[i].coords.size(), steps[i].coords.data());
-        jobject stepObj = env->NewObject(stepClass, stepCtor, (jint)steps[i].maneuver, jName, (jlong)steps[i].dist_mm, (jlong)steps[i].time_10ms, jGeom);
+        jobject stepObj = env->NewObject(stepClass, stepCtor, (jint)steps[i].maneuver, jName, (jlong)steps[i].dist_mm, (jlong)steps[i].time_10ms, jGeom, (jdouble)steps[i].speed_ratio);
         env->SetObjectArrayElement(res, i, stepObj);
         env->DeleteLocalRef(jName); env->DeleteLocalRef(jGeom); env->DeleteLocalRef(stepObj);
     }
@@ -478,6 +487,12 @@ Java_com_vayunmathur_maps_util_OfflineRouter_updateTrafficNative(JNIEnv* env, jo
         }
     }
     env->ReleaseIntArrayElements(edge_ids, ids_ptr, JNI_ABORT); env->ReleaseByteArrayElements(speeds, speeds_ptr, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_vayunmathur_maps_util_OfflineRouter_getTrafficSegmentsNative(JNIEnv* env, jobject thiz) {
+    jdoubleArray jRes = env->NewDoubleArray(0);
+    return jRes;
 }
 
 extern "C" JNIEXPORT void JNICALL

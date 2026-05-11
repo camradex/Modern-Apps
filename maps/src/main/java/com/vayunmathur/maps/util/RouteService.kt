@@ -157,7 +157,8 @@ object RouteService {
         val polyline: List<Position>,
         val navInstruction: API.NavInstruction,
         val travelMode: TravelMode,
-        val transitDetails: API.TransitDetails? = null
+        val transitDetails: API.TransitDetails? = null,
+        val speedRatio: Double = 1.0
     )
 
     interface RouteType {

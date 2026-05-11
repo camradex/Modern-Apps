@@ -125,9 +125,17 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
                                 val features: List<Feature1> = listOf<Feature1>(
                                     //Feature1(LineString(route.polyline), JsonObject(emptyMap()))
                                 ) + route.step.mapIndexed { idx, it ->
+                                    val color = if (it.travelMode == RouteService.TravelMode.DRIVE) {
+                                        when {
+                                            it.speedRatio < 0.5 -> "#FF0000" // Red
+                                            it.speedRatio < 0.9 -> "#FFFF00" // Yellow
+                                            else -> "#1710F1" // Blue
+                                        }
+                                    } else "#1710F1"
+
                                     Feature1(
                                         LineString(it.polyline),
-                                        JsonObject(mapOf("color" to JsonPrimitive("#1710F1")))
+                                        JsonObject(mapOf("color" to JsonPrimitive(color)))
                                     )
                                 }
                                 routeSource.setData(GeoJsonData.Features(FeatureCollection(features)))
