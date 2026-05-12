@@ -5,7 +5,9 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vayunmathur.contacts.data.Contact
-import com.vayunmathur.contacts.data.ContactDetails
+import com.vayunmathur.contacts.data.ContactDatabase
+import com.vayunmathur.contacts.data.ContactEntity
+import com.vayunmathur.contacts.data.ContactSearchEntity
 import com.vayunmathur.library.util.DataStoreUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -25,13 +28,27 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
 
     private val dataStore = DataStoreUtils.getInstance(application)
 
-    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
-    
+    private val database = ContactDatabase.getInstance(application)
+    private val contactDao = database.contactDao()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
     val hiddenAccounts: StateFlow<Set<String>> = dataStore.stringSetFlow("hidden_accounts")
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    val contacts: StateFlow<List<Contact>> = combine(_contacts, hiddenAccounts) { contacts, hidden ->
-        contacts.filter { it.accountName !in hidden }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val contacts: StateFlow<List<com.vayunmathur.contacts.data.Contact>> = combine(
+        _searchQuery.flatMapLatest { query ->
+            if (query.isBlank()) {
+                contactDao.getContactsFlow()
+            } else {
+                contactDao.search("*$query*")
+            }
+        },
+        hiddenAccounts
+    ) { entities, hidden ->
+        entities.map { it.toContact() }.filter { it.accountName !in hidden }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _accounts = MutableStateFlow<List<ContactAccount>>(emptyList())
@@ -44,8 +61,12 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.Eagerly, dataStore.getBoolean("show_account_labels", true))
 
     init {
-        loadContacts()
+        syncWithSystemContacts()
         loadAccounts()
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
     }
 
     fun setCalendarSyncEnabled(enabled: Boolean) {
@@ -71,11 +92,38 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun loadContacts() {
+    fun syncWithSystemContacts() {
         viewModelScope.launch(Dispatchers.IO) {
-            val loaded = Contact.getAllContacts(getApplication())
-            _contacts.value = loaded
+            try {
+                val systemContacts = com.vayunmathur.contacts.data.Contact.getAllContacts(getApplication())
+                val localContacts = contacts.value
+                
+                val toUpsert = systemContacts.map { ContactEntity.fromContact(it) }
+                val searchEntities = systemContacts.map { contact ->
+                    ContactSearchEntity(
+                        rowid = contact.id,
+                        displayName = contact.name.value,
+                        nickname = contact.nickname.value,
+                        phoneNumbers = contact.details.phoneNumbers.joinToString(" ") { it.number },
+                        emails = contact.details.emails.joinToString(" ") { it.address },
+                        notes = contact.details.notes.joinToString(" ") { it.content },
+                        organization = contact.details.orgs.joinToString(" ") { it.company }
+                    )
+                }
+                
+                val systemIds = systemContacts.map { it.id }.toSet()
+                val toDelete = localContacts.map { it.id }.filter { it !in systemIds }
+                
+                contactDao.syncContacts(toUpsert, toDelete, searchEntities)
+                Log.d("ContactViewModel", "Sync complete: ${toUpsert.size} upserted, ${toDelete.size} deleted")
+            } catch (e: Exception) {
+                Log.e("ContactViewModel", "Error syncing contacts", e)
+            }
         }
+    }
+
+    fun loadContacts() {
+        syncWithSystemContacts()
     }
 
     fun loadAccounts() {
@@ -142,13 +190,13 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         return contacts.value.find { it.id == contactId }
     }
 
-    fun deleteContact(contact: Contact) {
+    fun deleteContact(contact: com.vayunmathur.contacts.data.Contact) {
         viewModelScope.launch(Dispatchers.IO) {
-            Contact.delete(getApplication(), contact)
+            com.vayunmathur.contacts.data.Contact.delete(getApplication(), contact)
             if (isCalendarSyncEnabled.value) {
                 CalendarSyncHelper.syncContact(getApplication(), contact.copy(details = contact.details.copy(dates = emptyList())))
             }
-            _contacts.value = _contacts.value.filter { it.id != contact.id }
+            contactDao.deleteContact(contact.id)
         }
     }
 
@@ -157,46 +205,18 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun loadContact(contactId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val updatedContact = Contact.getContact(getApplication(), contactId)
-            withContext(Dispatchers.Main) {
-                if (updatedContact != null) {
-                    val index = _contacts.value.indexOfFirst { it.id == updatedContact.id }
-                    if (index != -1) {
-                        val newList = _contacts.value.toMutableList()
-                        newList[index] = updatedContact
-                        _contacts.value = newList
-                    }
-                    if (isCalendarSyncEnabled.value) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            CalendarSyncHelper.syncContact(getApplication(), updatedContact)
-                        }
-                    }
-                }
-            }
-        }
+        syncWithSystemContacts()
     }
 
-    fun saveContact(contact: Contact) {
+    fun saveContact(contact: com.vayunmathur.contacts.data.Contact) {
         viewModelScope.launch(Dispatchers.IO) {
             val contactId = contact.id
             val details = contact.details
-            val oldDetails = contacts.value.find { it.id == contactId }?.details ?: ContactDetails.empty()
+            val oldDetails = contacts.value.find { it.id == contactId }?.details ?: com.vayunmathur.contacts.data.ContactDetails.empty()
             contact.save(getApplication(), details, oldDetails)
 
-            if (contactId == 0L) {
-                // For new contacts, we need to reload to get the new ID before syncing calendar
-                val loaded = Contact.getAllContacts(getApplication())
-                _contacts.value = loaded
-                
-                if (isCalendarSyncEnabled.value) {
-                    // Try to find the newly created contact (closest name match or just sync all if unsure)
-                    // Syncing all is safer for new contacts to ensure nothing was missed
-                    CalendarSyncHelper.syncAll(getApplication())
-                }
-            } else {
-                loadContact(contactId)
-            }
+            // Reload from system to ensure we have the latest (especially for new contacts)
+            syncWithSystemContacts()
         }
     }
 }

@@ -72,4 +72,6 @@
     <string name="selected_count">%1$d selected</string>
     <string name="display">Display</string>
     <string name="show_account_labels">Show contact accounts</string>
+    <string name="search">Search</string>
+    <string name="search_contacts">Search contacts</string>
 </resources>

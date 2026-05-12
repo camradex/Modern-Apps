@@ -120,14 +120,10 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
                 .padding(top = paddingValues.calculateTopPadding())
         ) {
             if (searchEnabled) {
-                OutlinedTextField(
+                CommonSearchBar(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                    leadingIcon = { IconSearch() }
+                    placeholder = title
                 )
             }
 
@@ -308,14 +304,10 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
                 .padding(top = paddingValues.calculateTopPadding())
         ) {
             if (searchEnabled) {
-                OutlinedTextField(
+                CommonSearchBar(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                    leadingIcon = { IconSearch() }
+                    placeholder = title
                 )
             }
             LazyColumn(

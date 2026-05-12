@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.plus
@@ -73,6 +74,7 @@ import com.vayunmathur.contacts.util.VcfUtils
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconShare
 import com.vayunmathur.library.ui.IconClose
+import com.vayunmathur.library.ui.CommonSearchBar
 import kotlinx.coroutines.launch
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
@@ -139,6 +141,8 @@ fun ContactList(
         is Route.EditContact -> (backStack.last() as Route.EditContact).contactId
         else -> null
     }
+
+    val searchQuery by viewModel.searchQuery.collectAsState()
 
     Scaffold(
         topBar = {
@@ -210,11 +214,18 @@ fun ContactList(
             }
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = paddingValues + PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            CommonSearchBar(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                placeholder = stringResource(R.string.search_contacts)
+            )
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
             if (favorites.isNotEmpty()) {
                 item { FavoritesHeader() }
                 items(favorites, key = { it.id }) { contact ->
@@ -269,6 +280,7 @@ fun ContactList(
                 }
             }
         }
+    }
     }
 }
 
