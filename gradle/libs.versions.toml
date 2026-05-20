@@ -1,7 +1,7 @@
 [versions]
 # Build & Core Language
 agp = "9.2.1"
-comAutonomousappsDependencyAnalysisGradlePlugin = "3.10.0"
+comAutonomousappsDependencyAnalysisGradlePlugin = "3.12.1"
 fhirModel = "1.0.0-beta02"
 flatgeobuf = "3.29.0"
 kotlin = "2.3.21"
@@ -154,3 +154,4 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+dependency-analysis = { id="com.autonomousapps.dependency-analysis", version.ref = "comAutonomousappsDependencyAnalysisGradlePlugin" }
