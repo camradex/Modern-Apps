@@ -44,6 +44,8 @@ struct NodeMaster {
     int32_t lon_e7;
     uint64_t spatial_id;
     uint32_t edge_ptr;
+    uint32_t stop_code_off;
+    uint32_t feed_name_off;
 };
 
 struct FinalEdge {
@@ -66,6 +68,8 @@ struct NodeTemp {
     uint64_t spatial_value;
     int32_t lat_e7;
     int32_t lon_e7;
+    uint32_t stop_code_off;
+    uint32_t feed_name_off;
     uint64_t sort_key() const { return spatial_value; }
 };
 
@@ -447,13 +451,44 @@ int main(int argc, char* argv[]) {
         uint64_t total_size = reader.file_size();
         atomic<uint64_t> idx{0};
         while (auto buf = reader.read()) {
-            pool.enqueue([&nodes_raw, &idx, &useful_nodes_mask, buf = move(buf), &pool]() mutable {
+            pool.enqueue([&nodes_raw, &idx, &useful_nodes_mask, buf = move(buf), &pool, &name_pool, &name_pool_mtx, &name_offset, &name_out]() mutable {
                 for (const auto& n : buf.select<osmium::Node>()) {
                     if (n.id() < BITSET_SIZE && useful_nodes_mask[n.id()]) {
                         uint64_t current_idx = idx.fetch_add(1);
                         double lat = n.location().lat();
                         double lon = n.location().lon();
-                        nodes_raw[current_idx] = { (uint64_t)n.id(), latlng_to_spatial(lat, lon), (int32_t)(lat * 1e7), (int32_t)(lon * 1e7) };
+
+                        uint32_t stop_code_off = 0xFFFFFFFF;
+                        uint32_t feed_name_off = 0xFFFFFFFF;
+
+                        for (const auto& tag : n.tags()) {
+                            if (strncmp(tag.key(), "gtfs:stop_code:", 15) == 0) {
+                                string feed = tag.key() + 15;
+                                string code = tag.value();
+
+                                lock_guard<mutex> lock(name_pool_mtx);
+                                auto it_f = name_pool.find(feed);
+                                if (it_f != name_pool.end()) feed_name_off = it_f->second;
+                                else {
+                                    feed_name_off = name_offset;
+                                    name_pool[feed] = feed_name_off;
+                                    name_out.write(feed.c_str(), feed.size() + 1);
+                                    name_offset += (feed.size() + 1);
+                                }
+
+                                auto it_c = name_pool.find(code);
+                                if (it_c != name_pool.end()) stop_code_off = it_c->second;
+                                else {
+                                    stop_code_off = name_offset;
+                                    name_pool[code] = stop_code_off;
+                                    name_out.write(code.c_str(), code.size() + 1);
+                                    name_offset += (code.size() + 1);
+                                }
+                                break;
+                            }
+                        }
+
+                        nodes_raw[current_idx] = { (uint64_t)n.id(), latlng_to_spatial(lat, lon), (int32_t)(lat * 1e7), (int32_t)(lon * 1e7), stop_code_off, feed_name_off };
                     }
                 }
                 pool.notify_worker_done();
@@ -471,7 +506,7 @@ int main(int argc, char* argv[]) {
     vector<uint32_t> zone_node_counts(NUM_ZONES, 0);
 
     for (uint32_t i = 0; i < total_useful_nodes; ++i) {
-        node_masters[i] = { nodes_raw[i].lat_e7, nodes_raw[i].lon_e7, nodes_raw[i].spatial_value, 0 };
+        node_masters[i] = { nodes_raw[i].lat_e7, nodes_raw[i].lon_e7, nodes_raw[i].spatial_value, 0, nodes_raw[i].stop_code_off, nodes_raw[i].feed_name_off };
         id_to_local[i] = { nodes_raw[i].osm_id, i };
         zone_node_counts[(int)((nodes_raw[i].spatial_value >> 58) & 0x3F)]++;
     }

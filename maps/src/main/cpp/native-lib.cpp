@@ -37,6 +37,8 @@ struct NodeMaster {
     int32_t lat_e7, lon_e7;
     uint64_t spatial_id;
     uint32_t edge_ptr;
+    uint32_t stop_code_off;
+    uint32_t feed_name_off;
 };
 
 struct Edge {
@@ -80,6 +82,7 @@ static RadixHeap g_heap; // Only one heap needed for unidirectional
 
 static std::map<int, std::vector<double>> g_traffic_by_square;
 static std::vector<uint32_t> g_requested_squares; // Packed (lat_idx << 16 | lon_idx)
+static std::set<std::string> g_present_feeds;
 static std::mutex g_traffic_mutex;
 static sqlite3* g_db = nullptr;
 
@@ -267,10 +270,14 @@ inline bool is_mode_allowed(uint8_t road_type, int mode) {
 __attribute__((always_inline)) inline uint32_t fast_dist_mm(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_e7, int32_t lon2_e7) {
     int64_t dlat = std::abs((int64_t)lat1_e7 - lat2_e7);
     int64_t dlon = std::abs((int64_t)lon1_e7 - lon2_e7);
-    int64_t dy_mm = (dlat * 111319) / 10;
+
+    // 1 unit (1e-7 deg) latitude is ~11.1139 mm
+    int64_t dy_mm = (dlat * 111139) / 10000;
+
     auto scale_idx = (uint32_t)(((lat1_e7 + lat2_e7) / 2 >> 19) + 2048);
     uint32_t scale = g_lon_to_mm_scale[scale_idx & 4095];
     int64_t dx_mm = (dlon * scale) >> 10;
+
     uint64_t max_v = (dx_mm > dy_mm) ? dx_mm : dy_mm;
     uint64_t min_v = (dx_mm > dy_mm) ? dy_mm : dx_mm;
     return (uint32_t)(max_v - (max_v >> 5) + (min_v >> 1) - (min_v >> 3));
@@ -302,12 +309,26 @@ inline uint32_t get_edge_time_10ms(int zone_id, uint32_t local_edge_id, uint32_t
     return (uint32_t)(((uint64_t)dist_mm * multiplier) >> 32);
 }
 
-inline uint32_t get_transit_edge_time_10ms(int zone, const Edge& edge, uint32_t current_time_from_start, uint32_t start_time_abs) {
+inline uint32_t get_transit_edge_time_10ms(int zone, const Edge& edge, uint32_t current_time_from_start, uint32_t start_time_abs, uint32_t feed_off) {
     if (zone < 0 || !g_transit_voyages[zone]) return 0xFFFFFFFF;
 
-    uint32_t abs_now = (start_time_abs + current_time_from_start) % (24 * 3600 * 100);
     uint32_t voyage_offset = edge.dist_mm;
     uint32_t voyage_count = edge.speed_limit;
+    if (voyage_count == 0) return 0xFFFFFFFF;
+
+    const char* route_name = (edge.name_offset < g_road_names_size) ? (g_road_names + edge.name_offset) : "Unknown";
+
+    if (feed_off != 0xFFFFFFFF) {
+        const char* feed_name = g_road_names + feed_off;
+        if (g_present_feeds.find(feed_name) == g_present_feeds.end()) {
+            LOGD("TRANSIT_DEBUG: Feed %s not present for route %s, using immediate pickup", feed_name, route_name);
+            // Feed not present, immediate pickup. Use first voyage duration as estimate.
+            TransitVoyage* base = g_transit_voyages[zone] + voyage_offset;
+            return base[0].arr_10ms - base[0].dep_10ms;
+        }
+    }
+
+    uint32_t abs_now = (start_time_abs + current_time_from_start) % (24 * 3600 * 100);
 
     TransitVoyage* base = g_transit_voyages[zone] + voyage_offset;
     uint32_t best_wait = 0xFFFFFFFF;
@@ -323,8 +344,12 @@ inline uint32_t get_transit_edge_time_10ms(int zone, const Edge& edge, uint32_t 
         }
     }
 
-    if (best_wait == 0xFFFFFFFF) return 0xFFFFFFFF;
+    if (best_wait == 0xFFFFFFFF) {
+        LOGD("TRANSIT_DEBUG: No voyage found for route %s after time %u (abs_now)", route_name, abs_now);
+        return 0xFFFFFFFF;
+    }
     const uint32_t BOARDING_PENALTY = 12000; // 2 minutes
+    LOGD("TRANSIT_DEBUG: Route %s considered. Wait: %u s, Travel: %u s", route_name, best_wait / 100, best_travel / 100);
     return best_wait + best_travel + BOARDING_PENALTY;
 }
 
@@ -378,11 +403,20 @@ struct RoutingContext {
 struct Projection { int32_t lat_e7, lon_e7; uint32_t dist_mm; };
 
 Projection get_projection(int32_t px, int32_t py, int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
-    double dx = (double)x2 - x1, dy = (double)y2 - y1;
+    double lat_avg = (x1 + x2) / 2.0 * 1e-7;
+    double lon_scale = cos(lat_avg * DEG_TO_RAD);
+
+    double dx = (double)x2 - x1;
+    double dy = ((double)y2 - y1) * lon_scale;
+    double dpx = (double)px - x1;
+    double dpy = ((double)py - y1) * lon_scale;
+
     double mag_sq = dx * dx + dy * dy;
-    double t = (mag_sq == 0) ? 0 : ((double)(px - x1) * dx + (double)(py - y1) * dy) / mag_sq;
+    double t = (mag_sq == 0) ? 0 : (dpx * dx + dpy * dy) / mag_sq;
     t = std::max(0.0, std::min(1.0, t));
-    int32_t proj_lat = (int32_t)(x1 + t * dx), proj_lon = (int32_t)(y1 + t * dy);
+
+    int32_t proj_lat = (int32_t)(x1 + t * (x2 - x1));
+    int32_t proj_lon = (int32_t)(y1 + t * (y2 - y1));
     return {proj_lat, proj_lon, fast_dist_mm(px, py, proj_lat, proj_lon)};
 }
 
@@ -460,7 +494,7 @@ bool prepare_routing(JNIEnv* env, jobject thiz, double sLat, double sLon, double
 
 void perform_search_loop(JNIEnv* env, jobject thiz, int mode, RoutingContext& ctx) {
     LOGD("perform_search_loop: starting search");
-    while (!g_heap.empty() && ctx.iterations < 500000) {
+    while (!g_heap.empty() && ctx.iterations < 1000000) {
         ctx.iterations++;
         uint32_t u = g_heap.pop();
         if (u == ctx.end.nodeA || u == ctx.end.nodeB) {
@@ -468,12 +502,18 @@ void perform_search_loop(JNIEnv* env, jobject thiz, int mode, RoutingContext& ct
             LOGD("perform_search_loop: target found in %d iterations", ctx.iterations);
             break;
         }
-        // ... rest of the loop
+
         auto& entry_u = g_scratchpad[u];
         uint32_t u_g = entry_u.g_fwd;
         int zone_u = get_zone_for_id(u);
         if (zone_u < 0 || !g_node_zones[zone_u]) continue;
         const auto& n_u = g_node_zones[zone_u][u - g_zone_offsets[zone_u]];
+
+        if (mode == PUBLIC_TRANSIT && n_u.stop_code_off != 0xFFFFFFFF) {
+            const char* stop_code = g_road_names + n_u.stop_code_off;
+            LOGD("TRANSIT_DEBUG: Reached transit node at stop %s (G=%u)", stop_code, u_g);
+        }
+
         if (mode == DRIVING) ensure_traffic_loaded(env, thiz, n_u.lat_e7, n_u.lon_e7, false);
         uint32_t s = n_u.edge_ptr;
         uint32_t node_idx = u - g_zone_offsets[zone_u];
@@ -485,8 +525,12 @@ void perform_search_loop(JNIEnv* env, jobject thiz, int mode, RoutingContext& ct
 
             uint32_t travel;
             if (mode == PUBLIC_TRANSIT && (edge.type & TRANSIT_FLAG)) {
-                travel = get_transit_edge_time_10ms(zone_u, edge, u_g, ctx.startTime);
-                if (travel == 0xFFFFFFFF) continue;
+                const char* r_name = (edge.name_offset < g_road_names_size) ? (g_road_names + edge.name_offset) : "Unknown";
+                travel = get_transit_edge_time_10ms(zone_u, edge, u_g, ctx.startTime, n_u.feed_name_off);
+                if (travel == 0xFFFFFFFF) {
+                    LOGD("TRANSIT_DEBUG: Route %s rejected (no voyages or wait too long)", r_name);
+                    continue;
+                }
             } else {
                 travel = get_edge_time_10ms(zone_u, i, edge.dist_mm, edge.type, edge.speed_limit, mode);
             }
@@ -520,11 +564,13 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         std::vector<double> coords; int maneuver = 0;
         double speed_ratio = 1.0;
         bool is_transit = false;
+        uint32_t feed_off = 0xFFFFFFFF;
+        uint32_t code_off = 0xFFFFFFFF;
     };
     std::vector<StepData> steps; double last_bearing = 0;
     uint32_t current_elapsed_10ms = 0;
 
-    auto add_segment = [&](double lat1, double lon1, double lat2, double lon2, uint32_t name_off, uint8_t type, uint8_t limit, uint32_t dist_mm, int zone_id, uint32_t local_edge_idx) {
+    auto add_segment = [&](double lat1, double lon1, double lat2, double lon2, uint32_t name_off, uint8_t type, uint8_t limit, uint32_t dist_mm, int zone_id, uint32_t local_edge_idx, uint32_t feed_off, uint32_t code_off) {
         double ratio = 1.0;
         uint8_t traffic_speed = 0;
         if (zone_id >= 0 && local_edge_idx != 0xFFFFFFFF) {
@@ -537,7 +583,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         if (mode == PUBLIC_TRANSIT && (type & TRANSIT_FLAG)) {
             is_transit = true;
             if (local_edge_idx != 0xFFFFFFFF && zone_id != -1) {
-                time_10ms = get_transit_edge_time_10ms(zone_id, g_edge_zones[zone_id][local_edge_idx], current_elapsed_10ms, ctx.startTime);
+                time_10ms = get_transit_edge_time_10ms(zone_id, g_edge_zones[zone_id][local_edge_idx], current_elapsed_10ms, ctx.startTime, feed_off);
                 if (time_10ms == 0xFFFFFFFF) time_10ms = 0;
             } else {
                 time_10ms = 0;
@@ -556,7 +602,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
 
         if (steps.empty() || name_off != steps.back().name_off || get_ratio_cat(ratio) != get_ratio_cat(steps.back().speed_ratio) || is_transit != steps.back().is_transit) {
             int maneuver = steps.empty() ? 0 : get_maneuver(last_bearing, bearing);
-            steps.push_back({name_off, 0, 0, {lon1, lat1}, maneuver, ratio, is_transit});
+            steps.push_back({name_off, 0, 0, {lon1, lat1}, maneuver, ratio, is_transit, feed_off, code_off});
         }
         steps.back().dist_mm += dist_mm;
         steps.back().time_10ms += time_10ms;
@@ -571,7 +617,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         const auto& node0 = get_node(n0);
         uint32_t dist = (n0 == ctx.start.nodeA) ? ctx.start.distA_mm : ctx.start.distB_mm;
         add_segment(ctx.start.proj_lat * 1e-7, ctx.start.proj_lon * 1e-7, node0.lat_e7 * 1e-7, node0.lon_e7 * 1e-7,
-                    ctx.start.name_offset, ctx.start.type, ctx.start.speed_limit, dist, -1, 0xFFFFFFFF);
+                    ctx.start.name_offset, ctx.start.type, ctx.start.speed_limit, dist, -1, 0xFFFFFFFF, node0.feed_name_off, node0.stop_code_off);
     }
 
     // 2. Main path segments
@@ -600,7 +646,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         if (d == 0) d = accurate_dist_mm(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
 
         add_segment(node_u.lat_e7 * 1e-7, node_u.lon_e7 * 1e-7, node_v.lat_e7 * 1e-7, node_v.lon_e7 * 1e-7,
-                    e.name_offset, e.type, e.speed_limit, d, z_u, best_e_idx);
+                    e.name_offset, e.type, e.speed_limit, d, z_u, best_e_idx, node_u.feed_name_off, node_u.stop_code_off);
     }
 
     // 3. End stub: path_nodes.back() -> proj_e
@@ -609,7 +655,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         const auto& nodek = get_node(nk);
         uint32_t dist = (nk == ctx.end.nodeA) ? ctx.end.distA_mm : ctx.end.distB_mm;
         add_segment(nodek.lat_e7 * 1e-7, nodek.lon_e7 * 1e-7, ctx.end.proj_lat * 1e-7, ctx.end.proj_lon * 1e-7,
-                    ctx.end.name_offset, ctx.end.type, ctx.end.speed_limit, dist, -1, 0xFFFFFFFF);
+                    ctx.end.name_offset, ctx.end.type, ctx.end.speed_limit, dist, -1, 0xFFFFFFFF, nodek.feed_name_off, nodek.stop_code_off);
     }
 
     jclass stepClass = env->FindClass("com/vayunmathur/maps/util/OfflineRouter$RawStep");
@@ -617,7 +663,7 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         LOGE("reconstruct_path: could not find RawStep class");
         return nullptr;
     }
-    jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[DDZ)V");
+    jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[DDZLjava/lang/String;Ljava/lang/String;)V");
     if (!stepCtor) {
         LOGE("reconstruct_path: could not find RawStep constructor");
         return nullptr;
@@ -628,9 +674,21 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         const char* name_ptr = (steps[i].name_off < g_road_names_size) ? (g_road_names + steps[i].name_off) : "Unknown Road";
         jstring jName = env->NewStringUTF(name_ptr); jdoubleArray jGeom = env->NewDoubleArray(steps[i].coords.size());
         env->SetDoubleArrayRegion(jGeom, 0, steps[i].coords.size(), steps[i].coords.data());
-        jobject stepObj = env->NewObject(stepClass, stepCtor, (jint)steps[i].maneuver, jName, (jlong)steps[i].dist_mm, (jlong)steps[i].time_10ms, jGeom, (jdouble)steps[i].speed_ratio, (jboolean)steps[i].is_transit);
+
+        jstring jFeed = nullptr;
+        if (steps[i].feed_off != 0xFFFFFFFF && steps[i].feed_off < g_road_names_size) {
+            jFeed = env->NewStringUTF(g_road_names + steps[i].feed_off);
+        }
+        jstring jCode = nullptr;
+        if (steps[i].code_off != 0xFFFFFFFF && steps[i].code_off < g_road_names_size) {
+            jCode = env->NewStringUTF(g_road_names + steps[i].code_off);
+        }
+
+        jobject stepObj = env->NewObject(stepClass, stepCtor, (jint)steps[i].maneuver, jName, (jlong)steps[i].dist_mm, (jlong)steps[i].time_10ms, jGeom, (jdouble)steps[i].speed_ratio, (jboolean)steps[i].is_transit, jFeed, jCode);
         env->SetObjectArrayElement(res, i, stepObj);
         env->DeleteLocalRef(jName); env->DeleteLocalRef(jGeom); env->DeleteLocalRef(stepObj);
+        if (jFeed) env->DeleteLocalRef(jFeed);
+        if (jCode) env->DeleteLocalRef(jCode);
     }
     return res;
 }
@@ -638,11 +696,23 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
 // --- JNI INTERFACE ---
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_vayunmathur_maps_util_OfflineRouter_init(JNIEnv* env, jobject thiz, jstring base_path) {
+Java_com_vayunmathur_maps_util_OfflineRouter_init(JNIEnv* env, jobject thiz, jstring base_path, jobjectArray present_feeds) {
     const char* path_raw = env->GetStringUTFChars(base_path, nullptr); std::string base(path_raw);
     LOGD("Native init started with path: %s", path_raw);
     if (!base.empty() && base.back() != '/') base += "/";
     g_base_path = base;
+
+    g_present_feeds.clear();
+    if (present_feeds) {
+        int len = env->GetArrayLength(present_feeds);
+        for (int i = 0; i < len; ++i) {
+            jstring s = (jstring)env->GetObjectArrayElement(present_feeds, i);
+            const char* raw = env->GetStringUTFChars(s, nullptr);
+            g_present_feeds.insert(raw);
+            env->ReleaseStringUTFChars(s, raw);
+            env->DeleteLocalRef(s);
+        }
+    }
     // ...
     auto m_file = [&](const std::string& p, size_t& s) -> void* {
         s = 0; int fd = open(p.c_str(), O_RDONLY); if (fd < 0) return nullptr;

@@ -24,8 +24,11 @@ sealed interface SpecificFeature {
     @Serializable
     data class Restaurant(override val name: String, val phone: String?, val website: String?, val menu: String?, val openingHours: OpeningHours?,
                           override val position: Position): RoutableFeature
+    @Serializable
     data class GenericPlace(override val name: String, val phone: String?, val website: String?, val openingHours: OpeningHours?,
                           override val position: Position): RoutableFeature
+    @Serializable
+    data class TransitStop(override val name: String, val stopCode: String?, val gtfsFeed: String?, override val position: Position): RoutableFeature
     @Serializable
     data class Route(val waypoints: List<RoutableFeature?>) : SpecificFeature
 }
@@ -50,6 +53,13 @@ suspend fun parse(feature: Feature1, db: AmenityDatabase): SpecificFeature? {
         "restaurant", "fast_food", "cafe", "bar" -> {
             val tags = db.tagDao().getTags(id.toLong()).associate { it.key to it.value }
             SpecificFeature.Restaurant(tags["name"] ?: "", tags["phone"], tags["website"], tags["website:menu"], tags["opening_hours"]?.let { OpeningHours.from(it) }, (geometry as Point).coordinates)
+        }
+        "bus_stop", "bus_station", "tram_stop", "railway_station", "subway_entrance" -> {
+            val tags = db.tagDao().getTags(id.toLong()).associate { it.key to it.value }
+            val gtfsTag = tags.keys.find { it.startsWith("gtfs:stop_code:") }
+            val gtfsFeed = gtfsTag?.removePrefix("gtfs:stop_code:")
+            val stopCode = gtfsTag?.let { tags[it] }
+            SpecificFeature.TransitStop(tags["name"] ?: "", stopCode, gtfsFeed, (geometry as Point).coordinates)
         }
         !in listOf(
             "country", "region", "county", "locality", "address", "building", "building_part",

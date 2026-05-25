@@ -95,7 +95,7 @@ object RouteService {
 
     object API {
         @Serializable
-        data class TransitDetails(val headsign: String, val stopCount: Int, val transitLine: TransitLine, val stopDetails: StopDetails)
+        data class TransitDetails(val headsign: String, val stopCount: Int, val transitLine: TransitLine, val stopDetails: StopDetails, val feedName: String? = null)
 
         @Serializable
         data class StopDetails(val arrivalTime: String, val departureTime: String, val arrivalStop: Stop, val departureStop: Stop)

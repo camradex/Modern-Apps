@@ -80,7 +80,7 @@ object OfflineRouter {
         }
     }
 
-    private external fun init(basePath: String): Boolean
+    private external fun init(basePath: String, presentFeeds: Array<String>): Boolean
     private external fun findRouteNative(
             sLat: Double,
             sLon: Double,
@@ -180,7 +180,9 @@ object OfflineRouter {
             val duration10ms: Long,
             val geometry: DoubleArray,
             val speedRatio: Double,
-            val isTransit: Boolean
+            val isTransit: Boolean,
+            val gtfsFeed: String?,
+            val stopCode: String?
     )
 
     private var isInitialized = false
@@ -189,7 +191,12 @@ object OfflineRouter {
         if (isInitialized) return
         val path = context.getExternalFilesDir(null)?.absolutePath ?: return
         Log.d("OfflineRouter", "Initializing with path: $path")
-        isInitialized = init(path)
+        
+        val presentFeeds = context.assets.list("")?.filter { 
+            try { context.assets.list(it)?.contains("routes.txt") == true } catch(_: Exception) { false }
+        }?.toTypedArray() ?: emptyArray()
+
+        isInitialized = init(path, presentFeeds)
         Log.d("OfflineRouter", "Initialization result: $isInitialized")
         cacheDirPath = context.cacheDir.absolutePath
     }
@@ -442,7 +449,24 @@ object OfflineRouter {
                                     travelMode = if (raw.isTransit) RouteService.TravelMode.TRANSIT
                                     else if (mode == RouteService.TravelMode.TRANSIT) RouteService.TravelMode.WALK
                                     else mode,
-                                    speedRatio = raw.speedRatio
+                                    speedRatio = raw.speedRatio,
+                                    transitDetails = if (raw.isTransit && raw.gtfsFeed != null && raw.stopCode != null) {
+                                        RouteService.API.TransitDetails(
+                                            headsign = "", // Not stored yet
+                                            stopCount = 0,
+                                            transitLine = RouteService.API.TransitLine(
+                                                name = raw.roadName,
+                                                color = "#1710F1" // Default
+                                            ),
+                                            stopDetails = RouteService.API.StopDetails(
+                                                arrivalTime = "",
+                                                departureTime = "",
+                                                arrivalStop = RouteService.API.Stop(""),
+                                                departureStop = RouteService.API.Stop(raw.stopCode) // Store stop code here for now
+                                            ),
+                                            feedName = raw.gtfsFeed
+                                        )
+                                    } else null
                             )
                         }
 

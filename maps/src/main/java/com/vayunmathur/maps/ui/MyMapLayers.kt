@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import com.vayunmathur.maps.data.CountryMap
 import com.vayunmathur.maps.data.Feature1
 import com.vayunmathur.maps.data.SpecificFeature
-import com.vayunmathur.maps.data.TransitRoute
 import com.vayunmathur.maps.util.OfflineRouter
 import com.vayunmathur.maps.util.RouteService
 import kotlinx.serialization.json.JsonObject
@@ -241,6 +240,13 @@ fun MyMapLayers(
                                                             "#FFC107" // Amber/Yellow
                                                         else -> "#4CAF50" // Green
                                                     }
+                                                } else if (it.travelMode == RouteService.TravelMode.TRANSIT) {
+                                                    val feed = it.transitDetails?.feedName
+                                                    if (feed != null) {
+                                                        com.vayunmathur.maps.util.GTFSProvider.getRouteColor(context, feed, it.transitDetails.transitLine.name) ?: "#1710F1"
+                                                    } else {
+                                                        "#1710F1"
+                                                    }
                                                 } else "#1710F1"
 
                                             Feature1(
@@ -254,41 +260,6 @@ fun MyMapLayers(
                                                     )
                                                 )
                                             )
-                                        }
-                                    routeSource.setData(
-                                        GeoJsonData.Features(FeatureCollection(features))
-                                    )
-                                } else if (route is TransitRoute) {
-                                    val features: List<Feature1> =
-                                        route.steps.map {
-                                            when (it) {
-                                                is TransitRoute.Step.WalkStep -> {
-                                                    Feature1(
-                                                        LineString(it.polyline),
-                                                        JsonObject(
-                                                            mapOf(
-                                                                "route-color" to
-                                                                    JsonPrimitive(
-                                                                        "#1710F1"
-                                                                    )
-                                                            )
-                                                        )
-                                                    )
-                                                }
-                                                is TransitRoute.Step.TransitStep -> {
-                                                    Feature1(
-                                                        LineString(it.polyline),
-                                                        JsonObject(
-                                                            mapOf(
-                                                                "route-color" to
-                                                                    JsonPrimitive(
-                                                                        it.lineColor
-                                                                    )
-                                                            )
-                                                        )
-                                                    )
-                                                }
-                                            }
                                         }
                                     routeSource.setData(
                                         GeoJsonData.Features(FeatureCollection(features))
