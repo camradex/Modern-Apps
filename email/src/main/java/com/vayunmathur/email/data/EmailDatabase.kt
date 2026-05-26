@@ -6,8 +6,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.vayunmathur.email.EmailFolder
 import com.vayunmathur.email.EmailMessage
+import com.vayunmathur.email.EmailAccount
 
-@Database(entities = [EmailFolder::class, EmailMessage::class], version = 1)
+@Database(entities = [EmailFolder::class, EmailMessage::class, EmailAccount::class], version = 3, exportSchema = false)
 abstract class EmailDatabase : RoomDatabase() {
     abstract fun emailDao(): EmailDao
 
@@ -21,7 +22,8 @@ abstract class EmailDatabase : RoomDatabase() {
                     context.applicationContext,
                     EmailDatabase::class.java,
                     "email-db"
-                ).build().also { instance = it }
+                ).fallbackToDestructiveMigration()
+                .build().also { instance = it }
             }
         }
     }

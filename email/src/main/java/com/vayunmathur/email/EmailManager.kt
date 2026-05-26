@@ -5,10 +5,7 @@ import kotlinx.coroutines.withContext
 import java.util.Properties
 import javax.mail.*
 import javax.mail.internet.MimeMultipart
-import javax.mail.search.OrTerm
-import javax.mail.search.SubjectTerm
-import javax.mail.search.FromStringTerm
-import javax.mail.search.BodyTerm
+import javax.mail.search.*
 
 class EmailManager {
 
@@ -23,6 +20,10 @@ class EmailManager {
         properties["mail.imaps.host"] = host
         properties["mail.imaps.port"] = "993"
         properties["mail.imaps.ssl.enable"] = "true"
+
+        // Performance Tweaks for the underlying socket layer
+        properties["mail.imaps.fetchsize"] = "1048576" // 1MB buffer allocation for fast text streaming
+        properties["mail.imaps.partialfetch"] = "true"  // Allows downloading text without attachments
 
         if (auth is AuthType.OAuth2) {
             properties["mail.imaps.auth.mechanisms"] = "XOAUTH2"
@@ -44,32 +45,24 @@ class EmailManager {
         }
     }
 
+    // SPEEDUP: Replaced deep recursion with a single wildcard batch request
     suspend fun fetchFolders(host: String, user: String, auth: AuthType): List<EmailFolder> = withStore(host, user, auth) { store ->
-        val allFolders = mutableListOf<EmailFolder>()
-        
-        fun listRecursive(folder: Folder) {
-            val children = folder.list()
-            for (child in children) {
-                allFolders.add(EmailFolder(
-                    fullName = child.fullName,
-                    name = child.name,
-                    parentFullName = folder.fullName.takeIf { it.isNotEmpty() },
-                    delimiter = child.separator.toString()
-                ))
-                if ((child.type and Folder.HOLDS_FOLDERS) != 0) {
-                    try {
-                        listRecursive(child)
-                    } catch (e: Exception) {
-                        // Some folders might not be listable
-                    }
-                }
-            }
+        // Passing "%" or "*" fetches the complete directory hierarchy from the root in one single server response
+        val folders = store.defaultFolder.list("*")
+
+        folders.map { folder ->
+            EmailFolder(
+                accountEmail = user,
+                fullName = folder.fullName,
+                name = folder.name,
+                parentFullName = folder.parent?.fullName?.takeIf { it.isNotEmpty() },
+                holdsMessages = (folder.type and Folder.HOLDS_MESSAGES) != 0,
+                delimiter = folder.separator.toString()
+            )
         }
-        
-        listRecursive(store.defaultFolder)
-        allFolders
     }
 
+    // SPEEDUP: Added Batch FetchProfile profiling
     suspend fun fetchMessages(
         host: String,
         user: String,
@@ -80,21 +73,37 @@ class EmailManager {
         fetchBodies: Boolean = false
     ): List<EmailMessage> = withStore(host, user, auth) { store ->
         val folder = store.getFolder(folderName)
+        if ((folder.type and Folder.HOLDS_MESSAGES) == 0) return@withStore emptyList()
+
         folder.open(Folder.READ_ONLY)
         try {
             val totalMessages = folder.messageCount
-            if (totalMessages == 0) return@withStore emptyList<EmailMessage>()
+            if (totalMessages == 0) return@withStore emptyList()
 
             val end = (totalMessages - offset).coerceAtLeast(1)
             val start = (end - limit + 1).coerceAtLeast(1)
-            
-            if (end < 1) return@withStore emptyList<EmailMessage>()
+
+            if (end < 1) return@withStore emptyList()
 
             val messages = folder.getMessages(start, end)
+
+            // Build a strict optimization profile
+            val fp = FetchProfile().apply {
+                add(FetchProfile.Item.ENVELOPE)       // Batch loads Dates, Subjects, and From senders
+                add(UIDFolder.FetchProfileItem.UID)   // Batch loads IMAP Unique IDs
+                if (fetchBodies) {
+                    add(FetchProfile.Item.CONTENT_INFO) // Pre-scans structural MIME layout
+                }
+            }
+
+            // Forces the driver to execute a bulk network fetch for the metadata matching the profile
+            folder.fetch(messages, fp)
+
             val uidFolder = folder as? UIDFolder
             messages.reversedArray().map { msg ->
                 val (body, isHtml) = if (fetchBodies) getTextFromMessage(msg) else null to false
                 EmailMessage(
+                    accountEmail = user,
                     id = uidFolder?.getUID(msg) ?: -1L,
                     folderName = folderName,
                     subject = msg.subject ?: "(No Subject)",
@@ -109,31 +118,7 @@ class EmailManager {
         }
     }
 
-    suspend fun fetchMessageDetail(host: String, user: String, auth: AuthType, folderName: String, uid: Long): EmailMessage = withStore(host, user, auth) { store ->
-        val folder = store.getFolder(folderName)
-        folder.open(Folder.READ_ONLY)
-        try {
-            val msg = if (folder is UIDFolder) {
-                folder.getMessageByUID(uid)
-            } else {
-                null
-            } ?: throw Exception("Message not found or folder does not support UID")
-
-            val (body, isHtml) = getTextFromMessage(msg)
-            EmailMessage(
-                id = uid,
-                folderName = folderName,
-                subject = msg.subject ?: "(No Subject)",
-                from = msg.from?.firstOrNull()?.toString() ?: "Unknown",
-                date = msg.sentDate?.toString() ?: "",
-                body = body,
-                isHtml = isHtml
-            )
-        } finally {
-            folder.close(false)
-        }
-    }
-
+    // SPEEDUP: Profiling applied to search loops
     suspend fun searchMessages(host: String, user: String, auth: AuthType, folderName: String, query: String): List<EmailMessage> = withStore(host, user, auth) { store ->
         val folder = store.getFolder(folderName)
         folder.open(Folder.READ_ONLY)
@@ -146,9 +131,18 @@ class EmailManager {
                 )
             )
             val messages = folder.search(searchTerm)
+
+            // Minimize latency downstream by profiling target items found by search match
+            val fp = FetchProfile().apply {
+                add(FetchProfile.Item.ENVELOPE)
+                add(UIDFolder.FetchProfileItem.UID)
+            }
+            folder.fetch(messages, fp)
+
             val uidFolder = folder as? UIDFolder
             messages.reversedArray().map { msg ->
                 EmailMessage(
+                    accountEmail = user,
                     id = uidFolder?.getUID(msg) ?: -1L,
                     folderName = folderName,
                     subject = msg.subject ?: "(No Subject)",

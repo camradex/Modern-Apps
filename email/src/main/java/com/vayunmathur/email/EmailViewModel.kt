@@ -6,36 +6,65 @@ import androidx.lifecycle.viewModelScope
 import com.vayunmathur.email.data.EmailDatabase
 import com.vayunmathur.email.data.EmailSyncWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EmailViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = EmailDatabase.getInstance(application).emailDao()
     
-    val folders = dao.getFoldersFlow()
+    val accounts = dao.getAccountsFlow()
     
-    private val _selectedFolder = MutableStateFlow("INBOX")
-    val selectedFolder: StateFlow<String> = _selectedFolder
+    private val _selectedAccountEmail = MutableStateFlow<String?>(null)
+    val selectedAccountEmail: StateFlow<String?> = _selectedAccountEmail
+
+    val selectedAccount = _selectedAccountEmail.flatMapLatest { email ->
+        if (email == null) flowOf(null)
+        else accounts.map { list -> list.find { it.email == email } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val folders = _selectedAccountEmail.flatMapLatest { email ->
+        if (email == null) flowOf(emptyList())
+        else dao.getFoldersFlow(email)
+    }
+    
+    private val _selectedFolderName = MutableStateFlow("INBOX")
+    val selectedFolderName: StateFlow<String> = _selectedFolderName
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
-    val messages: Flow<List<EmailMessage>> = _selectedFolder.flatMapLatest { folder ->
-        _searchQuery.flatMapLatest { query ->
-            if (query.isEmpty()) {
-                dao.getMessagesFlow(folder)
-            } else {
-                dao.searchMessagesFlow(folder, query)
+    val messages: Flow<List<EmailMessage>> = combine(
+        _selectedAccountEmail,
+        _selectedFolderName,
+        _searchQuery
+    ) { email, folder, query ->
+        Triple(email, folder, query)
+    }.flatMapLatest { (email, folder, query) ->
+        if (email == null) flowOf(emptyList())
+        else if (query.isEmpty()) {
+            dao.getMessagesFlow(email, folder)
+        } else {
+            dao.searchMessagesFlow(email, folder, query)
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            accounts.first().firstOrNull()?.let {
+                _selectedAccountEmail.value = it.email
             }
         }
     }
 
+    fun selectAccount(email: String) {
+        _selectedAccountEmail.value = email
+        _selectedFolderName.value = "INBOX"
+        _searchQuery.value = ""
+    }
+
     fun selectFolder(folderName: String) {
-        _selectedFolder.value = folderName
+        _selectedFolderName.value = folderName
         _searchQuery.value = ""
     }
 
@@ -47,7 +76,26 @@ class EmailViewModel(application: Application) : AndroidViewModel(application) {
         EmailSyncWorker.runOneOffSync(context)
     }
 
-    suspend fun getMessage(folderName: String, uid: Long): EmailMessage? {
-        return dao.getMessage(folderName, uid)
+    suspend fun getMessage(accountEmail: String, folderName: String, uid: Long): EmailMessage? {
+        return dao.getMessage(accountEmail, folderName, uid)
+    }
+
+    fun logout(context: android.content.Context) {
+        val currentEmail = _selectedAccountEmail.value ?: return
+        viewModelScope.launch {
+            val account = dao.getAccounts().find { it.email == currentEmail }
+            if (account != null) {
+                dao.deleteAccount(account)
+                dao.clearFolders(currentEmail)
+                dao.clearMessages(currentEmail)
+            }
+            val remaining = dao.getAccounts()
+            if (remaining.isEmpty()) {
+                _selectedAccountEmail.value = null
+                EmailSyncWorker.cancelSync(context)
+            } else {
+                _selectedAccountEmail.value = remaining.first().email
+            }
+        }
     }
 }

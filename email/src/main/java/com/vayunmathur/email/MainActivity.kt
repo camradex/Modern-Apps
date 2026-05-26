@@ -7,6 +7,7 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vayunmathur.email.data.EmailDatabase
 import com.vayunmathur.email.data.EmailSyncWorker
 import com.vayunmathur.library.ui.*
 import com.vayunmathur.library.util.*
@@ -32,7 +34,6 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -41,7 +42,6 @@ import java.security.SecureRandom
 
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(Dispatchers.Main)
-    private lateinit var dataStore: DataStoreUtils
 
     // Configuration Constants
     private val clientId = "827025129169-1ihnv9r1a8nd1i3qjs98tkvluo4vjbhe.apps.googleusercontent.com"
@@ -49,35 +49,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        dataStore = DataStoreUtils.getInstance(this)
         
-        // Restore session from DataStore
-        TokenState.accessToken = dataStore.getString("access_token")
-        TokenState.userEmail = dataStore.getString("user_email")
-        
-        if (TokenState.accessToken != null) {
-            EmailSyncWorker.schedulePeriodicSync(this)
-        }
-
         handleIntent(intent)
         enableEdgeToEdge()
         setContent {
+            val viewModel: EmailViewModel = viewModel()
             DynamicTheme {
                 MainContent(
-                    onGoogleLogin = { startGoogleLogin() },
-                    onLogout = { logout() }
+                    viewModel = viewModel,
+                    onGoogleLogin = { startGoogleLogin() }
                 )
             }
-        }
-    }
-
-    private fun logout() {
-        scope.launch {
-            dataStore.setString("access_token", "")
-            dataStore.setString("user_email", "")
-            TokenState.accessToken = null
-            TokenState.userEmail = null
-            EmailSyncWorker.cancelSync(this@MainActivity)
         }
     }
 
@@ -111,6 +93,7 @@ class MainActivity : ComponentActivity() {
             .appendQueryParameter("code_challenge", challenge)
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("access_type", "offline")
+            .appendQueryParameter("prompt", "select_account") // Force account selection for multiple accounts
             .build()
 
         startActivity(Intent(Intent.ACTION_VIEW, authUri))
@@ -140,17 +123,16 @@ class MainActivity : ComponentActivity() {
                     if (httpResponse.status.isSuccess()) {
                         val response: TokenResponse = httpResponse.body()
                         
-                        // Fetch user info to get email address
                         val userInfo: UserInfo = client.get("https://www.googleapis.com/oauth2/v3/userinfo") {
                             bearerAuth(response.accessToken)
                         }.body()
 
-                        TokenState.userEmail = userInfo.email
-                        TokenState.accessToken = response.accessToken
-                        
-                        // Persist to DataStore
-                        dataStore.setString("access_token", response.accessToken)
-                        dataStore.setString("user_email", userInfo.email)
+                        val dao = EmailDatabase.getInstance(this@MainActivity).emailDao()
+                        dao.insertAccount(EmailAccount(
+                            email = userInfo.email,
+                            accessToken = response.accessToken,
+                            refreshToken = response.refreshToken
+                        ))
                         
                         EmailSyncWorker.schedulePeriodicSync(this@MainActivity)
                         EmailSyncWorker.runOneOffSync(this@MainActivity)
@@ -182,8 +164,6 @@ class MainActivity : ComponentActivity() {
 }
 
 object TokenState {
-    var accessToken by mutableStateOf<String?>(null)
-    var userEmail by mutableStateOf<String?>(null)
     var codeVerifier: String? = null
 }
 
@@ -204,11 +184,14 @@ data class UserInfo(
 )
 
 @Composable
-fun MainContent(onGoogleLogin: () -> Unit, onLogout: () -> Unit) {
-    if (TokenState.accessToken == null || TokenState.userEmail == null) {
+fun MainContent(viewModel: EmailViewModel, onGoogleLogin: () -> Unit) {
+    val accounts by viewModel.accounts.collectAsState(emptyList())
+    val selectedAccountEmail by viewModel.selectedAccountEmail.collectAsState()
+
+    if (accounts.isEmpty()) {
         LoginScreen(onGoogleLogin)
     } else {
-        EmailApp(onLogout = onLogout)
+        EmailApp(viewModel = viewModel, onAddAccount = onGoogleLogin)
     }
 }
 
@@ -245,15 +228,19 @@ sealed interface Route : NavKey {
     @Serializable
     object MessageList : Route
     @Serializable
-    data class MessageDetail(val folderName: String, val messageId: Long) : Route
+    data class MessageDetail(val accountEmail: String, val folderName: String, val messageId: Long) : Route
 }
 
 @Composable
-fun EmailApp(viewModel: EmailViewModel = viewModel(), onLogout: () -> Unit) {
+fun EmailApp(viewModel: EmailViewModel, onAddAccount: () -> Unit) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val context = LocalContext.current
+    
+    val accounts by viewModel.accounts.collectAsState(emptyList())
+    val selectedAccountEmail by viewModel.selectedAccountEmail.collectAsState()
     val folders by viewModel.folders.collectAsState(emptyList())
-    val selectedFolder by viewModel.selectedFolder.collectAsState()
+    val selectedFolderName by viewModel.selectedFolderName.collectAsState()
     
     val backStack = rememberNavBackStack<Route>(Route.MessageList)
 
@@ -261,16 +248,46 @@ fun EmailApp(viewModel: EmailViewModel = viewModel(), onLogout: () -> Unit) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
+                Text("Accounts", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
+                accounts.forEach { account ->
+                    NavigationDrawerItem(
+                        label = { Text(account.email) },
+                        selected = account.email == selectedAccountEmail,
+                        onClick = { 
+                            viewModel.selectAccount(account.email)
+                            // Optionally reset backstack to MessageList if we were in a Detail view
+                            backStack.reset(Route.MessageList)
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+                NavigationDrawerItem(
+                    label = { Text("Add Account") },
+                    selected = false,
+                    onClick = { 
+                        onAddAccount()
+                        scope.launch { drawerState.close() }
+                    },
+                    icon = { IconAdd() },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                
                 Text("Folders", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
-                FolderList(folders, selectedFolder) { folderName ->
+                FolderList(folders, selectedFolderName) { folderName ->
                     viewModel.selectFolder(folderName)
                     scope.launch { drawerState.close() }
                 }
+                
                 Spacer(Modifier.weight(1f))
                 NavigationDrawerItem(
-                    label = { Text("Logout") },
+                    label = { Text("Logout Current Account") },
                     selected = false,
-                    onClick = onLogout,
+                    onClick = { 
+                        viewModel.logout(context)
+                        scope.launch { drawerState.close() }
+                    },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
             }
@@ -281,7 +298,7 @@ fun EmailApp(viewModel: EmailViewModel = viewModel(), onLogout: () -> Unit) {
                 MessageListScreen(
                     viewModel = viewModel,
                     onMessageClick = { msg ->
-                        backStack.add(Route.MessageDetail(selectedFolder, msg.id))
+                        backStack.add(Route.MessageDetail(msg.accountEmail, msg.folderName, msg.id))
                     },
                     onOpenDrawer = { scope.launch { drawerState.open() } }
                 )
@@ -289,6 +306,7 @@ fun EmailApp(viewModel: EmailViewModel = viewModel(), onLogout: () -> Unit) {
             entry<Route.MessageDetail>(metadata = ListDetailPage()) { route ->
                 MessageDetailScreen(
                     viewModel = viewModel,
+                    accountEmail = route.accountEmail,
                     folderName = route.folderName,
                     messageId = route.messageId,
                     onBack = { backStack.pop() }
@@ -312,7 +330,6 @@ fun FolderList(folders: List<EmailFolder>, selectedFolder: String, onSelect: (St
 data class FolderNode(val folder: EmailFolder, val children: List<FolderNode>)
 
 fun buildFolderTree(folders: List<EmailFolder>): List<FolderNode> {
-    val folderMap = folders.associateBy { it.fullName }
     val childrenMap = folders.groupBy { it.parentFullName }
     
     fun buildNode(folder: EmailFolder): FolderNode {
@@ -333,9 +350,14 @@ fun androidx.compose.foundation.lazy.LazyListScope.renderFolderTree(
 ) {
     item {
         NavigationDrawerItem(
-            label = { Text(node.folder.name) },
+            label = { 
+                Text(
+                    text = node.folder.name,
+                    color = if (node.folder.holdsMessages) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.5f)
+                ) 
+            },
             selected = node.folder.fullName == selectedFolder,
-            onClick = { onSelect(node.folder.fullName) },
+            onClick = { if (node.folder.holdsMessages) onSelect(node.folder.fullName) },
             modifier = Modifier
                 .padding(NavigationDrawerItemDefaults.ItemPadding)
                 .padding(start = (depth * 16).dp)
@@ -354,7 +376,7 @@ fun MessageListScreen(
     onOpenDrawer: () -> Unit
 ) {
     val messages by viewModel.messages.collectAsState(emptyList())
-    val selectedFolder by viewModel.selectedFolder.collectAsState()
+    val selectedFolderName by viewModel.selectedFolderName.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     var isSearching by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -379,7 +401,7 @@ fun MessageListScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text(selectedFolder) },
+                    title = { Text(selectedFolderName) },
                     navigationIcon = {
                         IconButton(onClick = onOpenDrawer) {
                             IconMenu()
@@ -431,6 +453,7 @@ fun MessageListScreen(
 @Composable
 fun MessageDetailScreen(
     viewModel: EmailViewModel,
+    accountEmail: String,
     folderName: String,
     messageId: Long,
     onBack: () -> Unit
@@ -438,8 +461,8 @@ fun MessageDetailScreen(
     var message by remember { mutableStateOf<EmailMessage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(messageId) {
-        message = viewModel.getMessage(folderName, messageId)
+    LaunchedEffect(accountEmail, folderName, messageId) {
+        message = viewModel.getMessage(accountEmail, folderName, messageId)
         isLoading = false
     }
 
