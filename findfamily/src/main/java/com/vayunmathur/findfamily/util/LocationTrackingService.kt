@@ -249,6 +249,14 @@ class LocationTrackingService : Service(), SensorEventListener {
 
             withContext(Dispatchers.Main) {
                 registerSensors()
+                // If we don't have any recent location (e.g. fresh start or recovery
+                // from a crash), force isMoving = true so setupLocationUpdates()
+                // immediately starts requesting GPS instead of waiting for the
+                // significant-motion sensor to trigger.
+                if (lastKnownLocation == null) {
+                    isMoving = true
+                    lastMovementTime = System.currentTimeMillis()
+                }
                 setupLocationUpdates()
             }
         }
