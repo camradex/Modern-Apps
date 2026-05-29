@@ -60,7 +60,7 @@ object EmailNotifications {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val notif: Notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_notification_mail)
                 .setContentTitle(msg.from.substringBefore("<").trim().ifEmpty { msg.from })
                 .setContentText(msg.subject.ifBlank { "(no subject)" })
                 .setSubText(accountEmail)

@@ -1,0 +1,21 @@
+<!--
+  ~ Status-bar notification icon. MUST be a flat 24dp viewport with white
+  ~ shapes on transparent background — Android tints notification small
+  ~ icons to the current status-bar color and any non-white pixels get
+  ~ flattened, while sub-24dp content gets dwarfed in the cutout.
+  ~
+  ~ The previous use of `ic_launcher_foreground` here looked tiny because
+  ~ that drawable is an adaptive-icon foreground (108dp viewport with the
+  ~ glyph scaled to ~58% and centered) — perfectly fine for the launcher
+  ~ but way too small once rebounded into the status bar's ~24dp slot.
+  -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M20,4H4C2.9,4 2.01,4.9 2.01,6L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V6c0,-1.1 -0.9,-2 -2,-2zM20,8l-8,5 -8,-5V6l8,5 8,-5v2z"/>
+</vector>
