@@ -7,8 +7,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,7 +22,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.NavKey
@@ -92,14 +88,28 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(title) }, actions = {
-                otherActions()
-                settingsPage?.let { settingsPage ->
-                    IconButton(onClick = { backStack.add(settingsPage) }) {
-                        IconSettings()
+            TopAppBar(
+                title = {
+                    if (searchEnabled) {
+                        CommonSearchBar(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = title,
+                            padding = PaddingValues(0.dp)
+                        )
+                    } else {
+                        Text(title)
+                    }
+                },
+                actions = {
+                    otherActions()
+                    settingsPage?.let { settingsPage ->
+                        IconButton(onClick = { backStack.add(settingsPage) }) {
+                            IconSettings()
+                        }
                     }
                 }
-            })
+            )
         },
         bottomBar = bottomBar,
         floatingActionButton = {
@@ -113,42 +123,22 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // Only apply top padding here to keep Search Bar below TopAppBar
-                .padding(top = paddingValues.calculateTopPadding())
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = paddingValues
         ) {
-            if (searchEnabled) {
-                CommonSearchBar(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = title
-                )
-            }
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                // Apply the remaining Scaffold padding here
-                contentPadding = PaddingValues(
-                    start = paddingValues.calculateStartPadding(LayoutDirection.Ltr),
-                    end = paddingValues.calculateEndPadding(LayoutDirection.Ltr),
-                    bottom = paddingValues.calculateBottomPadding()
-                )
-            ) {
-                items(dbData, key = { it.id }) { item ->
-                    val modifier = itemModifier(item)
-                    ListItem({ headlineContent(item) }, modifier.clickable {
-                        coroutineScope.launch {
-                            backStack.add(viewPage(item.id))
-                        }
-                    }, {}, { supportingContent(item) }, {leadingContent(item)}, {
-                        Row {
-                            trailingContent(item)
-                        }
-                    }, itemColors(item))
-                }
+            items(dbData, key = { it.id }) { item ->
+                val modifier = itemModifier(item)
+                ListItem({ headlineContent(item) }, modifier.clickable {
+                    coroutineScope.launch {
+                        backStack.add(viewPage(item.id))
+                    }
+                }, {}, { supportingContent(item) }, {leadingContent(item)}, {
+                    Row {
+                        trailingContent(item)
+                    }
+                }, itemColors(item))
             }
         }
     }
@@ -279,14 +269,28 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
                     }
                 )
             } else {
-                TopAppBar(title = { Text(title) }, actions = {
-                    otherActions()
-                    settingsPage?.let { settingsPage ->
-                        IconButton(onClick = { backStack.add(settingsPage) }) {
-                            IconSettings()
+                TopAppBar(
+                    title = {
+                        if (searchEnabled) {
+                            CommonSearchBar(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = title,
+                                padding = PaddingValues(0.dp)
+                            )
+                        } else {
+                            Text(title)
+                        }
+                    },
+                    actions = {
+                        otherActions()
+                        settingsPage?.let { settingsPage ->
+                            IconButton(onClick = { backStack.add(settingsPage) }) {
+                                IconSettings()
+                            }
                         }
                     }
-                })
+                )
             }
         },
         floatingActionButton = {
@@ -297,29 +301,11 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // Only apply top padding here to keep Search Bar below TopAppBar
-                .padding(top = paddingValues.calculateTopPadding())
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = paddingValues
         ) {
-            if (searchEnabled) {
-                CommonSearchBar(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = title
-                )
-            }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                // Apply the remaining Scaffold padding here
-                contentPadding = PaddingValues(
-                    start = paddingValues.calculateStartPadding(LayoutDirection.Ltr),
-                    end = paddingValues.calculateEndPadding(LayoutDirection.Ltr),
-                    bottom = paddingValues.calculateBottomPadding()
-                )
-            ) {
                 items(localData, key = { it.id }) { item ->
                     // 3. Wrap each item in ReorderableItem
                     ReorderableItem(state, key = item.id) { isDragging ->
@@ -386,4 +372,3 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
             }
         }
     }
-}
