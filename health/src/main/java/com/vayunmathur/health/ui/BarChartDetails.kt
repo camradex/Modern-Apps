@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -318,11 +320,22 @@ fun BarChartDetails(
                 .fillMaxSize()
         ) {
             if (config != HealthMetricConfig.HEART_RATE) {
-                SecondaryTabRow(selectedTabIndex = selectedTab, divider = {}) {
+                val accent = colorFor(config)
+                SecondaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    divider = {},
+                    indicator = {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(selectedTab),
+                            color = accent,
+                        )
+                    },
+                ) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
+                            selectedContentColor = accent,
                             text = {
                                 Text(
                                     title,
@@ -445,7 +458,8 @@ fun BarChartDetails(
                         Text(
                             text = avgString,
                             style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Light
+                            fontWeight = FontWeight.Light,
+                            color = colorFor(config),
                         )
                         Text(
                             text = if (selectedTab != 0 && !config.isLineChart) stringResource(
@@ -477,17 +491,17 @@ fun BarChartDetails(
                         secondaryData = dataState.secondaryChartData,
                         goalValue = chartGoalValue,
                         secondaryGoal = config.secondaryGoal?.let { it * (chartGoalValue / config.dailyGoal) },
-                        lineColor = MaterialTheme.colorScheme.primary,
-                        secondaryLineColor = MaterialTheme.colorScheme.tertiary,
-                        goalColor = MaterialTheme.colorScheme.secondary
+                        lineColor = colorFor(config),
+                        secondaryLineColor = colorFor(config).copy(alpha = 0.6f),
+                        goalColor = MaterialTheme.colorScheme.outline
                     )
                 } else {
                     GenericBarChart(
                         data = dataState.chartData.map { it.first to (it.second ?: 0.0) },
                         totalBarCount = dataState.totalBarCount,
                         goalValue = chartGoalValue,
-                        barColor = MaterialTheme.colorScheme.primary,
-                        goalColor = MaterialTheme.colorScheme.secondary
+                        barColor = colorFor(config),
+                        goalColor = MaterialTheme.colorScheme.outline
                     )
                 }
                 Spacer(Modifier.height(16.dp))

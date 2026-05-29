@@ -114,14 +114,17 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 
             // Last night
             item {
-                GroupedSection(title = stringResource(R.string.section_last_night)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_last_night),
+                    accentColor = HealthColors.Sleep,
+                ) {
                     val sleepValue = metrics.sleepMinutes?.let { formatSleep(it) } ?: "--"
                     MetricRow(
                         label = stringResource(R.string.label_sleep),
                         value = sleepValue,
                         unit = "",
                         leadingIconRes = R.drawable.baseline_bedtime_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = HealthColors.Sleep,
                         onClick = { backStack.add(Route.SleepDetails) },
                     )
                 }
@@ -129,13 +132,16 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 
             // Latest vitals
             item {
-                GroupedSection(title = stringResource(R.string.section_latest_vitals)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_latest_vitals),
+                    accentColor = HealthColors.Vitals,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_heart_rate),
                         value = if (hrMax > 0L) "$hrMin-$hrMax" else "--",
                         unit = stringResource(R.string.unit_bpm),
                         leadingIconRes = R.drawable.baseline_favorite_24,
-                        leadingTint = MaterialTheme.colorScheme.error,
+                        leadingTint = colorFor(RecordType.HeartRate),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.HEART_RATE)) },
                     )
                     GroupedSectionDivider()
@@ -144,7 +150,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.bloodPressure?.let { "${it.first.toInt()}/${it.second.toInt()}" } ?: "--",
                         unit = stringResource(R.string.label_blood_pressure_unit),
                         leadingIconRes = R.drawable.baseline_favorite_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(RecordType.BloodPressure),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.BLOOD_PRESSURE)) },
                     )
                     GroupedSectionDivider()
@@ -153,7 +159,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.spo2?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_percent),
                         leadingIconRes = R.drawable.baseline_favorite_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(RecordType.OxygenSaturation),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.OXYGEN_SATURATION)) },
                     )
                     GroupedSectionDivider()
@@ -162,7 +168,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.rhr?.toString() ?: "--",
                         unit = stringResource(R.string.unit_bpm),
                         leadingIconRes = R.drawable.baseline_favorite_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(RecordType.RestingHeartRate),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.RESTING_HEART_RATE)) },
                     )
                 }
@@ -170,13 +176,16 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 
             // Quick stats
             item {
-                GroupedSection(title = stringResource(R.string.section_quick_stats)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_quick_stats),
+                    accentColor = HealthColors.Activity,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_steps),
                         value = stepsToday.toString(),
                         unit = stringResource(R.string.unit_steps),
                         leadingIconRes = R.drawable.outline_directions_walk_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(RecordType.Steps),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.STEPS)) },
                     )
                     GroupedSectionDivider()
@@ -185,7 +194,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = distanceToday.round(2).toString(),
                         unit = stringResource(R.string.unit_km),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(RecordType.Distance),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.DISTANCE)) },
                     )
                     GroupedSectionDivider()
@@ -194,7 +203,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = floorsToday.round(1).toString(),
                         unit = stringResource(R.string.unit_fl),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(RecordType.Floors),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.FLOORS)) },
                     )
                     GroupedSectionDivider()
@@ -203,7 +212,7 @@ fun TodayPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = hydrationToday.toInt().toString(),
                         unit = stringResource(R.string.unit_ml),
                         leadingIconRes = R.drawable.baseline_bedtime_24, // TODO: replace with a water-drop icon
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = hydrationColor,
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.HYDRATION)) },
                     )
                 }
@@ -252,19 +261,19 @@ private fun ActivityRingsHero(
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 RingLegendItem(
-                    color = MaterialTheme.colorScheme.primary,
+                    color = HealthColors.Activity,
                     label = stringResource(R.string.label_steps),
                     value = "$stepsToday",
                     unit = stringResource(R.string.unit_steps),
                 )
                 RingLegendItem(
-                    color = MaterialTheme.colorScheme.secondary,
+                    color = HealthColors.Nutrition,
                     label = stringResource(R.string.label_active),
                     value = "$activeCaloriesToday",
                     unit = stringResource(R.string.unit_cal),
                 )
                 RingLegendItem(
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = HealthColors.Sleep,
                     label = stringResource(R.string.label_mindfulness),
                     value = "$mindfulnessToday",
                     unit = stringResource(R.string.unit_min),

@@ -179,7 +179,10 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel
                     }
                 }
             } else {
-                GroupedSection(title = stringResource(R.string.label_immunizations)) {
+                GroupedSection(
+                    title = stringResource(R.string.label_immunizations),
+                    accentColor = HealthColors.Vitals,
+                ) {
                     immunizations.forEachIndexed { idx, imm ->
                         if (idx > 0) GroupedSectionDivider()
                         ImmunizationRow(imm)
@@ -208,7 +211,7 @@ fun ImmunizationRow(immunization: Immunization) {
         headline = name,
         supporting = supporting,
         leadingIconRes = R.drawable.baseline_favorite_24,
-        leadingTint = MaterialTheme.colorScheme.tertiary,
+        leadingTint = HealthColors.Vitals,
     )
 }
 

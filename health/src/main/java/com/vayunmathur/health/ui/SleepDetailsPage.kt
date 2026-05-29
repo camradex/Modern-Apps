@@ -170,7 +170,8 @@ fun SleepSummaryHeader(record: Record) {
         Text(
             text = hoursMinutesString(context, totalMinutes),
             style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Light
+            fontWeight = FontWeight.Light,
+            color = HealthColors.Sleep,
         )
         Text(
             text = "${startT.hour}:${
@@ -320,7 +321,7 @@ fun SleepStageGraph(record: Record) {
 fun SleepStageBreakdown(data: SleepData) {
     val context = LocalContext.current
     val colors = hypnogramColors()
-    GroupedSection(title = "Stages") {
+    GroupedSection(title = "Stages", accentColor = HealthColors.Sleep) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StageRow(
                 stringResource(R.string.label_awake),

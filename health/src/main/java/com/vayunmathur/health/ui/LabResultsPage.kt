@@ -212,7 +212,10 @@ fun LabResultsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                     }
                 }
             } else {
-                GroupedSection(title = stringResource(R.string.label_lab_results)) {
+                GroupedSection(
+                    title = stringResource(R.string.label_lab_results),
+                    accentColor = HealthColors.Vitals,
+                ) {
                     labResults.forEachIndexed { idx, obs ->
                         if (idx > 0) GroupedSectionDivider()
                         ObservationRow(obs)
@@ -248,6 +251,6 @@ fun ObservationRow(observation: Observation) {
         headline = name,
         supporting = supporting,
         leadingIconRes = R.drawable.baseline_location_pin_24,
-        leadingTint = MaterialTheme.colorScheme.secondary,
+        leadingTint = HealthColors.Vitals,
     )
 }

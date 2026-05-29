@@ -41,13 +41,16 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.min
 
-/** Section header used above grouped sections — titleSmall + Bold + onSurfaceVariant. */
+/** Section header used above grouped sections — titleSmall + Bold. */
 @Composable
 fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     leadingIconRes: Int? = null,
+    accentColor: Color? = null,
 ) {
+    val textColor = accentColor?.copy(alpha = 0.85f) ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val iconColor = accentColor ?: MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -58,7 +61,7 @@ fun SectionHeader(
             Icon(
                 painter = painterResource(id = leadingIconRes),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = iconColor,
                 modifier = Modifier.size(16.dp),
             )
             Spacer(Modifier.width(8.dp))
@@ -67,7 +70,7 @@ fun SectionHeader(
             text = title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
         )
     }
 }
@@ -82,11 +85,12 @@ fun GroupedSection(
     title: String? = null,
     modifier: Modifier = Modifier,
     leadingIconRes: Int? = null,
+    accentColor: Color? = null,
     content: @Composable () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         if (title != null) {
-            SectionHeader(title = title, leadingIconRes = leadingIconRes)
+            SectionHeader(title = title, leadingIconRes = leadingIconRes, accentColor = accentColor)
         }
         Surface(
             modifier = Modifier
@@ -366,9 +370,8 @@ fun MetricRing(
 }
 
 /**
- * Three concentric activity rings. Outer = steps (primary), middle = energy
- * (secondary), inner = mindful (tertiary). No labels inside — caller provides
- * the legend below.
+ * Three concentric activity rings. Outer = steps, middle = energy,
+ * inner = mindful. No labels inside — caller provides the legend below.
  */
 @Composable
 fun ActivityRingsTrio(
@@ -376,10 +379,10 @@ fun ActivityRingsTrio(
     energyPct: Float,
     mindfulPct: Float,
     modifier: Modifier = Modifier,
+    outerColor: Color = com.vayunmathur.health.ui.HealthColors.Activity,
+    middleColor: Color = com.vayunmathur.health.ui.HealthColors.Nutrition,
+    innerColor: Color = com.vayunmathur.health.ui.HealthColors.Sleep,
 ) {
-    val outer = MaterialTheme.colorScheme.primary
-    val middle = MaterialTheme.colorScheme.secondary
-    val inner = MaterialTheme.colorScheme.tertiary
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val side = min(maxWidth.value, maxHeight.value).dp
         val stroke = (side.value * 0.10f).dp
@@ -391,7 +394,7 @@ fun ActivityRingsTrio(
                 label = "",
                 value = "",
                 modifier = Modifier.size(side),
-                color = outer,
+                color = outerColor,
                 strokeWidth = stroke,
             )
             MetricRing(
@@ -399,7 +402,7 @@ fun ActivityRingsTrio(
                 label = "",
                 value = "",
                 modifier = Modifier.size(side - step * 2),
-                color = middle,
+                color = middleColor,
                 strokeWidth = stroke,
             )
             MetricRing(
@@ -407,7 +410,7 @@ fun ActivityRingsTrio(
                 label = "",
                 value = "",
                 modifier = Modifier.size(side - step * 4),
-                color = inner,
+                color = innerColor,
                 strokeWidth = stroke,
             )
         }

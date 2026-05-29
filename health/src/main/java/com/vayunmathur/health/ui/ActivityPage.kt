@@ -79,13 +79,16 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
         ) {
             // Today
             item {
-                GroupedSection(title = stringResource(R.string.section_today_activity)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_today_activity),
+                    accentColor = HealthColors.Activity,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_steps),
                         value = stepsToday.toString(),
                         unit = stringResource(R.string.unit_steps),
                         leadingIconRes = R.drawable.outline_directions_walk_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(RecordType.Steps),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.STEPS)) },
                     )
                     GroupedSectionDivider()
@@ -94,7 +97,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = activeCaloriesToday.toString(),
                         unit = stringResource(R.string.unit_cal),
                         leadingIconRes = R.drawable.baseline_local_fire_department_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(RecordType.CaloriesActive),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ACTIVE_CALORIES)) },
                     )
                     GroupedSectionDivider()
@@ -103,7 +106,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = distanceToday.round(2).toString(),
                         unit = stringResource(R.string.unit_km),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(RecordType.Distance),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.DISTANCE)) },
                     )
                     GroupedSectionDivider()
@@ -112,7 +115,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = floorsToday.round(1).toString(),
                         unit = stringResource(R.string.unit_fl),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(RecordType.Floors),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.FLOORS)) },
                     )
                     GroupedSectionDivider()
@@ -121,7 +124,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = elevationToday.round(1).toString(),
                         unit = stringResource(R.string.unit_m),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(RecordType.Elevation),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ELEVATION)) },
                     )
                     GroupedSectionDivider()
@@ -130,7 +133,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = wheelchairToday.toString(),
                         unit = stringResource(R.string.unit_pushes),
                         leadingIconRes = R.drawable.outline_directions_walk_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(RecordType.Wheelchair),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.WHEELCHAIR_PUSHES)) },
                     )
                 }
@@ -138,13 +141,16 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 
             // This week (sparklines stubbed — TODO wire HealthAPI.getListOfSums for 7-day arrays)
             item {
-                GroupedSection(title = stringResource(R.string.section_this_week)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_this_week),
+                    accentColor = HealthColors.Activity,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_steps),
                         value = stepsToday.toString(),
                         unit = stringResource(R.string.unit_steps),
                         leadingIconRes = R.drawable.outline_directions_walk_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(RecordType.Steps),
                         sparkline = emptyList(), // TODO: HealthAPI.getListOfSums for 7d
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.STEPS)) },
                     )
@@ -154,7 +160,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = activeCaloriesToday.toString(),
                         unit = stringResource(R.string.unit_cal),
                         leadingIconRes = R.drawable.baseline_local_fire_department_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(RecordType.CaloriesActive),
                         sparkline = emptyList(), // TODO
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ACTIVE_CALORIES)) },
                     )
@@ -164,7 +170,7 @@ fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = distanceToday.round(2).toString(),
                         unit = stringResource(R.string.unit_km),
                         leadingIconRes = R.drawable.baseline_location_pin_24,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(RecordType.Distance),
                         sparkline = emptyList(), // TODO
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.DISTANCE)) },
                     )

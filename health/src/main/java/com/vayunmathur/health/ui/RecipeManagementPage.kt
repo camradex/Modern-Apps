@@ -69,9 +69,12 @@ fun RecipeManagementPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Recipes") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Ingredients") })
+            TabRow(
+                selectedTabIndex = selectedTab,
+                contentColor = HealthColors.Nutrition,
+            ) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, selectedContentColor = HealthColors.Nutrition, text = { Text("Recipes") })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, selectedContentColor = HealthColors.Nutrition, text = { Text("Ingredients") })
             }
 
             if (isListEmpty) {
@@ -107,7 +110,7 @@ fun RecipesList(recipes: List<Recipe>, viewModel: HealthViewModel, onRecipeClick
                 modifier = Modifier.fillMaxWidth().clickable { onRecipeClick(recipe.id) }
             ) {
                 Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(recipe.name, style = MaterialTheme.typography.titleMedium)
+                    Text(recipe.name, style = MaterialTheme.typography.titleMedium, color = HealthColors.Nutrition)
                     IconButton(onClick = { viewModel.deleteRecipe(recipe) }) {
                         IconDelete()
                     }

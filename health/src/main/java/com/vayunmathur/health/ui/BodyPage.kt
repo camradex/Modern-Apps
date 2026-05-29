@@ -101,13 +101,16 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
         ) {
             // Body composition
             item {
-                GroupedSection(title = stringResource(R.string.section_body_composition)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_body_composition),
+                    accentColor = HealthColors.Body,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_weight),
                         value = metrics.weight?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_kg),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.Weight),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.WEIGHT)) },
                     )
                     GroupedSectionDivider()
@@ -116,7 +119,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.height?.let { (it * 100).round(1).toString() } ?: "--",
                         unit = stringResource(R.string.unit_cm),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.Height),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.HEIGHT)) },
                     )
                     GroupedSectionDivider()
@@ -125,7 +128,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.bodyFat?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_percent),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.BodyFat),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.BODY_FAT)) },
                     )
                     GroupedSectionDivider()
@@ -134,7 +137,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.leanBodyMass?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_kg),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.LeanBodyMass),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.LEAN_BODY_MASS)) },
                     )
                     GroupedSectionDivider()
@@ -143,7 +146,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.boneMass?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_kg),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.BoneMass),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.BONE_MASS)) },
                     )
                     GroupedSectionDivider()
@@ -152,7 +155,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = metrics.bodyWaterMass?.round(1)?.toString() ?: "--",
                         unit = stringResource(R.string.unit_kg),
                         leadingIconRes = R.drawable.body_24px,
-                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        leadingTint = colorFor(com.vayunmathur.health.data.RecordType.BodyWaterMass),
                         onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.BODY_WATER_MASS)) },
                     )
                 }
@@ -160,13 +163,16 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 
             // Medical records
             item {
-                GroupedSection(title = stringResource(R.string.section_medical_records)) {
+                GroupedSection(
+                    title = stringResource(R.string.section_medical_records),
+                    accentColor = HealthColors.Vitals,
+                ) {
                     MetricRow(
                         label = stringResource(R.string.label_immunizations),
                         value = "",
                         unit = "",
                         leadingIconRes = R.drawable.baseline_add_24,
-                        leadingTint = MaterialTheme.colorScheme.primary,
+                        leadingTint = HealthColors.Vitals,
                         onClick = { backStack.add(Route.Immunizations) },
                     )
                     GroupedSectionDivider()
@@ -175,7 +181,7 @@ fun BodyPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                         value = "",
                         unit = "",
                         leadingIconRes = R.drawable.baseline_add_24,
-                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        leadingTint = HealthColors.Vitals,
                         onClick = { backStack.add(Route.LabResults) },
                     )
                 }

@@ -262,7 +262,7 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                 }
 
                 item {
-                    GroupedSection(title = "Today") {
+                    GroupedSection(title = "Today", accentColor = HealthColors.Nutrition) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -275,7 +275,7 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                                 label = "kcal",
                                 value = totalCalories.round(0).toInt().toString(),
                                 modifier = Modifier.size(96.dp),
-                                color = MaterialTheme.colorScheme.primary,
+                                color = HealthColors.Nutrition,
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -290,17 +290,17 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                             }
                         }
                         GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Protein", totalProtein, 50.0, "g")
+                        MacroRow("Protein", totalProtein, 50.0, "g", proteinColor)
                         GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Carbs", totalCarbs, 275.0, "g")
+                        MacroRow("Carbs", totalCarbs, 275.0, "g", carbsColor)
                         GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Fat", totalFat, 78.0, "g")
+                        MacroRow("Fat", totalFat, 78.0, "g", fatColor)
                     }
                 }
 
                 if (allLogs.isNotEmpty()) {
                     item {
-                        GroupedSection(title = "Logged today") {
+                        GroupedSection(title = "Logged today", accentColor = HealthColors.Nutrition) {
                             allLogs.forEachIndexed { idx, log ->
                                 if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
                                 val headline = log.metadata
@@ -332,7 +332,7 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                 }
 
                 item {
-                    GroupedSection(title = "Nutrient breakdown") {
+                    GroupedSection(title = "Nutrient breakdown", accentColor = HealthColors.Nutrition) {
                         otherNutrients.forEachIndexed { idx, nutrient ->
                             if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
                             NutrientProgressRow(nutrient, dayStart, dayEnd)
@@ -345,7 +345,7 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 }
 
 @Composable
-private fun MacroRow(label: String, value: Double, goal: Double, unit: String) {
+private fun MacroRow(label: String, value: Double, goal: Double, unit: String, color: androidx.compose.ui.graphics.Color = HealthColors.Nutrition) {
     val progress = (value / goal).toFloat().coerceIn(0f, 1f)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(
@@ -353,7 +353,7 @@ private fun MacroRow(label: String, value: Double, goal: Double, unit: String) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = color.copy(alpha = 0.95f))
             Text(
                 text = "${value.round(0).toInt()} / ${goal.toInt()} $unit",
                 style = MaterialTheme.typography.bodyMedium,
@@ -365,8 +365,8 @@ private fun MacroRow(label: String, value: Double, goal: Double, unit: String) {
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxWidth().height(4.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            color = color,
+            trackColor = color.copy(alpha = 0.18f),
             strokeCap = StrokeCap.Round,
         )
     }
@@ -397,8 +397,8 @@ private fun NutrientProgressRow(nutrient: NutrientDV, start: Instant, end: Insta
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxWidth().height(4.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            color = HealthColors.Nutrition,
+            trackColor = HealthColors.Nutrition.copy(alpha = 0.18f),
             strokeCap = StrokeCap.Round,
         )
     }
