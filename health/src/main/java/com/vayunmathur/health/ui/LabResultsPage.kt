@@ -15,14 +15,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.feature.ExperimentalPersonalHealthRecordApi
 import com.google.fhir.model.r4b.Observation
 import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.GroupedSectionDivider
+import com.vayunmathur.health.ui.components.HealthRow
 import com.vayunmathur.health.util.HealthViewModel
+import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconUpload
 import com.vayunmathur.library.util.NavBackStack
@@ -160,6 +163,9 @@ fun LabResultsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                 title = { Text(stringResource(R.string.label_lab_results)) },
                 navigationIcon = {
                     IconNavigation(backStack)
+                },
+                actions = {
+                    BackupButtons()
                 }
             )
         },
@@ -177,9 +183,9 @@ fun LabResultsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
             }
         }
     ) { paddingValues ->
-        Column(Modifier.padding(paddingValues).padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(paddingValues)) {
             if (isProcessing) {
-                Card(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
                     Row(
                         Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -206,9 +212,10 @@ fun LabResultsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
                     }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    labResults.forEach {
-                        ObservationCard(it)
+                GroupedSection(title = stringResource(R.string.label_lab_results)) {
+                    labResults.forEachIndexed { idx, obs ->
+                        if (idx > 0) GroupedSectionDivider()
+                        ObservationRow(obs)
                     }
                 }
             }
@@ -217,43 +224,30 @@ fun LabResultsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
 }
 
 @Composable
-fun ObservationCard(observation: Observation) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                painterResource(R.drawable.baseline_location_pin_24), // Using pin for labs
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = MaterialTheme.colorScheme.secondary
-            )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(observation.code.text?.value ?: stringResource(R.string.unknown), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.status_format, observation.status.value?.getDisplay() ?: stringResource(R.string.unknown)), style = MaterialTheme.typography.bodyMedium)
-
-                val valueDisplay = when (val v = observation.value) {
-                    is Observation.Value.Quantity -> {
-                        val q = v.value
-                        stringResource(R.string.value_unit_space_format, q.value?.value?.toString() ?: "", q.unit?.value ?: "")
-                    }
-                    is Observation.Value.String -> v.value.value
-                    else -> null
-                }
-                if (valueDisplay != null) {
-                    Text(stringResource(R.string.result_format, valueDisplay), style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-
-                val dateDisplay = when (val eff = observation.effective) {
-                    is Observation.Effective.DateTime -> eff.value.value?.toString()
-                    else -> null
-                }
-                if (dateDisplay != null) {
-                    Text(stringResource(R.string.date_format_label, dateDisplay), style = MaterialTheme.typography.bodySmall)
-                }
-            }
+fun ObservationRow(observation: Observation) {
+    val name = observation.code.text?.value ?: stringResource(R.string.unknown)
+    val status = observation.status.value?.getDisplay() ?: stringResource(R.string.unknown)
+    val valueDisplay = when (val v = observation.value) {
+        is Observation.Value.Quantity -> {
+            val q = v.value
+            stringResource(R.string.value_unit_space_format, q.value?.value?.toString() ?: "", q.unit?.value ?: "")
         }
+        is Observation.Value.String -> v.value.value
+        else -> null
     }
+    val dateDisplay = when (val eff = observation.effective) {
+        is Observation.Effective.DateTime -> eff.value.value?.toString()
+        else -> null
+    }
+    val supporting = buildList {
+        add(stringResource(R.string.status_format, status))
+        valueDisplay?.let { add(stringResource(R.string.result_format, it)) }
+        dateDisplay?.let { add(stringResource(R.string.date_format_label, it)) }
+    }.joinToString(" • ")
+    HealthRow(
+        headline = name,
+        supporting = supporting,
+        leadingIconRes = R.drawable.baseline_location_pin_24,
+        leadingTint = MaterialTheme.colorScheme.secondary,
+    )
 }

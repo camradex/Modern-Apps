@@ -1,0 +1,175 @@
+package com.vayunmathur.health.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.vayunmathur.health.R
+import com.vayunmathur.health.Route
+import com.vayunmathur.health.data.RecordType
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.GroupedSectionDivider
+import com.vayunmathur.health.ui.components.MetricRow
+import com.vayunmathur.health.util.HealthViewModel
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.util.round
+import kotlinx.coroutines.flow.map
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActivityPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
+    val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+    val today = now.date
+
+    val dayRange = remember(today) {
+        val start = today.atStartOfDayIn(TimeZone.currentSystemDefault())
+        start to start.plus(24.hours)
+    }
+    val dayStart = dayRange.first
+    val dayEnd = dayRange.second
+
+    val stepsToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Steps, dayStart, dayEnd).map { it.toLong() }
+    }.collectAsState(0L)
+    val activeCaloriesToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.CaloriesActive, dayStart, dayEnd).map { it.toLong() }
+    }.collectAsState(0L)
+    val distanceToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Distance, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val floorsToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Floors, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val elevationToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Elevation, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val wheelchairToday by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Wheelchair, dayStart, dayEnd).map { it.toLong() }
+    }.collectAsState(0L)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text(stringResource(R.string.nav_activity)) })
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                top = paddingValues.calculateTopPadding() + 8.dp,
+                bottom = paddingValues.calculateBottomPadding() + 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Today
+            item {
+                GroupedSection(title = stringResource(R.string.section_today_activity)) {
+                    MetricRow(
+                        label = stringResource(R.string.label_steps),
+                        value = stepsToday.toString(),
+                        unit = stringResource(R.string.unit_steps),
+                        leadingIconRes = R.drawable.outline_directions_walk_24,
+                        leadingTint = MaterialTheme.colorScheme.primary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.STEPS)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_active),
+                        value = activeCaloriesToday.toString(),
+                        unit = stringResource(R.string.unit_cal),
+                        leadingIconRes = R.drawable.baseline_local_fire_department_24,
+                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ACTIVE_CALORIES)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_distance),
+                        value = distanceToday.round(2).toString(),
+                        unit = stringResource(R.string.unit_km),
+                        leadingIconRes = R.drawable.baseline_location_pin_24,
+                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.DISTANCE)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_floors),
+                        value = floorsToday.round(1).toString(),
+                        unit = stringResource(R.string.unit_fl),
+                        leadingIconRes = R.drawable.baseline_location_pin_24,
+                        leadingTint = MaterialTheme.colorScheme.primary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.FLOORS)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_elevation),
+                        value = elevationToday.round(1).toString(),
+                        unit = stringResource(R.string.unit_m),
+                        leadingIconRes = R.drawable.baseline_location_pin_24,
+                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ELEVATION)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_wheelchair_pushes),
+                        value = wheelchairToday.toString(),
+                        unit = stringResource(R.string.unit_pushes),
+                        leadingIconRes = R.drawable.outline_directions_walk_24,
+                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.WHEELCHAIR_PUSHES)) },
+                    )
+                }
+            }
+
+            // This week (sparklines stubbed — TODO wire HealthAPI.getListOfSums for 7-day arrays)
+            item {
+                GroupedSection(title = stringResource(R.string.section_this_week)) {
+                    MetricRow(
+                        label = stringResource(R.string.label_steps),
+                        value = stepsToday.toString(),
+                        unit = stringResource(R.string.unit_steps),
+                        leadingIconRes = R.drawable.outline_directions_walk_24,
+                        leadingTint = MaterialTheme.colorScheme.primary,
+                        sparkline = emptyList(), // TODO: HealthAPI.getListOfSums for 7d
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.STEPS)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_active),
+                        value = activeCaloriesToday.toString(),
+                        unit = stringResource(R.string.unit_cal),
+                        leadingIconRes = R.drawable.baseline_local_fire_department_24,
+                        leadingTint = MaterialTheme.colorScheme.secondary,
+                        sparkline = emptyList(), // TODO
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.ACTIVE_CALORIES)) },
+                    )
+                    GroupedSectionDivider()
+                    MetricRow(
+                        label = stringResource(R.string.label_distance),
+                        value = distanceToday.round(2).toString(),
+                        unit = stringResource(R.string.unit_km),
+                        leadingIconRes = R.drawable.baseline_location_pin_24,
+                        leadingTint = MaterialTheme.colorScheme.tertiary,
+                        sparkline = emptyList(), // TODO
+                        onClick = { backStack.add(Route.BarChartDetails(HealthMetricConfig.DISTANCE)) },
+                    )
+                }
+            }
+        }
+    }
+}

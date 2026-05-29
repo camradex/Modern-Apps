@@ -1,0 +1,435 @@
+package com.vayunmathur.health.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Canvas
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.max
+import kotlin.math.min
+
+/** Section header used above grouped sections — titleSmall + Bold + onSurfaceVariant. */
+@Composable
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    leadingIconRes: Int? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingIconRes != null) {
+            Icon(
+                painter = painterResource(id = leadingIconRes),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Grouped section container. Optional SectionHeader on top + Surface
+ * with rounded corners (16dp) using surfaceContainerLow. Children stacked
+ * in a Column inside the Surface.
+ */
+@Composable
+fun GroupedSection(
+    title: String? = null,
+    modifier: Modifier = Modifier,
+    leadingIconRes: Int? = null,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (title != null) {
+            SectionHeader(title = title, leadingIconRes = leadingIconRes)
+        }
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                content()
+            }
+        }
+    }
+}
+
+/** Thin inset divider used between rows inside a GroupedSection. */
+@Composable
+fun GroupedSectionDivider(insetStart: Dp = 56.dp) {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = insetStart),
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    )
+}
+
+/**
+ * Standard row with a small circular tinted icon background (36dp),
+ * headline + supporting text, and an optional trailing slot.
+ */
+@Composable
+fun HealthRow(
+    headline: String,
+    modifier: Modifier = Modifier,
+    supporting: String? = null,
+    leadingIconRes: Int? = null,
+    leadingTint: Color = MaterialTheme.colorScheme.primary,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .let { if (onClick != null) it.clickable { onClick() } else it }
+        .padding(horizontal = 16.dp, vertical = 10.dp)
+
+    Row(
+        modifier = rowModifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingIconRes != null) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(leadingTint.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = leadingIconRes),
+                    contentDescription = null,
+                    tint = leadingTint,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (supporting != null) {
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
+        }
+    }
+}
+
+/**
+ * Metric row — extends HealthRow with a value+unit titleMedium on the right,
+ * optional inline sparkline above the value, optional DeltaChip below.
+ */
+@Composable
+fun MetricRow(
+    label: String,
+    value: String,
+    unit: String,
+    modifier: Modifier = Modifier,
+    leadingIconRes: Int? = null,
+    leadingTint: Color = MaterialTheme.colorScheme.primary,
+    delta: Float? = null,
+    sparkline: List<Float>? = null,
+    deltaIsGood: (Float) -> Boolean = { it >= 0f },
+    onClick: (() -> Unit)? = null,
+) {
+    HealthRow(
+        headline = label,
+        modifier = modifier,
+        leadingIconRes = leadingIconRes,
+        leadingTint = leadingTint,
+        onClick = onClick,
+        trailing = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (sparkline != null) {
+                    Sparkline(
+                        values = sparkline,
+                        modifier = Modifier
+                            .width(28.dp)
+                            .height(16.dp),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.End,
+                    )
+                    if (unit.isNotEmpty()) {
+                        Spacer(Modifier.width(2.dp))
+                        Text(
+                            text = unit,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 2.dp),
+                        )
+                    }
+                }
+                if (delta != null) {
+                    Spacer(Modifier.height(2.dp))
+                    DeltaChip(percent = delta, isGood = deltaIsGood(delta))
+                }
+            }
+        },
+    )
+}
+
+/** Small pill showing a percent delta with an arrow. */
+@Composable
+fun DeltaChip(
+    percent: Float,
+    isGood: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = if (isGood) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+    val contentColor = if (isGood) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+    val arrow = if (percent >= 0f) "▲" else "▼"
+    val absPct = if (percent < 0f) -percent else percent
+    Surface(
+        modifier = modifier.wrapContentSize(),
+        shape = RoundedCornerShape(999.dp),
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Text(
+            text = "$arrow ${"%.0f".format(absPct)}%",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/**
+ * Inline bar-style sparkline. Latest bar uses [barColor], the rest use
+ * [trackColor] at 0.5 alpha. Auto-scales to the max value in the list.
+ */
+@Composable
+fun Sparkline(
+    values: List<Float>,
+    modifier: Modifier = Modifier,
+    barColor: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+) {
+    if (values.isEmpty()) {
+        Spacer(modifier = modifier)
+        return
+    }
+    val maxValue = max(values.max(), 0.0001f)
+    val mutedTrack = trackColor.copy(alpha = 0.5f)
+    Canvas(modifier = modifier) {
+        val n = values.size
+        val gap = 2f
+        val totalGap = gap * (n - 1)
+        val barWidth = max((size.width - totalGap) / n, 1f)
+        val cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2f, barWidth / 2f)
+        values.forEachIndexed { index, v ->
+            val frac = (v / maxValue).coerceIn(0f, 1f)
+            val barHeight = max(size.height * frac, 1f)
+            val left = index * (barWidth + gap)
+            val top = size.height - barHeight
+            val color = if (index == n - 1) barColor else mutedTrack
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(left, top),
+                size = Size(barWidth, barHeight),
+                cornerRadius = cornerRadius,
+            )
+        }
+    }
+}
+
+/**
+ * Single ring with a label and value stacked centered inside. Arc starts at
+ * the top (-90 deg) and sweeps `360 * progress` degrees.
+ */
+@Composable
+fun MetricRing(
+    progress: Float,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    strokeWidth: Dp = 12.dp,
+) {
+    val trackColor = color.copy(alpha = 0.18f)
+    val clamped = progress.coerceIn(0f, 1f)
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = Stroke(width = strokeWidth.toPx(), cap = StrokeCap.Round)
+            val inset = strokeWidth.toPx() / 2f
+            val arcSize = Size(size.width - inset * 2f, size.height - inset * 2f)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = stroke,
+            )
+            drawArc(
+                color = color,
+                startAngle = -90f,
+                sweepAngle = 360f * clamped,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = stroke,
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (label.isNotEmpty()) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (value.isNotEmpty()) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Three concentric activity rings. Outer = steps (primary), middle = energy
+ * (secondary), inner = mindful (tertiary). No labels inside — caller provides
+ * the legend below.
+ */
+@Composable
+fun ActivityRingsTrio(
+    stepsPct: Float,
+    energyPct: Float,
+    mindfulPct: Float,
+    modifier: Modifier = Modifier,
+) {
+    val outer = MaterialTheme.colorScheme.primary
+    val middle = MaterialTheme.colorScheme.secondary
+    val inner = MaterialTheme.colorScheme.tertiary
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val side = min(maxWidth.value, maxHeight.value).dp
+        val stroke = (side.value * 0.10f).dp
+        val gap = (side.value * 0.02f).dp
+        val step = stroke + gap
+        Box(modifier = Modifier.size(side), contentAlignment = Alignment.Center) {
+            MetricRing(
+                progress = stepsPct,
+                label = "",
+                value = "",
+                modifier = Modifier.size(side),
+                color = outer,
+                strokeWidth = stroke,
+            )
+            MetricRing(
+                progress = energyPct,
+                label = "",
+                value = "",
+                modifier = Modifier.size(side - step * 2),
+                color = middle,
+                strokeWidth = stroke,
+            )
+            MetricRing(
+                progress = mindfulPct,
+                label = "",
+                value = "",
+                modifier = Modifier.size(side - step * 4),
+                color = inner,
+                strokeWidth = stroke,
+            )
+        }
+    }
+}
+
+/** Color palette for the sleep hypnogram, sourced from MaterialTheme. */
+data class HypnogramColors(
+    val awake: Color,
+    val rem: Color,
+    val core: Color,
+    val deep: Color,
+)
+
+/**
+ * Theme-driven hypnogram colors. Replaces the hardcoded iOS palette
+ * (#FF9500/#5AC8FA/#007AFF/#5856D6) previously used in SleepDetailsPage.
+ */
+@Composable
+fun hypnogramColors(): HypnogramColors = HypnogramColors(
+    awake = MaterialTheme.colorScheme.tertiary,
+    rem = MaterialTheme.colorScheme.primary,
+    core = MaterialTheme.colorScheme.primaryContainer,
+    deep = MaterialTheme.colorScheme.secondary,
+)

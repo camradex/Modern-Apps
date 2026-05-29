@@ -10,14 +10,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.feature.ExperimentalPersonalHealthRecordApi
 import com.google.fhir.model.r4b.Immunization
 import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.GroupedSectionDivider
+import com.vayunmathur.health.ui.components.HealthRow
 import com.vayunmathur.health.util.HealthViewModel
+import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconUpload
 import com.vayunmathur.library.util.NavBackStack
@@ -127,6 +130,9 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel
                 title = { Text(stringResource(R.string.label_immunizations)) },
                 navigationIcon = {
                     IconNavigation(backStack)
+                },
+                actions = {
+                    BackupButtons()
                 }
             )
         },
@@ -144,9 +150,9 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel
             }
         }
     ) { paddingValues ->
-        Column(Modifier.padding(paddingValues).padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(paddingValues)) {
             if (isProcessing) {
-                Card(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
                     Row(
                         Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -173,9 +179,10 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel
                     }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    immunizations.forEach {
-                        ImmunizationCard(it)
+                GroupedSection(title = stringResource(R.string.label_immunizations)) {
+                    immunizations.forEachIndexed { idx, imm ->
+                        if (idx > 0) GroupedSectionDivider()
+                        ImmunizationRow(imm)
                     }
                 }
             }
@@ -184,37 +191,25 @@ fun ImmunizationsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel
 }
 
 @Composable
-fun ImmunizationCard(immunization: Immunization) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                painterResource(R.drawable.baseline_favorite_24),
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = MaterialTheme.colorScheme.tertiary
-            )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(immunization.vaccineCode.text?.value ?: stringResource(R.string.unknown), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.status_format, immunization.status.value?.getDisplay() ?: stringResource(R.string.unknown)), style = MaterialTheme.typography.bodyMedium)
-                
-                val occurrenceDisplay = when (val occ = immunization.occurrence) {
-                    is Immunization.Occurrence.DateTime -> occ.value.value?.toString()
-                    is Immunization.Occurrence.String -> occ.value.value
-                }
-                if (occurrenceDisplay != null) {
-                    Text(stringResource(R.string.date_format_label, occurrenceDisplay), style = MaterialTheme.typography.bodyMedium)
-                }
-                
-                if (immunization.lotNumber?.value != null) {
-                    Text(stringResource(R.string.lot_format, immunization.lotNumber!!.value!!), style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
+fun ImmunizationRow(immunization: Immunization) {
+    val name = immunization.vaccineCode.text?.value ?: stringResource(R.string.unknown)
+    val status = immunization.status.value?.getDisplay() ?: stringResource(R.string.unknown)
+    val occurrenceDisplay = when (val occ = immunization.occurrence) {
+        is Immunization.Occurrence.DateTime -> occ.value.value?.toString()
+        is Immunization.Occurrence.String -> occ.value.value
     }
+    val lot = immunization.lotNumber?.value
+    val supporting = buildList {
+        add(stringResource(R.string.status_format, status))
+        occurrenceDisplay?.let { add(stringResource(R.string.date_format_label, it)) }
+        lot?.let { add(stringResource(R.string.lot_format, it)) }
+    }.joinToString(" • ")
+    HealthRow(
+        headline = name,
+        supporting = supporting,
+        leadingIconRes = R.drawable.baseline_favorite_24,
+        leadingTint = MaterialTheme.colorScheme.tertiary,
+    )
 }
 
 internal fun isOpenAssistantInstalled(context: Context): Boolean {

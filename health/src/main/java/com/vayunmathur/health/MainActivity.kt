@@ -10,7 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -55,14 +54,16 @@ import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.WheelchairPushesRecord
 import com.vayunmathur.library.util.NavKey
 import com.vayunmathur.health.data.HealthDatabase
+import com.vayunmathur.health.ui.ActivityPage
 import com.vayunmathur.health.ui.BarChartDetails
+import com.vayunmathur.health.ui.BodyPage
 import com.vayunmathur.health.ui.HealthMetricConfig
-import com.vayunmathur.health.ui.MainPage
 import com.vayunmathur.health.ui.ImmunizationsPage
 import com.vayunmathur.health.ui.LabResultsPage
-import com.vayunmathur.health.ui.NutritionDetailsPage
+import com.vayunmathur.health.ui.NutritionPage
 import com.vayunmathur.health.ui.RecipeEditorPage
 import com.vayunmathur.health.ui.RecipeManagementPage
+import com.vayunmathur.health.ui.TodayPage
 import com.vayunmathur.health.util.HealthAPI
 import com.vayunmathur.health.util.HealthSyncWorker
 import com.vayunmathur.health.util.HealthViewModel
@@ -159,7 +160,13 @@ class MainActivity : ComponentActivity() {
 @Serializable
 sealed interface Route: NavKey {
     @Serializable
-    data object MainPage: Route
+    data object Today: Route
+
+    @Serializable
+    data object Activity: Route
+
+    @Serializable
+    data object Body: Route
 
     @Serializable
     data object Immunizations: Route
@@ -185,22 +192,46 @@ sealed interface Route: NavKey {
 
 @Composable
 fun Navigation(viewModel: HealthViewModel) {
-    val backStack = rememberNavBackStack<Route>(Route.MainPage)
+    val backStack = rememberNavBackStack<Route>(Route.Today)
     MainNavigation(
         backStack = backStack,
         bottomBar = {
             com.vayunmathur.library.util.BottomNavBar(
                 backStack = backStack,
                 pages = listOf(
-                    com.vayunmathur.library.util.BottomBarItem("Home", Route.MainPage, com.vayunmathur.library.R.drawable.favorite_24px),
-                    com.vayunmathur.library.util.BottomBarItem("Nutrition", Route.NutritionDetails, com.vayunmathur.library.R.drawable.fire_24px)
+                    com.vayunmathur.library.util.BottomBarItem(
+                        stringResourceName(R.string.nav_today),
+                        Route.Today,
+                        com.vayunmathur.library.R.drawable.favorite_24px,
+                    ),
+                    com.vayunmathur.library.util.BottomBarItem(
+                        stringResourceName(R.string.nav_activity),
+                        Route.Activity,
+                        R.drawable.outline_directions_walk_24,
+                    ),
+                    com.vayunmathur.library.util.BottomBarItem(
+                        stringResourceName(R.string.nav_nutrition),
+                        Route.NutritionDetails,
+                        com.vayunmathur.library.R.drawable.fire_24px,
+                    ),
+                    com.vayunmathur.library.util.BottomBarItem(
+                        stringResourceName(R.string.nav_body),
+                        Route.Body,
+                        R.drawable.body_24px,
+                    ),
                 ),
                 currentPage = backStack.last()
             )
         }
     ) {
-        entry<Route.MainPage> {
-            MainPage(backStack, viewModel)
+        entry<Route.Today> {
+            TodayPage(backStack, viewModel)
+        }
+        entry<Route.Activity> {
+            ActivityPage(backStack, viewModel)
+        }
+        entry<Route.Body> {
+            BodyPage(backStack, viewModel)
         }
         entry<Route.Immunizations> {
             ImmunizationsPage(backStack, viewModel)
@@ -209,7 +240,7 @@ fun Navigation(viewModel: HealthViewModel) {
             LabResultsPage(backStack, viewModel)
         }
         entry<Route.NutritionDetails> {
-            NutritionDetailsPage(backStack, viewModel)
+            NutritionPage(backStack, viewModel)
         }
         entry<Route.RecipeManagement> {
             RecipeManagementPage(backStack, viewModel)
@@ -225,3 +256,7 @@ fun Navigation(viewModel: HealthViewModel) {
         }
     }
 }
+
+@Composable
+private fun stringResourceName(@androidx.annotation.StringRes id: Int): String =
+    androidx.compose.ui.res.stringResource(id)

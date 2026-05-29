@@ -26,6 +26,8 @@ import com.vayunmathur.health.data.Record
 import com.vayunmathur.health.data.RecordType
 import com.vayunmathur.health.data.SleepData
 import com.vayunmathur.health.data.SleepStage
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.hypnogramColors
 import com.vayunmathur.health.util.HealthViewModel
 import com.vayunmathur.health.util.displayString
 import com.vayunmathur.library.ui.IconNavigation
@@ -193,10 +195,11 @@ fun SleepStageGraph(record: Record) {
     val endTime = record.endTime.toEpochMilli()
     val duration = (endTime - startTime).coerceAtLeast(1)
 
-    val awakeColor = Color(0xFFFF9500)
-    val remColor = Color(0xFF5AC8FA)
-    val coreColor = Color(0xFF007AFF)
-    val deepColor = Color(0xFF5856D6)
+    val colors = hypnogramColors()
+    val awakeColor = colors.awake
+    val remColor = colors.rem
+    val coreColor = colors.core
+    val deepColor = colors.deep
 
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -316,35 +319,29 @@ fun SleepStageGraph(record: Record) {
 @Composable
 fun SleepStageBreakdown(data: SleepData) {
     val context = LocalContext.current
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Stages", style = MaterialTheme.typography.labelLarge)
-        Card(
-            modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val colors = hypnogramColors()
+    GroupedSection(title = "Stages") {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            StageRow(
+                stringResource(R.string.label_awake),
+                hoursMinutesString(context, data.awakeDurationMillis / 60000),
+                colors.awake
             )
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                StageRow(
-                    stringResource(R.string.label_awake),
-                    hoursMinutesString(context, data.awakeDurationMillis / 60000),
-                    Color(0xFFFF9500)
-                )
-                StageRow(
-                    stringResource(R.string.label_rem),
-                    hoursMinutesString(context, data.remDurationMillis / 60000),
-                    Color(0xFF5AC8FA)
-                )
-                StageRow(
-                    stringResource(R.string.label_core),
-                    hoursMinutesString(context, data.lightDurationMillis / 60000),
-                    Color(0xFF007AFF)
-                )
-                StageRow(
-                    stringResource(R.string.label_deep),
-                    hoursMinutesString(context, data.deepDurationMillis / 60000),
-                    Color(0xFF5856D6)
-                )
-            }
+            StageRow(
+                stringResource(R.string.label_rem),
+                hoursMinutesString(context, data.remDurationMillis / 60000),
+                colors.rem
+            )
+            StageRow(
+                stringResource(R.string.label_core),
+                hoursMinutesString(context, data.lightDurationMillis / 60000),
+                colors.core
+            )
+            StageRow(
+                stringResource(R.string.label_deep),
+                hoursMinutesString(context, data.deepDurationMillis / 60000),
+                colors.deep
+            )
         }
     }
 }

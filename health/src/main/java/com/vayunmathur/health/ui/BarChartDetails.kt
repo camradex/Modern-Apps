@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +55,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.GroupedSectionDivider
 import com.vayunmathur.health.util.HealthViewModel
 import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
@@ -497,40 +497,42 @@ fun BarChartDetails(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(), contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp + padding.calculateRightPadding(LayoutDirection.Ltr),
+                    start = 0.dp,
+                    end = padding.calculateRightPadding(LayoutDirection.Ltr),
                     bottom = 24.dp + padding.calculateBottomPadding()
                 )
             ) {
-                itemsIndexed(dataState.historyItems) { idx, item ->
-                    Card(
-                        Modifier.padding(vertical = 2.dp),
-                        shape = verticalSegmentedCardShape(idx, dataState.historyItems.size)
-                    ) {
-                        ListItem({
-                            Text(item.label, style = MaterialTheme.typography.bodyLarge)
-                        }, trailingContent = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (item.isGoalMet) {
-                                    IconCheck()
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                                val format = { v: Double ->
-                                    if (item.useDecimals) v.toStringDigits(1) else v.toLong()
-                                        .toStringCommas()
-                                }
-                                val valueString = if (item.secondaryValue != null) stringResource(
-                                    R.string.slash_value_format,
-                                    format(item.value),
-                                    format(item.secondaryValue)
-                                ) else format(item.value)
-                                Text(
-                                    stringResource(
-                                        R.string.value_unit_space_format, valueString, item.unit
-                                    ), style = MaterialTheme.typography.bodyLarge
-                                )
+                if (dataState.historyItems.isNotEmpty()) {
+                    item {
+                        GroupedSection {
+                            dataState.historyItems.forEachIndexed { idx, item ->
+                                if (idx > 0) GroupedSectionDivider()
+                                ListItem({
+                                    Text(item.label, style = MaterialTheme.typography.bodyLarge)
+                                }, trailingContent = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (item.isGoalMet) {
+                                            IconCheck()
+                                            Spacer(Modifier.width(4.dp))
+                                        }
+                                        val format = { v: Double ->
+                                            if (item.useDecimals) v.toStringDigits(1) else v.toLong()
+                                                .toStringCommas()
+                                        }
+                                        val valueString = if (item.secondaryValue != null) stringResource(
+                                            R.string.slash_value_format,
+                                            format(item.value),
+                                            format(item.secondaryValue)
+                                        ) else format(item.value)
+                                        Text(
+                                            stringResource(
+                                                R.string.value_unit_space_format, valueString, item.unit
+                                            ), style = MaterialTheme.typography.bodyLarge
+                                        )
+                                    }
+                                }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                             }
-                        }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                        }
                     }
                 }
             }

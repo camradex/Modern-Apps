@@ -167,4 +167,22 @@
     <string name="msg_upload_first_immunization">Upload your first immunization record</string>
     <string name="msg_upload_first_lab_result">Upload your first lab result</string>
     <string name="msg_processing_document">Processing document&#8230;</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_today">Today</string>
+    <string name="nav_activity">Activity</string>
+    <string name="nav_nutrition">Nutrition</string>
+    <string name="nav_body">Body</string>
+
+    <!-- New section headers -->
+    <string name="section_latest_vitals">Latest vitals</string>
+    <string name="section_last_night">Last night</string>
+    <string name="section_quick_stats">Quick stats</string>
+    <string name="section_today_activity">Today</string>
+    <string name="section_this_week">This week</string>
+
+    <!-- BodyPage FAB -->
+    <string name="fab_add_weight">Add weight</string>
+    <string name="fab_add_bp">Add blood pressure</string>
+    <string name="fab_upload_pdf">Upload medical PDF</string>
 </resources>

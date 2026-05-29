@@ -10,10 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +22,10 @@ import androidx.compose.ui.unit.dp
 import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
 import com.vayunmathur.health.data.RecordType
+import com.vayunmathur.health.ui.components.GroupedSection
+import com.vayunmathur.health.ui.components.GroupedSectionDivider
+import com.vayunmathur.health.ui.components.HealthRow
+import com.vayunmathur.health.ui.components.MetricRing
 import com.vayunmathur.health.util.HealthViewModel
 import com.vayunmathur.health.util.displayString
 import com.vayunmathur.library.util.NavBackStack
@@ -39,9 +44,9 @@ data class NutrientDV(
         val sumFunction: (RecordType, Instant, Instant) -> kotlinx.coroutines.flow.Flow<Double>
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
+fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
     val initialPage = 999
     val pagerState = rememberPagerState(initialPage = initialPage) { 1000 }
     val tz = TimeZone.currentSystemDefault()
@@ -163,9 +168,9 @@ fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
         )
     }
 
-    var showFabMenu by remember { androidx.compose.runtime.mutableStateOf(false) }
-    var showHydrationDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
-    var showMealDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var fabExpanded by remember { mutableStateOf(false) }
+    var showHydrationDialog by remember { mutableStateOf(false) }
+    var showMealDialog by remember { mutableStateOf(false) }
 
     val selectedDay = remember(pagerState.currentPage) {
         today.minus(initialPage - pagerState.currentPage, DateTimeUnit.DAY)
@@ -189,39 +194,38 @@ fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
                 )
             },
             floatingActionButton = {
-                Column(horizontalAlignment = Alignment.End) {
-                    if (showFabMenu) {
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                showFabMenu = false
-                                showHydrationDialog = true
-                            },
-                            icon = { IconFire() },
-                            text = { Text("Log Hydration") },
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                showFabMenu = false
-                                showMealDialog = true
-                            },
-                            icon = { IconFire() },
-                            text = { Text("Log Meal") },
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                showFabMenu = false
-                                backStack.add(Route.RecipeManagement)
-                            },
-                            icon = { IconAdd() },
-                            text = { Text("Create/Edit Recipes") },
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                FloatingActionButtonMenu(
+                    expanded = fabExpanded,
+                    button = {
+                        ToggleFloatingActionButton(fabExpanded, { fabExpanded = it }) {
+                            if (!fabExpanded) IconAdd() else IconClose()
+                        }
                     }
-                    FloatingActionButton(onClick = { showFabMenu = !showFabMenu }) {
-                        IconAdd()
-                    }
+                ) {
+                    FloatingActionButtonMenuItem(
+                        onClick = {
+                            fabExpanded = false
+                            showHydrationDialog = true
+                        },
+                        text = { Text("Log Hydration") },
+                        icon = { IconFire() }
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = {
+                            fabExpanded = false
+                            showMealDialog = true
+                        },
+                        text = { Text("Log Meal") },
+                        icon = { IconFire() }
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = {
+                            fabExpanded = false
+                            backStack.add(Route.RecipeManagement)
+                        },
+                        text = { Text("Recipes") },
+                        icon = { IconAdd() }
+                    )
                 }
             }
     ) { padding ->
@@ -238,132 +242,100 @@ fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
             val loggedMeals by remember(dayStart, dayEnd) { viewModel.getAllRecordsInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(emptyList())
             val loggedHydration by remember(dayStart, dayEnd) { viewModel.getAllRecordsInRange(RecordType.Hydration, dayStart, dayEnd) }.collectAsState(emptyList())
             val allLogs = (loggedMeals + loggedHydration).sortedByDescending { it.startTime }
+            val otherNutrients = nutrients.filter { it.name !in listOf("Protein", "Carbohydrates", "Fat") }
 
             LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(
-                        top = 16.dp + padding.calculateTopPadding(),
-                        bottom = 80.dp + padding.calculateBottomPadding()
+                        top = 8.dp + padding.calculateTopPadding(),
+                        bottom = 96.dp + padding.calculateBottomPadding()
                     )
             ) {
                 item {
-                    Column(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                                text = if (day == today) stringResource(R.string.label_today) else day.displayString(),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.secondary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Compact Summary Grid
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    Text(
+                        text = if (day == today) stringResource(R.string.label_today) else day.displayString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    )
+                }
+
+                item {
+                    GroupedSection(title = "Today") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Calories", style = MaterialTheme.typography.labelMedium)
-                                    Text("${totalCalories.round(0).toInt()}/2000", style = MaterialTheme.typography.titleMedium)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Protein", style = MaterialTheme.typography.labelMedium)
-                                    Text("${totalProtein.round(0).toInt()}/50g", style = MaterialTheme.typography.titleSmall)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Carbs", style = MaterialTheme.typography.labelMedium)
-                                    Text("${totalCarbs.round(0).toInt()}/275g", style = MaterialTheme.typography.titleSmall)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Fat", style = MaterialTheme.typography.labelMedium)
-                                    Text("${totalFat.round(0).toInt()}/78g", style = MaterialTheme.typography.titleSmall)
-                                }
+                            val caloriesGoal = 2000.0
+                            val calorieProgress = (totalCalories / caloriesGoal).toFloat().coerceIn(0f, 1f)
+                            MetricRing(
+                                progress = calorieProgress,
+                                label = "kcal",
+                                value = totalCalories.round(0).toInt().toString(),
+                                modifier = Modifier.size(96.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Calories",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = "${totalCalories.round(0).toInt()} / ${caloriesGoal.toInt()} kcal",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
                             }
                         }
+                        GroupedSectionDivider(insetStart = 16.dp)
+                        MacroRow("Protein", totalProtein, 50.0, "g")
+                        GroupedSectionDivider(insetStart = 16.dp)
+                        MacroRow("Carbs", totalCarbs, 275.0, "g")
+                        GroupedSectionDivider(insetStart = 16.dp)
+                        MacroRow("Fat", totalFat, 78.0, "g")
                     }
                 }
 
-
                 if (allLogs.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Logged Items",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                        )
-                    }
-                    items(allLogs, key = { it.primaryKey }) { log ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = log.metadata ?: (if (log.type == RecordType.Hydration) "Hydration" else "Meal"),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (log.type == RecordType.Nutrition) {
-                                        Text(
-                                            text = "${log.nutritionData?.calories?.round(0)?.toInt() ?: 0} kcal • ${log.nutritionData?.protein?.round(1) ?: 0}g P • ${log.nutritionData?.carbohydrates?.round(1) ?: 0}g C • ${log.nutritionData?.fat?.round(1) ?: 0}g F",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "${log.value.round(2)} L",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
+                        GroupedSection(title = "Logged today") {
+                            allLogs.forEachIndexed { idx, log ->
+                                if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
+                                val headline = log.metadata
+                                    ?: if (log.type == RecordType.Hydration) "Hydration" else "Meal"
+                                val supporting = if (log.type == RecordType.Nutrition) {
+                                    "${log.nutritionData?.calories?.round(0)?.toInt() ?: 0} kcal • " +
+                                        "${log.nutritionData?.protein?.round(1) ?: 0}g P • " +
+                                        "${log.nutritionData?.carbohydrates?.round(1) ?: 0}g C • " +
+                                        "${log.nutritionData?.fat?.round(1) ?: 0}g F"
+                                } else {
+                                    "${log.value.round(2)} L"
+                                }
+                                HealthRow(
+                                    headline = headline,
+                                    supporting = supporting,
+                                    trailing = {
+                                        IconButton(onClick = { viewModel.deleteRecord(log) }) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.baseline_delete_24),
+                                                contentDescription = "Unlog",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
-                                }
-                                IconButton(onClick = { viewModel.deleteRecord(log) }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.baseline_delete_24),
-                                        contentDescription = "Unlog",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                                )
                             }
                         }
                     }
                 }
 
                 item {
-                    Text(
-                        text = "Nutrient Breakdown",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-                    )
-                }
-                
-                // Other nutrients (excluding Protein, Carbs, Fat since they are in the summary)
-                val otherNutrients = nutrients.filter { it.name !in listOf("Protein", "Carbohydrates", "Fat") }
-                items(otherNutrients.chunked(2)) { rowNutrients ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowNutrients.forEach { nutrient ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                NutrientProgressCard(nutrient, dayStart, dayEnd)
-                            }
-                        }
-                        // Fill remaining space if row has less than 2 items
-                        repeat(2 - rowNutrients.size) {
-                            Spacer(modifier = Modifier.weight(1f))
+                    GroupedSection(title = "Nutrient breakdown") {
+                        otherNutrients.forEachIndexed { idx, nutrient ->
+                            if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
+                            NutrientProgressRow(nutrient, dayStart, dayEnd)
                         }
                     }
                 }
@@ -373,45 +345,61 @@ fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
 }
 
 @Composable
-fun NutrientProgressCard(nutrient: NutrientDV, start: Instant, end: Instant) {
-    val currentAmount by remember(nutrient, start, end) { nutrient.sumFunction(nutrient.type, start, end) }.collectAsState(0.0)
-    val progress = (currentAmount / nutrient.dailyValue).toFloat().coerceIn(0f, 1f)
-
-    Card(
+private fun MacroRow(label: String, value: Double, goal: Double, unit: String) {
+    val progress = (value / goal).toFloat().coerceIn(0f, 1f)
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors =
-                    CardDefaults.cardColors(
-                            containerColor =
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-    ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                        text = nutrient.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                )
-                Text(
-                        text = "${currentAmount.round(1)}/${nutrient.dailyValue.round(0).toInt()}${nutrient.unit}",
-                        style = MaterialTheme.typography.labelSmall
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color =
-                            if (progress >= 1f) Color(0xFF4CAF50)
-                            else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = "${value.round(0).toInt()} / ${goal.toInt()} $unit",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
             )
         }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            strokeCap = StrokeCap.Round,
+        )
+    }
+}
+
+@Composable
+private fun NutrientProgressRow(nutrient: NutrientDV, start: Instant, end: Instant) {
+    val currentAmount by remember(nutrient, start, end) { nutrient.sumFunction(nutrient.type, start, end) }.collectAsState(0.0)
+    val progress = (currentAmount / nutrient.dailyValue).toFloat().coerceIn(0f, 1f)
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = nutrient.name,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "${currentAmount.round(1)} / ${nutrient.dailyValue.round(0).toInt()}${nutrient.unit}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            strokeCap = StrokeCap.Round,
+        )
     }
 }

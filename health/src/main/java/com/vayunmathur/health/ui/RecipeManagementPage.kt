@@ -20,6 +20,7 @@ import com.vayunmathur.health.util.FoodSearchAPI
 import com.vayunmathur.health.util.HealthViewModel
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.ui.*
+import com.vayunmathur.library.ui.BackupButtons
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -48,7 +49,9 @@ fun RecipeManagementPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recipe & Ingredients") }
+                title = { Text("Recipes") },
+                navigationIcon = { IconNavigation(backStack) },
+                actions = { BackupButtons() }
             )
         },
         floatingActionButton = {
