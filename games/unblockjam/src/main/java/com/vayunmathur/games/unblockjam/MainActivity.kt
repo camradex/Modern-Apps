@@ -38,8 +38,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,44 +55,34 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.vayunmathur.library.util.NavBackStack
-import com.vayunmathur.library.util.NavKey
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vayunmathur.games.unblockjam.data.LevelData
+import com.vayunmathur.games.unblockjam.data.LevelPack
 import com.vayunmathur.games.unblockjam.ui.UnblockJamTheme
+import com.vayunmathur.games.unblockjam.util.AppBackupAgent
+import com.vayunmathur.games.unblockjam.util.UnblockJamViewModel
+import com.vayunmathur.games.unblockjam.util.blockDragGestures
+import com.vayunmathur.library.ui.AchievementNotification
+import com.vayunmathur.library.ui.GameCenterScreen
 import com.vayunmathur.library.ui.IconCheck
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconStar
 import com.vayunmathur.library.util.MainNavigation
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.util.NavKey
 import com.vayunmathur.library.util.rememberNavBackStack
-import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
-import com.vayunmathur.games.unblockjam.data.LevelPack
-import com.vayunmathur.games.unblockjam.data.LevelData
-import com.vayunmathur.games.unblockjam.data.Block
-import com.vayunmathur.games.unblockjam.data.Coord
-import com.vayunmathur.games.unblockjam.data.Dimension
-import com.vayunmathur.games.unblockjam.data.CompletedLevelsRepository
-import com.vayunmathur.games.unblockjam.data.LevelStats
-import com.vayunmathur.games.unblockjam.util.blockDragGestures
-import com.vayunmathur.games.unblockjam.util.isMoveValid
-import com.vayunmathur.library.util.AchievementsManager
-import com.vayunmathur.library.ui.AchievementNotification
-import com.vayunmathur.library.ui.GameCenterScreen
-import com.vayunmathur.games.unblockjam.util.AppBackupAgent
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
-
-    private lateinit var completedLevelsRepository: CompletedLevelsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LevelPack.init(this)
-        completedLevelsRepository = CompletedLevelsRepository(this)
         setContent {
             UnblockJamTheme {
-                Navigation(completedLevelsRepository)
+                val viewModel: UnblockJamViewModel = viewModel()
+                Navigation(viewModel)
             }
         }
     }
@@ -111,14 +101,9 @@ sealed interface Route: NavKey {
 }
 
 @Composable
-fun Navigation(completedLevelsRepository: CompletedLevelsRepository) {
+fun Navigation(viewModel: UnblockJamViewModel) {
     val backStack = rememberNavBackStack<Route>(Route.PackSelector)
-    val achievementsManager = rememberAchievementsManager(completedLevelsRepository)
-    val newAchievement by achievementsManager.newAchievement.collectAsState()
-
-    LaunchedEffect(Unit) {
-        achievementsManager.checkExistingAchievements()
-    }
+    val newAchievement by viewModel.achievementsManager.newAchievement.collectAsState()
 
     Box(Modifier.fillMaxSize()) {
         MainNavigation(backStack) {
@@ -128,19 +113,19 @@ fun Navigation(completedLevelsRepository: CompletedLevelsRepository) {
             entry<Route.LevelSelector> {
                 val pack = LevelPack.PACKS[it.packIndex]
                 UnblockJamTheme(pack = pack) {
-                    LevelScreen(backStack, completedLevelsRepository, it.packIndex)
+                    LevelScreen(backStack, viewModel, it.packIndex)
                 }
             }
             entry<Route.Game> {
                 val pack = LevelPack.PACKS[it.packIndex]
                 UnblockJamTheme(pack = pack) {
-                    GameScreen(backStack, completedLevelsRepository, it.packIndex, it.levelIndex, achievementsManager)
+                    GameScreen(backStack, viewModel, it.packIndex, it.levelIndex)
                 }
             }
             entry<Route.GameCenter> {
                 GameCenterScreen(
                     backupAgent = AppBackupAgent(),
-                    manager = achievementsManager,
+                    manager = viewModel.achievementsManager,
                     onBack = { backStack.pop() }
                 )
             }
@@ -148,18 +133,9 @@ fun Navigation(completedLevelsRepository: CompletedLevelsRepository) {
 
         newAchievement?.let {
             AchievementNotification(it) {
-                achievementsManager.dismissNotification()
+                viewModel.dismissAchievementNotification()
             }
         }
-    }
-}
-
-@Composable
-fun rememberAchievementsManager(repository: CompletedLevelsRepository): AchievementsManager {
-    val context = LocalContext.current
-    return remember {
-        val json = context.assets.open("achievements.json").bufferedReader().use { it.readText() }
-        com.vayunmathur.games.unblockjam.util.UnblockJamAchievementsManager(context, json, repository)
     }
 }
 
@@ -199,9 +175,9 @@ fun PackScreen(backStack: NavBackStack<Route>, onOpenGameCenter: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LevelScreen(backStack: NavBackStack<Route>, completedLevelsRepository: CompletedLevelsRepository, packIndex: Int) {
+fun LevelScreen(backStack: NavBackStack<Route>, viewModel: UnblockJamViewModel, packIndex: Int) {
     val pack = LevelPack.PACKS[packIndex]
-    val levelStats = completedLevelsRepository.getLevelStats()
+    val levelStats by viewModel.levelStats.collectAsState()
     Scaffold(topBar = {
         TopAppBar({Text(stringResource(R.string.level_selector))})
     }) { paddingValues ->
@@ -239,43 +215,27 @@ fun LevelScreen(backStack: NavBackStack<Route>, completedLevelsRepository: Compl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GameScreen(backStack: NavBackStack<Route>, completedLevelsRepository: CompletedLevelsRepository, packIndex: Int, levelIndex: Int, achievementsManager: AchievementsManager) {
+fun GameScreen(backStack: NavBackStack<Route>, viewModel: UnblockJamViewModel, packIndex: Int, levelIndex: Int) {
     val pack = LevelPack.PACKS[packIndex]
-    var currentLevelData by remember { mutableStateOf(pack.levels[levelIndex]) }
-    val history = remember { mutableStateListOf<LevelData>() }
-    var isLevelWon by remember { mutableStateOf(false) }
-    var levelStats by remember { mutableStateOf(completedLevelsRepository.getLevelStats()) }
+    val uiState by viewModel.uiState.collectAsState()
+    val levelStats by viewModel.levelStats.collectAsState()
 
-    fun changeLevel(newLevelIndex: Int) {
-        val boundedIndex = newLevelIndex.coerceIn(0, pack.levels.lastIndex)
-        backStack.setLast(Route.Game(packIndex, boundedIndex))
+    LaunchedEffect(packIndex, levelIndex) {
+        viewModel.loadLevel(packIndex, levelIndex)
     }
 
-    fun getCurrentMoves(): Int {
-        val winningMoveIncrement =
-            if (isLevelWon && currentLevelData.lastMovedBlockIndex != 0) 1 else 0
-        return history.size + winningMoveIncrement
-    }
-
-    LaunchedEffect(isLevelWon) {
-        if (isLevelWon) {
-            val moves = getCurrentMoves()
-            completedLevelsRepository.updateBestScore(pack.levels[levelIndex].id, moves)
-            levelStats = completedLevelsRepository.getLevelStats() // Refresh stats
-            
-            achievementsManager.onAchievementUnlocked("first_level")
-            achievementsManager.onProgressUpdated("level_50", levelStats.size)
-            if (moves <= pack.levels[levelIndex].optimalMoves) {
-                achievementsManager.onAchievementUnlocked("optimal_win")
-            }
-            if (packIndex == 0 && levelStats.size >= pack.levels.size) {
-                achievementsManager.onAchievementUnlocked("all_levels_pack_0")
-            }
-            
-            delay(500)
-            changeLevel(levelIndex + 1)
+    LaunchedEffect(packIndex, levelIndex) {
+        viewModel.nextLevel.collect { nextIndex ->
+            val boundedIndex = nextIndex.coerceIn(0, pack.levels.lastIndex)
+            backStack.setLast(Route.Game(packIndex, boundedIndex))
         }
     }
+
+    val isReady = uiState.packIndex == packIndex &&
+            uiState.levelIndex == levelIndex &&
+            uiState.currentLevelData != null
+    val currentLevelData = if (isReady) uiState.currentLevelData!! else pack.levels[levelIndex]
+    val isLevelWon = isReady && uiState.isLevelWon
 
     Scaffold(topBar = {TopAppBar({}, navigationIcon = {IconNavigation(backStack)})}) { innerPadding ->
         Surface(
@@ -298,65 +258,39 @@ fun GameScreen(backStack: NavBackStack<Route>, completedLevelsRepository: Comple
                     val currentLevelStats = pack.levels.getOrNull(levelIndex)?.id?.let { levelStats[it] }
                     PuzzleInfoBox(
                         levelIndex = levelIndex,
-                        onLevelChange = ::changeLevel,
+                        onLevelChange = { newIndex ->
+                            val bounded = newIndex.coerceIn(0, pack.levels.lastIndex)
+                            backStack.setLast(Route.Game(packIndex, bounded))
+                        },
                         isCompleted = currentLevelStats != null,
                         maxLevelIndex = pack.levels.lastIndex
                     )
                     MovesInfoBox(
-                        moves = getCurrentMoves(),
+                        moves = if (isReady) viewModel.getCurrentMoves() else 0,
                         bestScore = currentLevelStats?.bestScore,
                         optimalMoves = currentLevelData.optimalMoves
                     )
                 }
                 GameBoard(
                     levelData = currentLevelData,
-                    onLevelChanged = { newLevelData ->
-                        if (history.isNotEmpty()) {
-                            // If block is moved back to its previous position
-                            if (history.last().blocks == newLevelData.blocks) {
-                                currentLevelData = history.removeAt(history.lastIndex)
-                                return@GameBoard
-                            }
-                        }
-
-                        if (!isLevelWon) {
-                            // Only add to history if a different block is moved
-                            if (newLevelData.lastMovedBlockIndex != currentLevelData.lastMovedBlockIndex) {
-                                history.add(currentLevelData)
-                                completedLevelsRepository.incrementTotalMoves()
-                                achievementsManager.onProgressUpdated("moves_1000", completedLevelsRepository.getTotalMoves())
-                            }
-                            currentLevelData = newLevelData
-                        }
-                    },
-                    onLevelWon = {
-                        isLevelWon = true
-                    },
+                    onLevelChanged = viewModel::onBlockMoved,
+                    onLevelWon = viewModel::onLevelWon,
                     isLevelWon = isLevelWon
                 )
+                val hasHistory = isReady && uiState.history.isNotEmpty()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     Button(
-                        onClick = {
-                            if (history.isNotEmpty()) {
-                                currentLevelData = history.removeAt(history.lastIndex)
-                                completedLevelsRepository.incrementUndoCount()
-                                achievementsManager.onProgressUpdated("undo_master", completedLevelsRepository.getUndoCount())
-                            }
-                        },
-                        enabled = history.isNotEmpty() && !isLevelWon
+                        onClick = { viewModel.onUndo() },
+                        enabled = hasHistory && !isLevelWon
                     ) {
                         Text(stringResource(R.string.undo))
                     }
                     Button(
-                        onClick = {
-                            history.clear()
-                            currentLevelData = pack.levels[levelIndex]
-                            isLevelWon = false
-                        },
-                        enabled = history.isNotEmpty() && !isLevelWon
+                        onClick = { viewModel.onRestart() },
+                        enabled = hasHistory && !isLevelWon
                     ) {
                         Text(stringResource(R.string.restart))
                     }
