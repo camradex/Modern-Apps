@@ -33,6 +33,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+// Process-scope LRU for album thumbnails. Bounded so we don't retain decoded
+// bitmaps for the entire library; 64 entries covers a typical visible list.
+private val albumArtCache = object : LinkedHashMap<Uri, Bitmap>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Uri, Bitmap>): Boolean = size > 64
+}
+
 fun getThumbnail(context: Context, uri: Uri): Bitmap? {
     return try {
         context.contentResolver.loadThumbnail(
@@ -158,16 +164,20 @@ suspend fun getArtists(context: Context): List<Artist> = withContext(Dispatchers
 @Composable
 fun AlbumArt(artUri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    // Let Coil own the in-memory thumbnail cache so the same URI rendered in
-    // multiple lists / screens decodes once. Without memoryCacheKey, Coil keys
-    // by data + transformations only, which can miss for content:// URIs that
-    // resolve through loadThumbnail-style fetchers.
+    // contentResolver.loadThumbnail handles MediaStore.Audio.Albums URIs (which
+    // resolve to the underlying album art) where Coil's default fetcher
+    // doesn't. Cache the decoded bitmap in a process-scope LRU keyed by URI so
+    // the same album doesn't re-decode each time it scrolls in/out.
+    var bitmap: Bitmap? by remember(artUri) { mutableStateOf(albumArtCache[artUri]) }
+    LaunchedEffect(artUri) {
+        if (bitmap == null) {
+            val loaded = withContext(Dispatchers.IO) { getThumbnail(context, artUri) }
+            if (loaded != null) albumArtCache[artUri] = loaded
+            bitmap = loaded
+        }
+    }
     AsyncImage(
-        model = ImageRequest.Builder(context)
-            .data(artUri)
-            .size(CoilSize(300, 300))
-            .memoryCacheKey("album-art-${'$'}artUri")
-            .build(),
+        model = bitmap,
         contentDescription = "Album Art",
         modifier = modifier
     )
