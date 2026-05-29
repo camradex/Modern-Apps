@@ -33,6 +33,11 @@ object EmailNotifications {
      * Post one notification per [messages]. Tapping it launches MainActivity
      * with extras that navigate to the message thread (reusing the existing
      * intent-extra handling in `MainActivity.handleIntent`).
+     *
+     * Posted oldest-first so Android's shade — which sorts within a channel
+     * by post-time, newest on top — renders newest email at the top of the
+     * stack. The notification's displayed timestamp is also pinned to the
+     * email's actual receive time via setWhen instead of the post wall-clock.
      */
     fun postForNewMessages(context: Context, accountEmail: String, messages: List<EmailMessage>) {
         if (messages.isEmpty()) return
@@ -40,7 +45,8 @@ object EmailNotifications {
         val nm = NotificationManagerCompat.from(context)
         if (!nm.areNotificationsEnabled()) return
 
-        for (msg in messages) {
+        val ordered = messages.sortedBy { it.dateMillis }
+        for (msg in ordered) {
             val launch = Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra("accountEmail", msg.accountEmail)
@@ -58,6 +64,11 @@ object EmailNotifications {
                 .setContentTitle(msg.from.substringBefore("<").trim().ifEmpty { msg.from })
                 .setContentText(msg.subject.ifBlank { "(no subject)" })
                 .setSubText(accountEmail)
+                .setWhen(if (msg.dateMillis > 0L) msg.dateMillis else System.currentTimeMillis())
+                .setShowWhen(true)
+                // Stable sort key (lexicographic) so the shade keeps emails in
+                // chronological order even if posts arrive simultaneously.
+                .setSortKey(sortKey(msg))
                 .setStyle(
                     NotificationCompat.BigTextStyle().bigText(
                         buildString {
@@ -82,5 +93,16 @@ object EmailNotifications {
 
     private fun notificationId(msg: EmailMessage): Int {
         return ((msg.accountEmail.hashCode().toLong() * 31) xor msg.id).toInt()
+    }
+
+    /**
+     * Lexicographic sort key descending in time: newer emails sort BEFORE
+     * older ones in the shade. Subtract dateMillis from Long.MAX_VALUE so a
+     * larger timestamp maps to a smaller numeric string after zero-padding.
+     */
+    private fun sortKey(msg: EmailMessage): String {
+        val t = if (msg.dateMillis > 0L) msg.dateMillis else System.currentTimeMillis()
+        val inverted = Long.MAX_VALUE - t
+        return inverted.toString().padStart(20, '0')
     }
 }
