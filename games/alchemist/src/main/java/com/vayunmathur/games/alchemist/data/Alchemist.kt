@@ -10,6 +10,7 @@ object Alchemist {
         private set
 
     fun init(context: Context) {
+        if (::items.isInitialized && ::recipes.isInitialized) return
         val jsonItems = Json.decodeFromString<List<JsonItem>>(context.assets.open("items.json").bufferedReader().readText())
         recipes = jsonItems.flatMap { item ->
             item.recipes.map { recipe ->

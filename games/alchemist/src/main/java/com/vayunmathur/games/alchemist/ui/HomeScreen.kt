@@ -23,57 +23,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vayunmathur.games.alchemist.R
 import com.vayunmathur.games.alchemist.Route
-import com.vayunmathur.games.alchemist.data.Alchemist
-import com.vayunmathur.library.util.AchievementsManager
-import com.vayunmathur.library.util.DataStoreUtils
+import com.vayunmathur.games.alchemist.util.AlchemistViewModel
+import com.vayunmathur.games.alchemist.util.PlacedItem
 import com.vayunmathur.library.util.NavBackStack
-import kotlin.collections.sortedBy
 import kotlin.math.roundToInt
-import kotlinx.coroutines.flow.map
-
-data class PlacedItem(val id: Long, val offset: Offset, val key: Long = System.nanoTime())
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     backStack: NavBackStack<Route>,
-    ds: DataStoreUtils,
-    achievementsManager: AchievementsManager,
+    viewModel: AlchemistViewModel,
     onOpenGameCenter: () -> Unit
 ) {
-    val itemsIds by remember {
-        ds.stringSetFlow("available_items").map { set ->
-            set.map { it.toLong() }.toSet()
-        }
-    }.collectAsState(initial = emptySet())
+    val availableItems by viewModel.availableItems.collectAsState()
+    val activeItems by viewModel.placedElements.collectAsState()
 
-    val availableItems by remember {
-        derivedStateOf { Alchemist.items.filter { it.id in itemsIds }.sortedBy { it.name } }
-    }
-
-    LaunchedEffect(availableItems) {
-        if (availableItems.isEmpty()) {
-            (1L..4L).forEach { ds.addStringToSet("available_items", it.toString()) }
-        } else {
-            if (availableItems.size > 4) achievementsManager.onAchievementUnlocked("first_creation")
-            achievementsManager.onProgressUpdated("collector_50", availableItems.size)
-            achievementsManager.onProgressUpdated("collector_100", availableItems.size)
-
-            if (availableItems.size >= Alchemist.items.size && Alchemist.items.isNotEmpty()) {
-                achievementsManager.onAchievementUnlocked("all_discovered")
-            }
-            if (availableItems.any { it.final }) {
-                achievementsManager.onAchievementUnlocked("final_item")
-            }
-        }
-    }
-
-    val activeItems = remember { mutableStateListOf<PlacedItem>() }
     var screenWidth by remember { mutableFloatStateOf(0f) }
     var panelWidth by remember { mutableFloatStateOf(0f) }
     var playAreaOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
 
-    // Tracking for the current item being "pulled out" of the sidebar
+    // Tracking for the current item being "pulled out" of the sidebar (UI-only).
     var draggingInventoryId by remember { mutableStateOf<Long?>(null) }
     var draggingInventoryOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -109,37 +78,16 @@ fun HomeScreen(
                 activeItems.forEach { item ->
                     key(item.key) {
                         val density = LocalDensity.current
-                        DraggableElement(item = item, onOffsetChanged = { newOffset ->
-                            val index = activeItems.indexOfFirst { it.key == item.key }
-                            if (index != -1) {
-                                activeItems[index] = activeItems[index].copy(offset = newOffset)
-                            }
-                        }, onDragEnd = { finalOffset ->
+                        DraggableElement(item = item, onDragEnd = { finalOffset ->
                             val limit = with(density) {
                                 screenWidth - panelWidth - 72.dp.toPx()
                             }
-                            // DELETION: Triggered if any part of the item touches the
-                            // sidebar
-                            // screenWidth - panelWidth is the exact left edge of the
-                            // sidebar.
+                            // DELETION: Triggered if any part of the item touches the sidebar.
                             if (finalOffset.x > limit) {
-                                activeItems.removeAll { it.key == item.key }
+                                viewModel.removeElement(item.key)
                             } else {
-                                checkCombinations(
-                                    item.key, finalOffset, activeItems
-                                ) { toRemove, toAdd ->
-                                    activeItems.removeAll {
-                                        it.key in toRemove.map { r -> r.key }
-                                    }
-                                    activeItems.addAll(toAdd)
-                                    toAdd.forEach { newItem ->
-                                        if (newItem.id !in itemsIds) {
-                                            ds.addStringToSet(
-                                                "available_items", newItem.id.toString()
-                                            )
-                                        }
-                                    }
-                                }
+                                viewModel.updateElementPosition(item.key, finalOffset)
+                                viewModel.tryCombine(item.key, finalOffset)
                             }
                         }, onLongClick = {
                             contextMenuElementId = item.id
@@ -185,33 +133,9 @@ fun HomeScreen(
                                         change.consume()
                                         draggingInventoryOffset += dragAmount
                                     }, onDragEnd = {
-                                        // Final Check: Drop it if it's
-                                        // clear of the sidebar
-                                        // Using -72f to ensure the icon is
-                                        // fully out before adding to board
+                                        // Final Check: Drop it if it's clear of the sidebar.
                                         if (draggingInventoryOffset.x < (screenWidth - panelWidth - 72f)) {
-                                            val newItem = PlacedItem(
-                                                item.id, draggingInventoryOffset
-                                            )
-                                            activeItems.add(newItem)
-
-                                            checkCombinations(
-                                                newItem.key, newItem.offset, activeItems
-                                            ) { toRemove, toAdd ->
-                                                activeItems.removeAll {
-                                                    it.key in toRemove.map { r ->
-                                                        r.key
-                                                    }
-                                                }
-                                                activeItems.addAll(toAdd)
-                                                toAdd.forEach { res ->
-                                                    if (res.id !in itemsIds) {
-                                                        ds.addStringToSet(
-                                                            "available_items", res.id.toString()
-                                                        )
-                                                    }
-                                                }
-                                            }
+                                            viewModel.placeElement(item.id, draggingInventoryOffset)
                                         }
                                         draggingInventoryId = null
                                     }, onDragCancel = {
@@ -263,7 +187,6 @@ fun HomeScreen(
 @Composable
 fun DraggableElement(
     item: PlacedItem,
-    onOffsetChanged: (Offset) -> Unit,
     onDragEnd: (Offset) -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -280,28 +203,6 @@ fun DraggableElement(
                 detectDragGestures(onDrag = { change, dragAmount ->
                     change.consume()
                     currentOffset += dragAmount
-                    onOffsetChanged(currentOffset)
                 }, onDragEnd = { onDragEnd(currentOffset) })
             }) { DynamicAlchemyIcon(item.id) }
-}
-
-fun checkCombinations(
-    movedKey: Long,
-    movedOffset: Offset,
-    currentItems: List<PlacedItem>,
-    onCombined: (toRemove: List<PlacedItem>, toAdd: List<PlacedItem>) -> Unit
-) {
-    val movedItem = currentItems.find { it.key == movedKey } ?: return
-    val others = currentItems.filter { it.key != movedKey }
-
-    val target = others.find { other -> (other.offset - movedOffset).getDistance() < 100f }
-
-    if (target != null) {
-        val combined = listOf(movedItem.id, target.id).sorted()
-        val recipe = Alchemist.recipes.find { it.inputs.sorted() == combined }
-        if (recipe != null) {
-            onCombined(
-                listOf(movedItem, target), recipe.outputs.map { PlacedItem(it, target.offset) })
-        }
-    }
 }
