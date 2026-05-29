@@ -125,7 +125,12 @@ class EmailManager {
         }
     }
 
-    private fun fetchMessagesFromOpenFolder(
+    /**
+     * Fetches new messages from an already-open [folder] without re-opening it.
+     * Used by [ImapIdleService] so that we can respond to `EXISTS` push events
+     * inline on the same connection instead of going through WorkManager.
+     */
+    fun fetchMessagesFromOpenFolder(
         folder: Folder,
         user: String,
         folderName: String,

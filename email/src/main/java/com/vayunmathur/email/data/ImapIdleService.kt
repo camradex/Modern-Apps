@@ -100,6 +100,12 @@ class ImapIdleService : Service() {
     /**
      * Open a store, open INBOX, register a listener, then loop on `idle()`.
      * Returns when the connection is broken (idle throws) — caller handles reconnect.
+     *
+     * On every `idle()` return we do a quick INBOX-only fetch directly on the
+     * same store. This is much faster than going through `EmailSyncWorker`
+     * (which schedules a WorkManager job, opens a fresh TLS connection, then
+     * iterates every folder before INBOX) and gets the new mail row into the
+     * DB within roughly one server round-trip.
      */
     private suspend fun runIdleSession(account: com.vayunmathur.email.EmailAccount) {
         withContext(Dispatchers.IO) {
@@ -111,24 +117,64 @@ class ImapIdleService : Service() {
             ) { store ->
                 val folder = store.getFolder("INBOX") as IMAPFolder
                 folder.open(Folder.READ_ONLY)
+                // Track whether the server pushed new mail since the last idle()
+                // call so we know when to do the post-idle fetch.
+                val sawNewMail = java.util.concurrent.atomic.AtomicBoolean(false)
                 folder.addMessageCountListener(object : MessageCountAdapter() {
                     override fun messagesAdded(e: MessageCountEvent) {
-                        Log.d(TAG, "EXISTS for ${account.email}: ${e.messages.size} new message(s) — kicking sync")
-                        EmailSyncWorker.runOneOffSync(applicationContext)
+                        Log.d(TAG, "EXISTS for ${account.email}: ${e.messages.size} new message(s)")
+                        sawNewMail.set(true)
                     }
                 })
                 try {
                     Log.d(TAG, "Entering IDLE for ${account.email}")
                     while (scope.coroutineContext.isActive) {
                         folder.idle()
-                        // idle() returns when the server pushes something or drops
-                        // the connection. The MessageCountAdapter above has already
-                        // run by the time we get here, so we just re-enter idle.
+                        // idle() returned. If new mail was announced via EXISTS,
+                        // fetch+persist+notify NOW on this same connection.
+                        if (sawNewMail.getAndSet(false)) {
+                            try {
+                                quickInboxFetch(folder, account.email)
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "Inline INBOX fetch failed: ${t.message}")
+                            }
+                        }
                     }
                 } finally {
                     try { folder.close(false) } catch (_: Throwable) {}
                 }
             }
+        }
+    }
+
+    /**
+     * Reads new INBOX messages straight from the still-open IDLE folder, writes
+     * them to the DB, and raises notifications if the app isn't foregrounded.
+     */
+    private suspend fun quickInboxFetch(folder: IMAPFolder, accountEmail: String) {
+        val dao = EmailDatabase.getInstance(applicationContext).emailDao()
+        val known = dao.getKnownUids(accountEmail, "INBOX").toSet()
+        val (messages, attachments) = EmailManager().fetchMessagesFromOpenFolder(
+            folder = folder,
+            user = accountEmail,
+            folderName = "INBOX",
+            limit = 50,
+            offset = 0,
+            fetchBodies = false,
+            skipUids = known,
+        )
+        if (messages.isEmpty()) {
+            Log.d(TAG, "Inline INBOX fetch: nothing new")
+            return
+        }
+        dao.insertMessages(messages)
+        if (attachments.isNotEmpty()) dao.insertAttachments(attachments)
+        Log.d(TAG, "Inline INBOX fetch: ${messages.size} new message(s) for $accountEmail")
+
+        if (!com.vayunmathur.email.util.AppLifecycleTracker.isAppInForeground) {
+            com.vayunmathur.email.util.EmailNotifications.postForNewMessages(
+                applicationContext, accountEmail, messages,
+            )
         }
     }
 
