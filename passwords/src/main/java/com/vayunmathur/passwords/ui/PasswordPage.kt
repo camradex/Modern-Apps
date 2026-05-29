@@ -48,7 +48,6 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconNavigation
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.passwords.data.Password
 import com.vayunmathur.passwords.R
 import com.vayunmathur.passwords.Route
@@ -60,17 +59,16 @@ import com.vayunmathur.passwords.util.TOTP
 fun PasswordPage(
     backStack: NavBackStack<Route>,
     id: Long,
-    viewModel: DatabaseViewModel,
-    passwordsViewModel: PasswordsViewModel,
+    viewModel: PasswordsViewModel,
 ) {
-    val password by viewModel.getState<Password>(id)
+    val password by viewModel.passwordState(id)
     val context = LocalContext.current
     var showPassword by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val now by passwordsViewModel.tickerFlow.collectAsState()
+    val now by viewModel.tickerFlow.collectAsState()
 
     LaunchedEffect(Unit) {
-        passwordsViewModel.copyEvents.collect { msg ->
+        viewModel.copyEvents.collect { msg ->
             snackbarHostState.showSnackbar(msg)
         }
     }
@@ -152,7 +150,7 @@ fun PasswordPage(
                         }
 
                         IconButton(onClick = {
-                            passwordsViewModel.copyToClipboard("password", password.password)
+                            viewModel.copyToClipboard("password", password.password)
                         }) {
                             Icon(painterResource(R.drawable.content_copy_24px), contentDescription = "Copy")
                         }
@@ -190,7 +188,7 @@ fun PasswordPage(
                             Box(contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator({ progress }, Modifier.size(56.dp))
                                 IconButton({
-                                    passwordsViewModel.copyToClipboard("totp", currentCode, "TOTP copied")
+                                    viewModel.copyToClipboard("totp", currentCode, "TOTP copied")
                                 }) {
                                     Icon(painterResource(R.drawable.content_copy_24px), contentDescription = "Copy TOTP")
                                 }

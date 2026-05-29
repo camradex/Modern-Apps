@@ -41,7 +41,6 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.ui.IconClose
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconSave
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.isNew
 import com.vayunmathur.passwords.data.Password
 import com.vayunmathur.passwords.Route
@@ -53,14 +52,13 @@ import kotlinx.coroutines.launch
 fun PasswordEditPage(
     backStack: NavBackStack<Route>,
     id: Long,
-    viewModel: DatabaseViewModel,
-    passwordsViewModel: PasswordsViewModel,
+    viewModel: PasswordsViewModel,
 ) {
-    val pass by viewModel.getState<Password>(id) { Password() }
+    val pass by viewModel.passwordState(id) { Password() }
     LaunchedEffect(id, pass) {
-        passwordsViewModel.initDraft(pass)
+        viewModel.initDraft(pass)
     }
-    val draft by passwordsViewModel.draft.collectAsState()
+    val draft by viewModel.draft.collectAsState()
     val current = draft ?: pass
 
     var websiteInput by remember { mutableStateOf("") }
@@ -73,7 +71,7 @@ fun PasswordEditPage(
     fun addWebsiteFromInput() {
         val candidate = websiteInput.trim()
         if (candidate.isNotEmpty()) {
-            passwordsViewModel.updateDraft { d ->
+            viewModel.updateDraft { d ->
                 if (d.websites.contains(candidate)) d
                 else d.copy(websites = d.websites + candidate)
             }
@@ -98,13 +96,13 @@ fun PasswordEditPage(
                     return@FloatingActionButton
                 }
                 // Normalize empty TOTP to null before saving.
-                passwordsViewModel.updateDraft { it.copy(totpSecret = it.totpSecret?.ifBlank { null }) }
+                viewModel.updateDraft { it.copy(totpSecret = it.totpSecret?.ifBlank { null }) }
                 if (d.isNew()) {
-                    passwordsViewModel.saveDraft { newId ->
+                    viewModel.saveDraft { newId ->
                         backStack.setLast(Route.PasswordPage(newId))
                     }
                 } else {
-                    passwordsViewModel.saveDraft()
+                    viewModel.saveDraft()
                     backStack.pop()
                 }
             }) {
@@ -118,13 +116,13 @@ fun PasswordEditPage(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = current.name,
-                        onValueChange = { v -> passwordsViewModel.updateDraft { it.copy(name = v) } },
+                        onValueChange = { v -> viewModel.updateDraft { it.copy(name = v) } },
                         label = { Text(stringResource(R.string.label_name)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = current.userId,
-                        onValueChange = { v -> passwordsViewModel.updateDraft { it.copy(userId = v) } },
+                        onValueChange = { v -> viewModel.updateDraft { it.copy(userId = v) } },
                         label = { Text(stringResource(R.string.label_user_id_email)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -135,7 +133,7 @@ fun PasswordEditPage(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = current.password,
-                        onValueChange = { v -> passwordsViewModel.updateDraft { it.copy(password = v) } },
+                        onValueChange = { v -> viewModel.updateDraft { it.copy(password = v) } },
                         label = { Text(stringResource(R.string.label_password)) },
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -146,7 +144,7 @@ fun PasswordEditPage(
 
                     OutlinedTextField(
                         value = current.totpSecret ?: "",
-                        onValueChange = { v -> passwordsViewModel.updateDraft { it.copy(totpSecret = v) } },
+                        onValueChange = { v -> viewModel.updateDraft { it.copy(totpSecret = v) } },
                         label = { Text(stringResource(R.string.label_totp_secret)) },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions.Default,
@@ -179,7 +177,7 @@ fun PasswordEditPage(
                                 InputChip(true, {}, label = { Text(w)}, modifier = Modifier.padding(vertical = 4.dp),
                                     trailingIcon = {
                                         Box(Modifier.clickable {
-                                            passwordsViewModel.updateDraft { d ->
+                                            viewModel.updateDraft { d ->
                                                 d.copy(websites = d.websites.toMutableList().also { it.removeAt(index) })
                                             }
                                         }) {

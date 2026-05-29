@@ -13,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -21,7 +22,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.ui.ListPage
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.util.tryOrDefault
 import com.vayunmathur.passwords.data.Password
@@ -29,18 +29,17 @@ import com.vayunmathur.passwords.R
 import com.vayunmathur.passwords.Route
 import com.vayunmathur.passwords.util.PasswordsViewModel
 import com.vayunmathur.passwords.util.TOTP
-import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuPage(
     backStack: NavBackStack<Route>,
-    viewModel: DatabaseViewModel,
-    passwordsViewModel: PasswordsViewModel,
+    viewModel: PasswordsViewModel,
     passphrase: String,
 ) {
-    val now by passwordsViewModel.tickerFlow.collectAsState()
-    ListPage<Password, Route, Route.PasswordEditPage>(backStack, viewModel, "Passwords", {
+    val now by viewModel.tickerFlow.collectAsState()
+    val passwords by viewModel.passwords.collectAsState()
+    ListPage<Password, Route, Route.PasswordEditPage>(backStack, passwords, "Passwords", {
         Text(it.name.ifBlank {"(no name)"})
     }, {
         Text(it.userId)
@@ -58,7 +57,7 @@ fun MenuPage(
         }
         val progress = 1f - (now / 30000f) % 1f
         Row(Modifier.clickable {
-            passwordsViewModel.copyToClipboard("totp", currentCode)
+            viewModel.copyToClipboard("totp", currentCode)
         }.wrapContentHeight(), verticalAlignment = Alignment.CenterVertically) {
             Text(currentCode, style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.width(8.dp))

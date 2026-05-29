@@ -8,12 +8,23 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.passwords.data.Password
+import com.vayunmathur.passwords.data.PasswordDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,14 +49,86 @@ import kotlinx.coroutines.withContext
  *  - Edit-form draft state for [Password] (decoupled from composable lifetime).
  *  - Copy-to-clipboard actions, with a [SharedFlow] for one-shot "copied" events.
  *
- * The shared [DatabaseViewModel] is injected so this VM can persist rows
- * without leaking Compose state. Composables continue to use
- * [DatabaseViewModel.getState] for per-row reads.
+ * Uses [PasswordDao] directly for all persistence. Exposes the password list
+ * as a [StateFlow] and provides Composable helpers for per-row reads and
+ * editable bindings.
  */
 class PasswordsViewModel(
     application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val passwordDao: PasswordDao,
 ) : AndroidViewModel(application) {
+
+    // -- Data -------------------------------------------------------------
+
+    val passwords: StateFlow<List<Password>> = passwordDao.getAllFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList(),
+    )
+
+    fun upsert(password: Password, onSaved: ((Long) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newId = passwordDao.upsert(password)
+            onSaved?.invoke(newId)
+        }
+    }
+
+    fun delete(password: Password) {
+        viewModelScope.launch(Dispatchers.IO) {
+            passwordDao.delete(password)
+        }
+    }
+
+    /**
+     * Returns a [State] tracking the password with [initialId]. If not yet
+     * loaded (or absent), returns [default]. Recomposes when the underlying
+     * list changes.
+     */
+    @Composable
+    fun passwordState(initialId: Long, default: () -> Password = { Password() }): State<Password> {
+        val list by passwords.collectAsState()
+        return remember(initialId) {
+            derivedStateOf { list.firstOrNull { it.id == initialId } ?: default() }
+        }
+    }
+
+    /**
+     * Returns a [MutableState] bound to a password row. Reads observe the
+     * latest persisted value; writes optimistically update local state and
+     * upsert to the DB. For new rows (id = 0), the assigned id is captured
+     * after the first upsert so subsequent updates target the same row.
+     */
+    @Composable
+    fun editablePassword(initialId: Long, default: () -> Password): MutableState<Password> {
+        var currentId by remember { mutableLongStateOf(initialId) }
+        val data by passwords.collectAsState()
+        val localState = remember { mutableStateOf<Password?>(null) }
+
+        LaunchedEffect(data, currentId) {
+            val dbItem = data.firstOrNull { it.id == currentId }
+            if (dbItem != null) {
+                localState.value = dbItem
+            }
+        }
+
+        return remember {
+            object : MutableState<Password> {
+                override var value: Password
+                    get() = localState.value ?: default()
+                    set(newValue) {
+                        localState.value = newValue
+                        upsert(newValue) { newId ->
+                            if (currentId == 0L) {
+                                currentId = newId
+                            }
+                        }
+                    }
+
+                override fun component1(): Password = value
+                override fun component2(): (Password) -> Unit = { value = it }
+            }
+        }
+    }
 
     // -- TOTP ticker ------------------------------------------------------
 
@@ -114,11 +197,7 @@ class PasswordsViewModel(
      */
     fun saveDraft(onSaved: ((Long) -> Unit)? = null) {
         val current = _draft.value ?: return
-        if (onSaved != null) {
-            databaseViewModel.upsertAsync(current, onSaved)
-        } else {
-            databaseViewModel.upsertAsync(current)
-        }
+        upsert(current, onSaved)
         _draft.value = null
     }
 
@@ -136,8 +215,8 @@ class PasswordsViewModel(
 
     /**
      * Reads a Bitwarden-style CSV at [uri] off the main thread, parses it,
-     * and upserts each row via the shared [DatabaseViewModel]. Reports
-     * progress via [importing] and a terminal status via [importMessage].
+     * and upserts each row via the [PasswordDao]. Reports progress via
+     * [importing] and a terminal status via [importMessage].
      */
     fun importCsv(uri: Uri) {
         val ctx = getApplication<Application>()
@@ -168,7 +247,7 @@ class PasswordsViewModel(
 
     private data class ImportResult(val inserted: Int, val skipped: Int)
 
-    private fun importBitwardenCsvFromUri(
+    private suspend fun importBitwardenCsvFromUri(
         contentResolver: ContentResolver,
         uri: Uri,
     ): ImportResult {
@@ -245,7 +324,7 @@ class PasswordsViewModel(
                 val websites = uriField.split(';', '\n', '\r')
                     .mapNotNull { it.trim().takeIf(String::isNotEmpty) }
 
-                databaseViewModel.upsertAsync(
+                passwordDao.upsert(
                     Password(
                         name = name,
                         userId = username,
@@ -268,16 +347,16 @@ class PasswordsViewModel(
     }
 }
 
-/** Factory for constructing [PasswordsViewModel] with the shared [DatabaseViewModel]. */
+/** Factory for constructing [PasswordsViewModel] with a [PasswordDao]. */
 class PasswordsViewModelFactory(
     private val application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val passwordDao: PasswordDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(PasswordsViewModel::class.java)) {
             "Unexpected ViewModel class: $modelClass"
         }
-        return PasswordsViewModel(application, databaseViewModel) as T
+        return PasswordsViewModel(application, passwordDao) as T
     }
 }
