@@ -1,8 +1,12 @@
 package com.vayunmathur.calendar.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -92,8 +96,29 @@ fun EventScreen(viewModel: CalendarViewModel, instance: Instance, backStack: Nav
             }, leadingContent = {
                 Icon(painterResource(R.drawable.description_24px), null)
             })
-            if(event.location.isNotBlank()) ListItem({Text(event.location)}, leadingContent =
-                {Icon(painterResource(R.drawable.globe_24px), null)},
+            if(event.location.isNotBlank()) ListItem(
+                { Text(event.location) },
+                Modifier.clickable {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        // "geo:0,0?q=<text>" lets any installed maps/navigation
+                        // app (Google Maps, Waze, our own maps app, etc.)
+                        // resolve the address. Wrap with chooser so user can
+                        // pick if multiple are installed.
+                        Uri.parse("geo:0,0?q=${Uri.encode(event.location)}")
+                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    val chooser = Intent.createChooser(
+                        intent,
+                        context.getString(R.string.open_location_in_navigation)
+                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    try {
+                        context.startActivity(chooser)
+                    } catch (_: ActivityNotFoundException) {
+                        // No nav app installed — silently drop; the text is
+                        // still selectable elsewhere.
+                    }
+                },
+                leadingContent = { Icon(painterResource(R.drawable.globe_24px), null) },
             )
         }
     }

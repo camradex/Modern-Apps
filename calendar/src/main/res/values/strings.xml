@@ -80,4 +80,7 @@
 
     <!-- Timezone picker dialog -->
     <string name="choose_timezone">Choose timezone</string>
+
+    <!-- Location row -->
+    <string name="open_location_in_navigation">Open location</string>
 </resources>
