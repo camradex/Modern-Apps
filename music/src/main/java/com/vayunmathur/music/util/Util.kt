@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.core.graphics.createBitmap
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Size as CoilSize
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.music.R
 import com.vayunmathur.music.Route
@@ -156,12 +158,16 @@ suspend fun getArtists(context: Context): List<Artist> = withContext(Dispatchers
 @Composable
 fun AlbumArt(artUri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    var bitmap: Bitmap? by remember { mutableStateOf(null) }
-    LaunchedEffect(artUri) {
-        bitmap = getThumbnail(context, artUri)
-    }
+    // Let Coil own the in-memory thumbnail cache so the same URI rendered in
+    // multiple lists / screens decodes once. Without memoryCacheKey, Coil keys
+    // by data + transformations only, which can miss for content:// URIs that
+    // resolve through loadThumbnail-style fetchers.
     AsyncImage(
-        bitmap,
+        model = ImageRequest.Builder(context)
+            .data(artUri)
+            .size(CoilSize(300, 300))
+            .memoryCacheKey("album-art-${'$'}artUri")
+            .build(),
         contentDescription = "Album Art",
         modifier = modifier
     )
