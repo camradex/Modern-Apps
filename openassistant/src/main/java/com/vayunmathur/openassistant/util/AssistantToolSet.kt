@@ -16,8 +16,9 @@ import com.vayunmathur.library.intents.music.MusicSearchResult
 import com.vayunmathur.library.intents.music.PlayMusicData
 import com.vayunmathur.openassistant.MainActivity
 import com.vayunmathur.library.intents.notes.NoteData
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.openassistant.data.Memory
+import com.vayunmathur.openassistant.data.MemoryDao
+import com.vayunmathur.openassistant.data.MessageDao
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -188,7 +189,8 @@ object JsonSchemaValidator {
 
 class AssistantToolSet(
     private val context: Context,
-    private val viewModel: DatabaseViewModel? = null,
+    private val memoryDao: MemoryDao? = null,
+    private val messageDao: MessageDao? = null,
     private val conversationId: Long = -1L
 ) : ToolSet {
 
@@ -209,9 +211,9 @@ class AssistantToolSet(
     private suspend fun handleMissingApp(packageName: String): String {
         Log.d("AssistantToolSet", "Handling missing app: $packageName")
         InferenceService.halt = true
-        if (viewModel != null && conversationId != -1L) {
+        if (messageDao != null && conversationId != -1L) {
             Log.d("AssistantToolSet", "Inserting tool error message for $packageName")
-            viewModel.upsert(com.vayunmathur.openassistant.data.Message(
+            messageDao.upsert(com.vayunmathur.openassistant.data.Message(
                 conversationId = conversationId,
                 text = getMissingAppMessage(packageName),
                 role = "tool",
@@ -412,27 +414,27 @@ class AssistantToolSet(
 
     @Tool(description = "Get a list of all memories")
     fun get_memories(): String = runBlocking {
-        if (viewModel == null) return@runBlocking "Error: ViewModel is null"
+        if (memoryDao == null) return@runBlocking "Error: MemoryDao is null"
         try {
-            val memories = viewModel.getAll<Memory>()
+            val memories = memoryDao.getAll()
             memories.joinToString("\n") { "[${it.id}] ${it.content}" }
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Remove a memory by its id")
     fun remove_memory(id: Double): String = runBlocking {
-        if (viewModel == null) return@runBlocking "Error: ViewModel is null"
+        if (memoryDao == null) return@runBlocking "Error: MemoryDao is null"
         try {
-            viewModel.deleteIf<Memory>("id = ${id.toLong()}")
+            memoryDao.deleteById(id.toLong())
             "Success: Removed memory with id ${id.toLong()}"
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Add a new memory to the list of memories")
     fun add_to_memory(content: String): String = runBlocking {
-        if (viewModel == null) return@runBlocking "Error: ViewModel is null"
+        if (memoryDao == null) return@runBlocking "Error: MemoryDao is null"
         try {
-            viewModel.upsert(Memory(content))
+            memoryDao.upsert(Memory(content))
             "Success: Added memory"
         } catch (e: Exception) { "Error: ${e.message}" }
     }

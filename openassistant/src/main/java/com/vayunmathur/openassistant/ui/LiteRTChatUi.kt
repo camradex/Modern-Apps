@@ -49,8 +49,6 @@ import com.vayunmathur.library.ui.IconMenu
 import com.vayunmathur.library.ui.IconSettings
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconCopy
-import com.vayunmathur.library.util.DatabaseHelper
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.parseMarkdown
 import com.vayunmathur.openassistant.util.copyUriToFile
 import kotlinx.coroutines.Dispatchers
@@ -63,10 +61,9 @@ import java.io.File
 fun LiteRTChatUi(
     backStack: NavBackStack<Route>,
     conversationId: Long,
-    viewModel: DatabaseViewModel,
     assistantViewModel: AssistantViewModel,
 ) {
-    val activeConversation by viewModel.getNullable<Conversation>(conversationId)
+    val activeConversation by assistantViewModel.conversationByIdState(conversationId)
     val filteredMessages by assistantViewModel.messagesFor(conversationId).collectAsState(initial = emptyList())
     val isRecording by assistantViewModel.isRecording.collectAsState()
     val recordedAudioPath by assistantViewModel.recordedAudioPath.collectAsState()
@@ -113,7 +110,7 @@ fun LiteRTChatUi(
         NavigationSuiteType.NavigationDrawer
     } else NavigationSuiteType.None
 
-    val allConversations by viewModel.data<Conversation>().collectAsState(initial = emptyList())
+    val allConversations by assistantViewModel.conversations.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     LaunchedEffect(allConversations) {
@@ -124,7 +121,7 @@ fun LiteRTChatUi(
 
     NavigationSuiteScaffold(layoutType = navType, navigationSuiteItems = {
         allConversations.forEach { item(it.id == conversationId, { backStack.reset(Route.ConversationPage(it.id)) }, {}, label = { Text(it.title, Modifier.fillMaxWidth()) }, badge = {
-            IconButton({viewModel.delete(it)}) {
+            IconButton({ assistantViewModel.deleteConversation(it) }) {
                 IconDelete()
             }
         }) }
@@ -132,7 +129,7 @@ fun LiteRTChatUi(
         ModalNavigationDrawer({
             ModalDrawerSheet {
                 allConversations.forEach { NavigationDrawerItem({ Text(it.title) }, it.id == conversationId, { backStack.reset(Route.ConversationPage(it.id)) }, Modifier.fillMaxWidth(), icon = {}, badge = {
-                    IconButton({viewModel.delete(it)}, Modifier.offset(x=15.dp)) {
+                    IconButton({ assistantViewModel.deleteConversation(it) }, Modifier.offset(x=15.dp)) {
                         IconDelete()
                     }
                 }) }
@@ -173,10 +170,10 @@ fun LiteRTChatUi(
                             scope.launch {
                                 var currentId = conversationId
                                 if (currentId == 0L) {
-                                    currentId = viewModel.upsert(Conversation(newConv))
+                                    currentId = assistantViewModel.upsertConversation(Conversation(newConv))
                                     backStack.reset(Route.ConversationPage(currentId))
                                 }
-                                viewModel.upsert(Message(currentId, textToSend, "user", imagePaths, audioPath != null))
+                                assistantViewModel.upsertMessage(Message(currentId, textToSend, "user", imagePaths, audioPath != null))
                                 assistantViewModel.requestInference(currentId, textToSend, imagePaths, audioPath)
                                 inputText = ""; selectedImageFiles.clear(); selectedImageUris.clear()
                                 assistantViewModel.consumeRecordedAudio()

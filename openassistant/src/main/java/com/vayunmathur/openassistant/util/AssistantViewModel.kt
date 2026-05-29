@@ -3,21 +3,29 @@ package com.vayunmathur.openassistant.util
 import android.app.Application
 import android.content.Intent
 import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.DatabaseViewModel
+import com.vayunmathur.openassistant.data.Conversation
+import com.vayunmathur.openassistant.data.ConversationDao
+import com.vayunmathur.openassistant.data.Memory
+import com.vayunmathur.openassistant.data.MemoryDao
 import com.vayunmathur.openassistant.data.Message
+import com.vayunmathur.openassistant.data.MessageDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.time.Clock
 
@@ -25,19 +33,21 @@ import kotlin.time.Clock
  * ViewModel for the OpenAssistant app.
  *
  * Owns:
- *  - filtered chat-message stream per conversation
+ *  - filtered chat-message stream per conversation (via [MessageDao])
+ *  - all-conversations and all-memories flows backed by their DAOs
  *  - audio recorder + recording-state lifecycle (mic permission still lives in
  *    composables since it uses [androidx.activity.compose.rememberLauncherForActivityResult])
  *  - inference-service lifecycle: pre-warm on init and dispatch per-message
  *    inference requests via [requestInference]
  *  - one-time on-disk migration of the legacy gemma4 model file
  *
- * The shared [DatabaseViewModel] is injected so this VM can derive flows from
- * the Room-backed message table without owning the database itself.
+ * DAOs are injected directly so this VM owns the persistence layer for the app.
  */
 class AssistantViewModel(
     application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val conversationDao: ConversationDao,
+    private val messageDao: MessageDao,
+    private val memoryDao: MemoryDao,
 ) : AndroidViewModel(application) {
 
     private val _isRecording = MutableStateFlow(false)
@@ -50,6 +60,14 @@ class AssistantViewModel(
 
     private var audioRecorder: WavRecorder? = null
 
+    /** All conversations, newest first. */
+    val conversations: StateFlow<List<Conversation>> = conversationDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** All memories. */
+    val memories: StateFlow<List<Memory>> = memoryDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         cleanupLegacyModelFile()
         // Pre-warm the inference engine so the first user prompt is responsive.
@@ -59,12 +77,38 @@ class AssistantViewModel(
 
     /**
      * Returns a flow of messages belonging to [conversationId], sorted by
-     * timestamp. Derived from the shared [DatabaseViewModel] message table.
+     * timestamp.
      */
     fun messagesFor(conversationId: Long): Flow<List<Message>> =
-        databaseViewModel.data<Message>().map { all ->
-            all.filter { it.conversationId == conversationId }.sortedBy { it.timestamp }
-        }
+        messageDao.getByConversationFlow(conversationId)
+
+    /**
+     * Composable State that tracks the [Conversation] with [id], or null if it
+     * doesn't exist (e.g. a fresh conversation that hasn't been persisted yet).
+     */
+    @Composable
+    fun conversationByIdState(id: Long): State<Conversation?> {
+        val flow = remember(id) { conversationDao.getByIdFlow(id) }
+        return flow.collectAsState(initial = null)
+    }
+
+    // ---------- Mutations ----------
+
+    fun deleteConversation(conversation: Conversation) {
+        viewModelScope.launch(Dispatchers.IO) { conversationDao.delete(conversation) }
+    }
+
+    /** Suspending upsert returning the persisted row id. */
+    suspend fun upsertConversation(conversation: Conversation): Long =
+        kotlinx.coroutines.withContext(Dispatchers.IO) { conversationDao.upsert(conversation) }
+
+    /** Suspending upsert returning the persisted row id. */
+    suspend fun upsertMessage(message: Message): Long =
+        kotlinx.coroutines.withContext(Dispatchers.IO) { messageDao.upsert(message) }
+
+    fun deleteMemory(memory: Memory) {
+        viewModelScope.launch(Dispatchers.IO) { memoryDao.delete(memory) }
+    }
 
     /**
      * Starts a new microphone capture into the app cache. Caller is expected
@@ -165,16 +209,18 @@ class AssistantViewModel(
     }
 }
 
-/** Factory for constructing [AssistantViewModel] with the shared [DatabaseViewModel]. */
+/** Factory for constructing [AssistantViewModel] with DAOs. */
 class AssistantViewModelFactory(
     private val application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val conversationDao: ConversationDao,
+    private val messageDao: MessageDao,
+    private val memoryDao: MemoryDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(AssistantViewModel::class.java)) {
             "Unexpected ViewModel class: $modelClass"
         }
-        return AssistantViewModel(application, databaseViewModel) as T
+        return AssistantViewModel(application, conversationDao, messageDao, memoryDao) as T
     }
 }

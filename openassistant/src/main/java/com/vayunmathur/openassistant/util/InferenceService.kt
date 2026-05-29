@@ -13,7 +13,6 @@ import android.os.ResultReceiver
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.ai.edge.litertlm.*
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.SecureResultReceiver
 import com.vayunmathur.library.util.buildDatabase
 import kotlinx.coroutines.*
@@ -21,9 +20,7 @@ import kotlinx.coroutines.flow.catch
 import java.io.File
 import kotlin.time.Clock
 import com.vayunmathur.openassistant.data.AppDatabase
-import com.vayunmathur.openassistant.data.Conversation
 import com.vayunmathur.openassistant.data.Message
-import com.vayunmathur.openassistant.data.Memory
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -64,7 +61,9 @@ class InferenceService : Service() {
     private var currentConversationId: Long = -1L
 
     val db by lazy { buildDatabase<AppDatabase>() }
-    val viewModel by lazy { DatabaseViewModel(db, Conversation::class to db.conversationDao(), Message::class to db.messageDao(), Memory::class to db.memoryDao()) }
+    private val conversationDao by lazy { db.conversationDao() }
+    private val messageDao by lazy { db.messageDao() }
+    private val memoryDao by lazy { db.memoryDao() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -364,7 +363,7 @@ class InferenceService : Service() {
         currentConversation = engine?.createConversation(ConversationConfig(
             systemInstruction = Contents.of(systemPrompt),
             initialMessages = initialMessages,
-            tools = listOf(tool(AssistantToolSet(applicationContext, viewModel, id))),
+            tools = listOf(tool(AssistantToolSet(applicationContext, memoryDao, messageDao, id))),
             automaticToolCalling = true,
         ))
         currentConversationId = id
@@ -398,14 +397,14 @@ class InferenceService : Service() {
             Log.d("InferenceService", "Caught inference error: ${e::class.simpleName}", e)
             if (e is MissingAppException || e is StopInferenceException || e.cause is StopInferenceException || halt) {
                 halt = false
-                viewModel.delete(viewModel.get<Message>(aiMsgId))
+                messageDao.deleteById(aiMsgId)
             } else {
                 updateMessageInDb(aiMsgId, getString(R.string.error_prefix, e.message ?: ""))
             }
         }.collect { chunk ->
             if (halt) {
                 halt = false
-                viewModel.delete(viewModel.get<Message>(aiMsgId))
+                messageDao.deleteById(aiMsgId)
                 throw CancellationException("HALT")
             }
             val chunkText = chunk.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
@@ -423,16 +422,16 @@ class InferenceService : Service() {
         }
     }
 
-    private suspend fun fetchHistoryFromDb(id: Long): List<Message> = viewModel.getAll<Message>().filter { it.conversationId == id }
-    private suspend fun upsertMessageToDb(msg: Message): Long = viewModel.upsert(msg)
+    private suspend fun fetchHistoryFromDb(id: Long): List<Message> = messageDao.getByConversation(id)
+    private suspend fun upsertMessageToDb(msg: Message): Long = messageDao.upsert(msg)
     private suspend fun updateMessageInDb(id: Long, text: String) {
-        val newMsg = viewModel.get<Message>(id).copy(text = text)
-        upsertMessageToDb(newMsg)
+        val existing = messageDao.getById(id) ?: return
+        upsertMessageToDb(existing.copy(text = text))
     }
     private suspend fun updateTitleInDb(id: Long, title: String) {
-        val oldConversation = viewModel.get<Conversation>(id)
+        val oldConversation = conversationDao.getById(id)
         if (oldConversation != null) {
-            viewModel.upsert(oldConversation.copy(title = title))
+            conversationDao.upsert(oldConversation.copy(title = title))
         }
     }
 

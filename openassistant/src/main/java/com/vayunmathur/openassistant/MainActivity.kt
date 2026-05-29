@@ -10,16 +10,15 @@ import com.vayunmathur.library.util.NavKey
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.downloadservice.InitialDownloadChecker
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.IntentLauncher
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.library.util.rememberNavBackStack
 import kotlinx.serialization.Serializable
 import com.vayunmathur.openassistant.data.AppDatabase
-import com.vayunmathur.openassistant.data.Conversation
-import com.vayunmathur.openassistant.data.Message
-import com.vayunmathur.openassistant.data.Memory
+import com.vayunmathur.openassistant.data.ConversationDao
+import com.vayunmathur.openassistant.data.MemoryDao
+import com.vayunmathur.openassistant.data.MessageDao
 import com.vayunmathur.openassistant.ui.LiteRTChatUi
 import com.vayunmathur.openassistant.ui.SettingsPage
 import com.vayunmathur.openassistant.util.AssistantViewModel
@@ -31,9 +30,11 @@ class MainActivity : ComponentActivity() {
         lateinit var intentLauncher: IntentLauncher
     }
 
-    private lateinit var viewModel: DatabaseViewModel
+    private lateinit var conversationDao: ConversationDao
+    private lateinit var messageDao: MessageDao
+    private lateinit var memoryDao: MemoryDao
     private val assistantViewModel: AssistantViewModel by viewModels {
-        AssistantViewModelFactory(application, viewModel)
+        AssistantViewModelFactory(application, conversationDao, messageDao, memoryDao)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,7 +44,9 @@ class MainActivity : ComponentActivity() {
 
         val ds = DataStoreUtils.getInstance(this)
         val db = buildDatabase<AppDatabase>()
-        viewModel = DatabaseViewModel(db, Conversation::class to db.conversationDao(), Message::class to db.messageDao(), Memory::class to db.memoryDao())
+        conversationDao = db.conversationDao()
+        messageDao = db.messageDao()
+        memoryDao = db.memoryDao()
 
         setContent {
             DynamicTheme {
@@ -52,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 )) {
                     // Touching the assistantViewModel triggers init, which pre-warms
                     // the inference service and runs the legacy model-file cleanup.
-                    Navigation(viewModel, assistantViewModel)
+                    Navigation(assistantViewModel)
                 }
             }
         }
@@ -68,14 +71,14 @@ sealed interface Route: NavKey {
 }
 
 @Composable
-fun Navigation(viewModel: DatabaseViewModel, assistantViewModel: AssistantViewModel) {
+fun Navigation(assistantViewModel: AssistantViewModel) {
     val backStack = rememberNavBackStack<Route>(Route.ConversationPage(0))
     MainNavigation(backStack) {
         entry<Route.ConversationPage> {
-            LiteRTChatUi(backStack, it.id, viewModel, assistantViewModel)
+            LiteRTChatUi(backStack, it.id, assistantViewModel)
         }
         entry<Route.SettingsPage> {
-            SettingsPage(backStack, viewModel)
+            SettingsPage(backStack, assistantViewModel)
         }
     }
 }

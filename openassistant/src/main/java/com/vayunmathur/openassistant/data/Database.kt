@@ -3,13 +3,17 @@ import androidx.room.PrimaryKey
 import com.vayunmathur.library.util.DatabaseItem
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Delete
 import androidx.room.Entity
+import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.Upsert
 import com.vayunmathur.library.util.DefaultConverters
 import com.vayunmathur.library.util.TrueDao
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
 
 @Entity
 data class Conversation(
@@ -44,13 +48,61 @@ data class Memory(
 
 
 @Dao
-interface ConversationDao: TrueDao<Conversation>
+interface ConversationDao : TrueDao<Conversation> {
+    @Query("SELECT * FROM Conversation ORDER BY timestamp DESC")
+    fun getAllFlow(): Flow<List<Conversation>>
+
+    @Query("SELECT * FROM Conversation WHERE id = :id")
+    fun getByIdFlow(id: Long): Flow<Conversation?>
+
+    @Query("SELECT * FROM Conversation WHERE id = :id")
+    suspend fun getById(id: Long): Conversation?
+
+    @Upsert
+    override suspend fun upsert(value: Conversation): Long
+
+    @Delete
+    override suspend fun delete(value: Conversation): Int
+}
 
 @Dao
-interface MessageDao: TrueDao<Message>
+interface MessageDao : TrueDao<Message> {
+    @Query("SELECT * FROM Message WHERE conversationId = :conversationId ORDER BY timestamp ASC")
+    fun getByConversationFlow(conversationId: Long): Flow<List<Message>>
+
+    @Query("SELECT * FROM Message WHERE conversationId = :conversationId ORDER BY timestamp ASC")
+    suspend fun getByConversation(conversationId: Long): List<Message>
+
+    @Query("SELECT * FROM Message WHERE id = :id")
+    suspend fun getById(id: Long): Message?
+
+    @Query("DELETE FROM Message WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Upsert
+    override suspend fun upsert(value: Message): Long
+
+    @Delete
+    override suspend fun delete(value: Message): Int
+}
 
 @Dao
-interface MemoryDao: TrueDao<Memory>
+interface MemoryDao : TrueDao<Memory> {
+    @Query("SELECT * FROM Memory ORDER BY id ASC")
+    fun getAllFlow(): Flow<List<Memory>>
+
+    @Query("SELECT * FROM Memory ORDER BY id ASC")
+    suspend fun getAll(): List<Memory>
+
+    @Query("DELETE FROM Memory WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Upsert
+    override suspend fun upsert(value: Memory): Long
+
+    @Delete
+    override suspend fun delete(value: Memory): Int
+}
 
 @TypeConverters(DefaultConverters::class)
 @Database(entities = [Conversation::class, Message::class, Memory::class], version = 3)

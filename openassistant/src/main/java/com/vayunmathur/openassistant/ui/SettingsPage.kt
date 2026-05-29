@@ -14,15 +14,15 @@ import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.util.DatabaseHelper
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.openassistant.Route
 import com.vayunmathur.openassistant.data.Memory
+import com.vayunmathur.openassistant.util.AssistantViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
-    val memories by viewModel.data<Memory>().collectAsState(initial = emptyList())
+fun SettingsPage(backStack: NavBackStack<Route>, viewModel: AssistantViewModel) {
+    val memories by viewModel.memories.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
@@ -63,7 +63,7 @@ fun SettingsPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
                 }
             } else {
                 items(memories, key = { it.id }) { memory ->
-                    MemoryItem(memory, onDelete = { viewModel.delete(memory) })
+                    MemoryItem(memory, onDelete = { viewModel.deleteMemory(memory) })
                 }
             }
         }
