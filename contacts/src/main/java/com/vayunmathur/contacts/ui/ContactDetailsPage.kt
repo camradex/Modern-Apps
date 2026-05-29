@@ -1,8 +1,6 @@
 package com.vayunmathur.contacts.ui
 
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -80,7 +78,6 @@ import kotlinx.datetime.format.MonthNames
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import okio.buffer
-import kotlin.io.encoding.Base64
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,7 +169,7 @@ fun ContactDetailsPage(
         ) {
 
             item {
-                ProfileHeader(contact!!)
+                ProfileHeader(contact!!, viewModel)
             }
 
             item {
@@ -299,7 +296,7 @@ fun ContactDetailsPage(
 }
 
 @Composable
-fun ProfileHeader(contact: Contact) {
+fun ProfileHeader(contact: Contact, viewModel: ContactViewModel) {
     Column(
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         modifier = Modifier.padding(vertical = 16.dp)
@@ -311,13 +308,15 @@ fun ProfileHeader(contact: Contact) {
             contentAlignment = androidx.compose.ui.Alignment.Center
         ) {
             contact.photo?.let {
-                val bitmap by remember(it) {
-                    mutableStateOf<Bitmap>(BitmapFactory.decodeByteArray(Base64.decode(it.photo), 0, Base64.decode(it.photo).size)) }
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.contact_photo_description, contact.name.value),
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Decode once via the VM cache, not on every recomposition.
+                val bitmap = remember(it.photo) { viewModel.decodePhoto(it.photo) }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = stringResource(R.string.contact_photo_description, contact.name.value),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
             if (contact.photo == null) {
                 Box(

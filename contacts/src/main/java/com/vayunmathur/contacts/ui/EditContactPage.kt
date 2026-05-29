@@ -39,13 +39,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,20 +63,13 @@ import com.vayunmathur.contacts.R
 import com.vayunmathur.contacts.Route
 import com.vayunmathur.contacts.data.CDKEmail
 import com.vayunmathur.contacts.data.CDKEvent
-import com.vayunmathur.contacts.data.CDKNickname
 import com.vayunmathur.contacts.data.CDKPhone
 import com.vayunmathur.contacts.data.CDKStructuredPostal
-import com.vayunmathur.contacts.data.Contact
-import com.vayunmathur.contacts.data.formatDisplay
 import com.vayunmathur.contacts.data.ContactDetail
-import com.vayunmathur.contacts.data.ContactDetails
 import com.vayunmathur.contacts.data.Event
-import com.vayunmathur.contacts.data.Name
-import com.vayunmathur.contacts.data.Nickname
-import com.vayunmathur.contacts.data.Note
-import com.vayunmathur.contacts.data.Organization
 import com.vayunmathur.contacts.data.PhoneNumber
 import com.vayunmathur.contacts.data.Photo
+import com.vayunmathur.contacts.data.formatDisplay
 import com.vayunmathur.contacts.util.ContactAccount
 import com.vayunmathur.contacts.util.ContactViewModel
 import com.vayunmathur.library.ui.IconClose
@@ -85,8 +77,6 @@ import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.format
-import kotlinx.datetime.format.MonthNames
 import okio.Buffer
 import kotlin.io.encoding.Base64
 
@@ -94,25 +84,22 @@ import kotlin.io.encoding.Base64
 @Composable
 fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel, editRoute: Route.EditContact) {
     val contactId = editRoute.contactId
-    val contact = remember { contactId?.let { viewModel.getContact(it) } }
-    val details = contact?.details
     val context = LocalContext.current
 
-    var namePrefix by remember { mutableStateOf(contact?.name?.namePrefix ?: "") }
-    var firstName by remember { mutableStateOf(contact?.name?.firstName ?: editRoute.name ?: "") }
-    var middleName by remember { mutableStateOf(contact?.name?.middleName ?: "") }
-    var lastName by remember { mutableStateOf(contact?.name?.lastName ?: "") }
-    var nameSuffix by remember { mutableStateOf(contact?.name?.nameSuffix ?: "") }
-    var company by remember { mutableStateOf(contact?.org?.company ?: editRoute.company ?: "") }
-    var noteContent by remember { mutableStateOf(contact?.note?.content ?: editRoute.notes ?: "") }
-    var nickname by remember { mutableStateOf(contact?.nickname?.nickname ?: "") }
-    var photo by remember { mutableStateOf(contact?.photo) }
-    var birthday by remember { mutableStateOf(contact?.birthday?.startDate) }
-    
-    var accountName by remember { mutableStateOf(contact?.accountName ?: "") }
-    var accountType by remember { mutableStateOf(contact?.accountType ?: "") }
-
+    // Initialize the VM draft for this contact. No-op on rotation (same key).
+    LaunchedEffect(contactId) {
+        viewModel.initEditDraft(
+            contactId = contactId,
+            prefillName = editRoute.name,
+            prefillPhone = editRoute.phone,
+            prefillEmail = editRoute.email,
+            prefillCompany = editRoute.company,
+            prefillNotes = editRoute.notes,
+        )
+    }
+    val draft by viewModel.editDraft.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
+    val isNewContact = contactId == null
 
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
@@ -122,34 +109,21 @@ fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel,
                 val baos = Buffer()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos.outputStream())
                 val value = Base64.encode(baos.readByteArray())
-                photo = photo?.withValue(value) ?: Photo(0, value)
+                viewModel.updateEditDraft {
+                    it.copy(photo = it.photo?.withValue(value) ?: Photo(0, value))
+                }
             } catch (e: Exception) {
                 Log.e("EditContactPage", "Error processing picked media from URI: $uri", e)
             }
         }
     }
-    val phoneNumbers = remember { 
-        val list = mutableStateListOf(*details?.phoneNumbers?.toTypedArray()?:emptyArray())
-        if (list.isEmpty() && editRoute.phone != null) {
-            list.add(PhoneNumber(0, editRoute.phone, CDKPhone.TYPE_MOBILE))
-        }
-        list
-    }
-    val emails = remember { 
-        val list = mutableStateListOf(*details?.emails?.toTypedArray()?:emptyArray())
-        if (list.isEmpty() && editRoute.email != null) {
-            list.add(com.vayunmathur.contacts.data.Email(0, editRoute.email, CDKEmail.TYPE_HOME))
-        }
-        list
-    }
-    val dates = remember { mutableStateListOf(*details?.dates?.toTypedArray()?:emptyArray()) }
-    val addresses = remember { mutableStateListOf(*details?.addresses?.toTypedArray()?:emptyArray()) }
 
+    val currentDraft = draft
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    val pageTitle = if (contact == null) stringResource(R.string.add_contact) else stringResource(R.string.edit_contact)
+                    val pageTitle = if (isNewContact) stringResource(R.string.add_contact) else stringResource(R.string.edit_contact)
                     Text(pageTitle)
                 },
                 navigationIcon = {
@@ -159,49 +133,7 @@ fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel,
                 },
                 actions = {
                     Button(onClick = {
-                        val birthdayID = contact?.birthday?.id
-                        val dates2 = dates.filter { it.type != CDKEvent.TYPE_BIRTHDAY }.toMutableList()
-                        birthday?.let { birthday -> dates2 += Event(
-                            birthdayID ?: 0,
-                            birthday,
-                            CDKEvent.TYPE_BIRTHDAY
-                        )
-                        }
-                        val details = ContactDetails(
-                            phoneNumbers,
-                            emails,
-                            addresses,
-                            dates2,
-                            listOfNotNull(photo),
-                            listOf(
-                                Name(
-                                    contact?.name?.id ?: 0,
-                                    namePrefix,
-                                    firstName,
-                                    middleName,
-                                    lastName,
-                                    nameSuffix
-                                )
-                            ),
-                            listOf(Organization(contact?.org?.id ?: 0, company)),
-                            listOf(Note(contact?.note?.id ?: 0, noteContent)),
-                            listOf(
-                                Nickname(
-                                    contact?.nickname?.id ?: 0,
-                                    nickname,
-                                    CDKNickname.TYPE_DEFAULT
-                                )
-                            ),
-                            groups = details?.groups ?: emptyList()
-                        )
-                        val newContact = contact?.copy(details = details) ?: Contact(
-                            0,
-                            accountType.ifEmpty { null },
-                            accountName.ifEmpty { null },
-                            false,
-                            details = details
-                        )
-                        viewModel.saveContact(newContact)
+                        viewModel.saveEditDraft()
                         backStack.pop()
                     }) {
                         Text(stringResource(R.string.save))
@@ -210,6 +142,7 @@ fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel,
             )
         }
     ) { paddingValues ->
+        if (currentDraft == null) return@Scaffold
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -219,115 +152,133 @@ fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(24.dp))
-            AddPictureSection(photo?.photo, {
-                pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }, {
-                photo = null
-            })
+            AddPictureSection(
+                photo = currentDraft.photo?.photo,
+                viewModel = viewModel,
+                onClick = {
+                    pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                removePhoto = {
+                    viewModel.updateEditDraft { it.copy(photo = null) }
+                }
+            )
             Spacer(Modifier.height(24.dp))
-            
-            if (contact == null) {
-                AccountChooser(accountName, accounts) { name, type ->
-                    accountName = name
-                    accountType = type
+
+            if (isNewContact) {
+                AccountChooser(currentDraft.accountName, accounts) { name, type ->
+                    viewModel.updateEditDraft { it.copy(accountName = name, accountType = type) }
                 }
                 Spacer(Modifier.height(16.dp))
             }
 
             OutlinedTextField(
-                value = firstName,
-                onValueChange = { firstName = it },
+                value = currentDraft.firstName,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(firstName = v) } },
                 label = { Text(stringResource(R.string.first_name)) },
-                leadingIcon = { NamePrefixChooser(namePrefix) { namePrefix = it } },
+                leadingIcon = {
+                    NamePrefixChooser(currentDraft.namePrefix) { v ->
+                        viewModel.updateEditDraft { it.copy(namePrefix = v) }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = middleName,
-                onValueChange = { middleName = it },
+                value = currentDraft.middleName,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(middleName = v) } },
                 label = { Text(stringResource(R.string.middle_name)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = lastName,
-                onValueChange = { lastName = it },
+                value = currentDraft.lastName,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(lastName = v) } },
                 label = { Text(stringResource(R.string.last_name)) },
-                trailingIcon = { NameSuffixChooser(nameSuffix) { nameSuffix = it } },
+                trailingIcon = {
+                    NameSuffixChooser(currentDraft.nameSuffix) { v ->
+                        viewModel.updateEditDraft { it.copy(nameSuffix = v) }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = nickname,
-                onValueChange = { nickname = it },
+                value = currentDraft.nickname,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(nickname = v) } },
                 label = { Text(stringResource(R.string.nickname)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = company,
-                onValueChange = { company = it },
+                value = currentDraft.company,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(company = v) } },
                 label = { Text(stringResource(R.string.company)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(16.dp))
 
             DetailsSection(
-                stringResource(R.string.phone),
-                R.string.add_phone,
-                R.string.remove_phone,
-                phoneNumbers,
-                painterResource(R.drawable.outline_call_24),
-                KeyboardType.Phone,
-                VisualTransformation.None,
-                listOf(CDKPhone.TYPE_MOBILE, CDKPhone.TYPE_HOME, CDKPhone.TYPE_WORK, CDKPhone.TYPE_OTHER)
+                detailType = stringResource(R.string.phone),
+                addLabelRes = R.string.add_phone,
+                removeLabelRes = R.string.remove_phone,
+                details = currentDraft.phoneNumbers,
+                onDetailsChange = { list -> viewModel.updateEditDraft { it.copy(phoneNumbers = list) } },
+                icon = painterResource(R.drawable.outline_call_24),
+                keyboardType = KeyboardType.Phone,
+                visualTransformation = VisualTransformation.None,
+                options = listOf(CDKPhone.TYPE_MOBILE, CDKPhone.TYPE_HOME, CDKPhone.TYPE_WORK, CDKPhone.TYPE_OTHER)
             )
             Spacer(Modifier.height(8.dp))
 
             DetailsSection(
-                stringResource(R.string.email),
-                R.string.add_email,
-                R.string.remove_email,
-                emails,
-                painterResource(R.drawable.outline_mail_24),
-                KeyboardType.Email,
-                VisualTransformation.None,
-                listOf(CDKEmail.TYPE_HOME, CDKEmail.TYPE_WORK, CDKEmail.TYPE_OTHER, CDKEmail.TYPE_MOBILE)
+                detailType = stringResource(R.string.email),
+                addLabelRes = R.string.add_email,
+                removeLabelRes = R.string.remove_email,
+                details = currentDraft.emails,
+                onDetailsChange = { list -> viewModel.updateEditDraft { it.copy(emails = list) } },
+                icon = painterResource(R.drawable.outline_mail_24),
+                keyboardType = KeyboardType.Email,
+                visualTransformation = VisualTransformation.None,
+                options = listOf(CDKEmail.TYPE_HOME, CDKEmail.TYPE_WORK, CDKEmail.TYPE_OTHER, CDKEmail.TYPE_MOBILE)
             )
 
             Spacer(Modifier.height(16.dp))
 
-            Birthday(backStack, birthday) { birthday = it }
+            Birthday(backStack, currentDraft.birthday) { v ->
+                viewModel.updateEditDraft { it.copy(birthday = v) }
+            }
 
             DateDetailsSection(
-                backStack,
-                dates,
-                painterResource(R.drawable.outline_event_24),
-                listOf(CDKEvent.TYPE_ANNIVERSARY, CDKEvent.TYPE_OTHER)
+                backStack = backStack,
+                details = currentDraft.dates,
+                onDetailsChange = { list -> viewModel.updateEditDraft { it.copy(dates = list) } },
+                icon = painterResource(R.drawable.outline_event_24),
+                options = listOf(CDKEvent.TYPE_ANNIVERSARY, CDKEvent.TYPE_OTHER)
             )
 
             Spacer(Modifier.height(12.dp))
 
             DetailsSection(
-                stringResource(R.string.addresses),
-                R.string.add_address,
-                R.string.remove_address,
-                addresses,
-                painterResource(R.drawable.outline_event_24),
-                KeyboardType.Text,
-                VisualTransformation.None,
-                listOf(CDKStructuredPostal.TYPE_HOME, CDKStructuredPostal.TYPE_WORK, CDKStructuredPostal.TYPE_OTHER)
+                detailType = stringResource(R.string.addresses),
+                addLabelRes = R.string.add_address,
+                removeLabelRes = R.string.remove_address,
+                details = currentDraft.addresses,
+                onDetailsChange = { list -> viewModel.updateEditDraft { it.copy(addresses = list) } },
+                icon = painterResource(R.drawable.outline_event_24),
+                keyboardType = KeyboardType.Text,
+                visualTransformation = VisualTransformation.None,
+                options = listOf(CDKStructuredPostal.TYPE_HOME, CDKStructuredPostal.TYPE_WORK, CDKStructuredPostal.TYPE_OTHER)
             )
 
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = noteContent,
-                onValueChange = { noteContent = it },
+                value = currentDraft.noteContent,
+                onValueChange = { v -> viewModel.updateEditDraft { it.copy(noteContent = v) } },
                 label = { Text(stringResource(R.string.note)) },
                 leadingIcon = {
                     IconEdit()
@@ -472,7 +423,8 @@ private fun Birthday(
 @Composable
 private fun ColumnScope.DateDetailsSection(
     backStack: NavBackStack<Route>,
-    details: SnapshotStateList<Event>,
+    details: List<Event>,
+    onDetailsChange: (List<Event>) -> Unit,
     icon: Painter,
     options: List<Int>
 ) {
@@ -481,8 +433,8 @@ private fun ColumnScope.DateDetailsSection(
     details.forEachIndexed { index, detail ->
         if(detail.type == CDKEvent.TYPE_BIRTHDAY) return@forEachIndexed
         Box {
-            ResultEffect<LocalDate>(detail.id.toString()) {
-                details[index] = detail.withValue(it.toString())
+            ResultEffect<LocalDate>(detail.id.toString()) { newDate ->
+                onDetailsChange(details.toMutableList().also { list -> list[index] = detail.withValue(newDate.toString()) })
             }
             OutlinedTextField(
                 value = detail.startDate.formatDisplay(),
@@ -505,14 +457,16 @@ private fun ColumnScope.DateDetailsSection(
                             options.forEach { option ->
                                 DropdownMenuItem(
                                     onClick = {
-                                        details[index] = detail.withType(option)
+                                        onDetailsChange(details.toMutableList().also { it[index] = detail.withType(option) })
                                         dropdownExpanded = false
                                     },
                                     text = { Text(ContactDetail.default<Event>().withType(option).typeString(context)) }
                                 )
                             }
                         }
-                        IconButton(onClick = { details.removeAt(index) }) {
+                        IconButton(onClick = {
+                            onDetailsChange(details.toMutableList().also { it.removeAt(index) })
+                        }) {
                             Icon(
                                 painterResource(R.drawable.baseline_remove_circle_outline_24),
                                 stringResource(R.string.remove_date)
@@ -534,7 +488,7 @@ private fun ColumnScope.DateDetailsSection(
     }
     if (details.none { it.type != CDKEvent.TYPE_BIRTHDAY }) {
         FilledTonalButton(
-            onClick = { details += ContactDetail.default<Event>() },
+            onClick = { onDetailsChange(details + ContactDetail.default<Event>()) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(icon, contentDescription = null)
@@ -543,7 +497,7 @@ private fun ColumnScope.DateDetailsSection(
         }
     } else {
         TextButton(
-            onClick = { details += ContactDetail.default<Event>() },
+            onClick = { onDetailsChange(details + ContactDetail.default<Event>()) },
             modifier = Modifier.align(Alignment.Start)
         ) {
             Text(stringResource(R.string.add_date))
@@ -556,7 +510,8 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
     detailType: String,
     addLabelRes: Int,
     removeLabelRes: Int,
-    details: SnapshotStateList<T>,
+    details: List<T>,
+    noinline onDetailsChange: (List<T>) -> Unit,
     icon: Painter,
     keyboardType: KeyboardType,
     visualTransformation: VisualTransformation,
@@ -567,7 +522,7 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
         OutlinedTextField(
             value = detail.value,
             onValueChange = { newNumber ->
-                details[index] = detail.withValue(newNumber)
+                onDetailsChange(details.toMutableList().also { it[index] = detail.withValue(newNumber) })
             },
             visualTransformation = visualTransformation,
             label = { Text(detailType) },
@@ -592,14 +547,16 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
                         options.forEach { option ->
                             DropdownMenuItem(
                                 onClick = {
-                                    details[index] = detail.withType(option)
+                                    onDetailsChange(details.toMutableList().also { it[index] = detail.withType(option) })
                                     dropdownExpanded = false
                                 },
                                 text = { Text(ContactDetail.default<T>().withType(option).typeString(context)) }
                             )
                         }
                     }
-                    IconButton(onClick = { details.removeAt(index) }) {
+                    IconButton(onClick = {
+                        onDetailsChange(details.toMutableList().also { it.removeAt(index) })
+                    }) {
                         Icon(
                             painterResource(R.drawable.baseline_remove_circle_outline_24),
                             stringResource(removeLabelRes)
@@ -614,7 +571,7 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
     }
     if(details.isEmpty()) {
         FilledTonalButton(
-            onClick = { details += ContactDetail.default<T>() },
+            onClick = { onDetailsChange(details + ContactDetail.default<T>()) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(icon, contentDescription = null)
@@ -623,7 +580,7 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
         }
     } else {
         TextButton(
-            onClick = { details += ContactDetail.default<T>() },
+            onClick = { onDetailsChange(details + ContactDetail.default<T>()) },
             modifier = Modifier.align(Alignment.Start)
         ) {
             Text(stringResource(addLabelRes))
@@ -632,7 +589,12 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
 }
 
 @Composable
-private fun AddPictureSection(photo: String?, onClick: () -> Unit, removePhoto: () -> Unit) {
+private fun AddPictureSection(
+    photo: String?,
+    viewModel: ContactViewModel,
+    onClick: () -> Unit,
+    removePhoto: () -> Unit,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(
             modifier = Modifier
@@ -642,14 +604,16 @@ private fun AddPictureSection(photo: String?, onClick: () -> Unit, removePhoto: 
             contentAlignment = Alignment.Center
         ) {
             if (photo != null) {
-                val decoded = Base64.decode(photo)
-                val bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.contact_photo),
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                // Decode once via the VM cache, not on every recomposition.
+                val bitmap = remember(photo) { viewModel.decodePhoto(photo) }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = stringResource(R.string.contact_photo),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
             } else {
                 Icon(
                     painterResource(R.drawable.outline_add_photo_alternate_24),

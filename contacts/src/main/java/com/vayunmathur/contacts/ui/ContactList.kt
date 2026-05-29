@@ -1,7 +1,6 @@
 package com.vayunmathur.contacts.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.ContactsContract
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -64,7 +63,6 @@ import com.vayunmathur.library.ui.IconSettings
 import com.vayunmathur.library.util.NavBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.io.encoding.Base64
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -458,12 +456,11 @@ fun ContactItem(
     }
 
     val photoBase64 = contact.photo?.photo
-    val avatarBitmap by produceState<Bitmap?>(initialValue = null, photoBase64) {
-        if (photoBase64 != null) {
-            value = withContext(Dispatchers.IO) {
-                val bytes = Base64.decode(photoBase64)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }
+    val avatarBitmap by produceState<Bitmap?>(initialValue = null, photoBase64, viewModel) {
+        value = if (photoBase64 != null) {
+            withContext(Dispatchers.IO) { viewModel?.decodePhoto(photoBase64) }
+        } else {
+            null
         }
     }
 

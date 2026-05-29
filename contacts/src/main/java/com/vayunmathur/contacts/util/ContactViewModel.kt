@@ -1,16 +1,34 @@
+@file:OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+
 package com.vayunmathur.contacts.util
 import android.app.Application
 import android.content.ContentProviderOperation
 import android.content.ContentUris
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.provider.ContactsContract
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vayunmathur.contacts.data.Address
+import com.vayunmathur.contacts.data.CDKEmail
+import com.vayunmathur.contacts.data.CDKEvent
+import com.vayunmathur.contacts.data.CDKNickname
+import com.vayunmathur.contacts.data.CDKPhone
 import com.vayunmathur.contacts.data.Contact
 import com.vayunmathur.contacts.data.ContactDatabase
+import com.vayunmathur.contacts.data.ContactDetails
 import com.vayunmathur.contacts.data.ContactEntity
 import com.vayunmathur.contacts.data.ContactGroup
 import com.vayunmathur.contacts.data.ContactSearchEntity
+import com.vayunmathur.contacts.data.Email
+import com.vayunmathur.contacts.data.Event
+import com.vayunmathur.contacts.data.Name
+import com.vayunmathur.contacts.data.Nickname
+import com.vayunmathur.contacts.data.Note
+import com.vayunmathur.contacts.data.Organization
+import com.vayunmathur.contacts.data.PhoneNumber
+import com.vayunmathur.contacts.data.Photo
 import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.ManyManyMatching
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +45,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
+import kotlin.io.encoding.Base64
 
 data class ContactAccount(val name: String, val type: String)
 
@@ -351,5 +371,189 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
             // Reload from system to ensure we have the latest (especially for new contacts)
             syncWithSystemContacts()
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Base64 photo decode cache.
+    //
+    // Decoding Base64 + BitmapFactory.decodeByteArray on every recomposition
+    // is wasteful: the same contact photo strings appear repeatedly in the
+    // contact list, details page, and edit page. Cache the decoded Bitmaps
+    // in a small LRU keyed by the raw Base64 string so we decode once.
+    // ---------------------------------------------------------------------
+
+    private val photoCache = object : LinkedHashMap<String, Bitmap?>(32, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, Bitmap?>,
+        ): Boolean = size > 32
+    }
+
+    /**
+     * Returns the decoded [Bitmap] for the Base64-encoded contact photo, or
+     * `null` if decoding fails. Decodes at most once per unique input string
+     * across the entire app lifetime (subject to LRU eviction).
+     */
+    @Synchronized
+    fun decodePhoto(base64: String): Bitmap? {
+        photoCache[base64]?.let { return it }
+        return try {
+            val bytes = Base64.decode(base64)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also {
+                photoCache[base64] = it
+            }
+        } catch (e: Exception) {
+            Log.e("ContactViewModel", "Error decoding contact photo", e)
+            null
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // EditContactPage form draft state.
+    //
+    // Previously every form field lived in compose-local `remember { mutableStateOf(...) }`
+    // / `mutableStateListOf(...)`. Hoisting it to the VM means the draft survives
+    // configuration changes and recompositions, and lets the build-and-save logic
+    // live alongside the rest of the contact write path.
+    // ---------------------------------------------------------------------
+
+    data class ContactDraft(
+        val namePrefix: String = "",
+        val firstName: String = "",
+        val middleName: String = "",
+        val lastName: String = "",
+        val nameSuffix: String = "",
+        val company: String = "",
+        val noteContent: String = "",
+        val nickname: String = "",
+        val photo: Photo? = null,
+        val birthday: LocalDate? = null,
+        val accountName: String = "",
+        val accountType: String = "",
+        val phoneNumbers: List<PhoneNumber> = emptyList(),
+        val emails: List<Email> = emptyList(),
+        val dates: List<Event> = emptyList(),
+        val addresses: List<Address> = emptyList(),
+    )
+
+    private val _editDraft = MutableStateFlow<ContactDraft?>(null)
+    val editDraft: StateFlow<ContactDraft?> = _editDraft.asStateFlow()
+
+    /** Original contact loaded into the current draft, if any. */
+    private var editingOriginal: Contact? = null
+    /** Tracks which contactId the draft was initialized for. `null` = new contact. */
+    private var editingContactId: Long? = null
+    /** True once a draft has been initialized at all (distinguishes "new contact" from "uninitialized"). */
+    private var editingInitialized: Boolean = false
+
+    /**
+     * Initializes the edit-form draft from an existing contact (if [contactId] is non-null)
+     * and/or prefilled fields from a navigation intent. No-op if a draft for the same
+     * [contactId] already exists — so the user's unsaved edits survive rotation.
+     */
+    fun initEditDraft(
+        contactId: Long?,
+        prefillName: String? = null,
+        prefillPhone: String? = null,
+        prefillEmail: String? = null,
+        prefillCompany: String? = null,
+        prefillNotes: String? = null,
+    ) {
+        if (editingInitialized && editingContactId == contactId && _editDraft.value != null) return
+        val contact = contactId?.let { getContact(it) }
+        val details = contact?.details
+        editingOriginal = contact
+        editingContactId = contactId
+        editingInitialized = true
+        _editDraft.value = ContactDraft(
+            namePrefix = contact?.name?.namePrefix ?: "",
+            firstName = contact?.name?.firstName ?: prefillName ?: "",
+            middleName = contact?.name?.middleName ?: "",
+            lastName = contact?.name?.lastName ?: "",
+            nameSuffix = contact?.name?.nameSuffix ?: "",
+            company = contact?.org?.company ?: prefillCompany ?: "",
+            noteContent = contact?.note?.content ?: prefillNotes ?: "",
+            nickname = contact?.nickname?.nickname ?: "",
+            photo = contact?.photo,
+            birthday = contact?.birthday?.startDate,
+            accountName = contact?.accountName ?: "",
+            accountType = contact?.accountType ?: "",
+            phoneNumbers = (details?.phoneNumbers ?: emptyList()).let { list ->
+                if (list.isEmpty() && prefillPhone != null)
+                    listOf(PhoneNumber(0, prefillPhone, CDKPhone.TYPE_MOBILE))
+                else list
+            },
+            emails = (details?.emails ?: emptyList()).let { list ->
+                if (list.isEmpty() && prefillEmail != null)
+                    listOf(Email(0, prefillEmail, CDKEmail.TYPE_HOME))
+                else list
+            },
+            dates = details?.dates ?: emptyList(),
+            addresses = details?.addresses ?: emptyList(),
+        )
+    }
+
+    /** Applies [transform] to the current draft, if any. */
+    fun updateEditDraft(transform: (ContactDraft) -> ContactDraft) {
+        val current = _editDraft.value ?: return
+        _editDraft.value = transform(current)
+    }
+
+    /** Clears the in-progress draft and forgets which contact was being edited. */
+    fun clearEditDraft() {
+        _editDraft.value = null
+        editingOriginal = null
+        editingContactId = null
+        editingInitialized = false
+    }
+
+    /**
+     * Builds a [Contact] from the current draft (merging IDs from the originally
+     * loaded contact where applicable) and persists it via [saveContact], then
+     * clears the draft.
+     */
+    fun saveEditDraft() {
+        val draft = _editDraft.value ?: return
+        val original = editingOriginal
+        val birthdayId = original?.birthday?.id ?: 0L
+        val datesWithoutBirthday = draft.dates.filter { it.type != CDKEvent.TYPE_BIRTHDAY }.toMutableList()
+        draft.birthday?.let { bday ->
+            datesWithoutBirthday += Event(birthdayId, bday, CDKEvent.TYPE_BIRTHDAY)
+        }
+        val details = ContactDetails(
+            phoneNumbers = draft.phoneNumbers,
+            emails = draft.emails,
+            addresses = draft.addresses,
+            dates = datesWithoutBirthday,
+            photos = listOfNotNull(draft.photo),
+            names = listOf(
+                Name(
+                    original?.name?.id ?: 0,
+                    draft.namePrefix,
+                    draft.firstName,
+                    draft.middleName,
+                    draft.lastName,
+                    draft.nameSuffix
+                )
+            ),
+            orgs = listOf(Organization(original?.org?.id ?: 0, draft.company)),
+            notes = listOf(Note(original?.note?.id ?: 0, draft.noteContent)),
+            nicknames = listOf(
+                Nickname(
+                    original?.nickname?.id ?: 0,
+                    draft.nickname,
+                    CDKNickname.TYPE_DEFAULT
+                )
+            ),
+            groups = original?.details?.groups ?: emptyList()
+        )
+        val newContact = original?.copy(details = details) ?: Contact(
+            id = 0,
+            accountType = draft.accountType.ifEmpty { null },
+            accountName = draft.accountName.ifEmpty { null },
+            isFavorite = false,
+            details = details
+        )
+        saveContact(newContact)
+        clearEditDraft()
     }
 }
