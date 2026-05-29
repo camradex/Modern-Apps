@@ -71,7 +71,6 @@ import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.TemporaryLink
 import com.vayunmathur.findfamily.data.User
 import com.vayunmathur.findfamily.data.Waypoint
-import com.vayunmathur.findfamily.data.getLatestMap
 import com.vayunmathur.findfamily.data.toPosition
 import com.vayunmathur.findfamily.ui.dialogs.encodeBase26
 import com.vayunmathur.findfamily.util.FindFamilyViewModel
@@ -86,7 +85,6 @@ import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconSave
 import com.vayunmathur.library.util.DatabaseHelper
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
 import com.vayunmathur.library.util.formatSpeed
@@ -111,7 +109,6 @@ import kotlin.time.Instant
 fun MainPage(
     platform: Platform,
     backStack: NavBackStack<Route>,
-    viewModel: DatabaseViewModel,
     ffViewModel: FindFamilyViewModel,
     initialUserId: Long? = null,
     initialWaypointId: Long? = null
@@ -134,9 +131,9 @@ fun MainPage(
         ffViewModel.clearSelection()
     }
 
-    val users by viewModel.data<User>().collectAsState()
-    val temporaryLinks by viewModel.data<TemporaryLink>().collectAsState()
-    val waypoints by viewModel.data<Waypoint>().collectAsState()
+    val users by ffViewModel.users.collectAsState()
+    val temporaryLinks by ffViewModel.temporaryLinks.collectAsState()
+    val waypoints by ffViewModel.waypoints.collectAsState()
 
     // Filter once per `users` change rather than on every recomposition.
     val connectedUsers by remember(users) {
@@ -150,7 +147,7 @@ fun MainPage(
     val awaitingRequestUsers by remember(users) {
         derivedStateOf { users.filter { it.requestStatus == RequestStatus.AWAITING_REQUEST } }
     }
-    val userPositions by remember { viewModel.getLatestMap() }.collectAsState(emptyMap())
+    val userPositions by ffViewModel.latestLocationByUser.collectAsState()
 
     val context = LocalContext.current
 
@@ -178,18 +175,18 @@ fun MainPage(
                         )
                     } else if (selectedUserId != null) {
                         if (selectedUserId != Networking.userid) {
-                            val user by viewModel.getState<User>(selectedUserId!!)
+                            val user by ffViewModel.userByIdState(selectedUserId!!)
                             IconButton({
-                                viewModel.delete(user)
+                                ffViewModel.deleteUser(user)
                                 ffViewModel.setSelectedUserId(null)
                             }) {
                                 IconDelete()
                             }
                         }
                     } else if (selectedWaypointId != null && selectedWaypointId != 0L) {
-                        val waypoint by viewModel.getState<Waypoint>(selectedWaypointId!!)
+                        val waypoint by ffViewModel.waypointByIdState(selectedWaypointId!!)
                         IconButton({
-                            viewModel.delete(waypoint)
+                            ffViewModel.deleteWaypoint(waypoint)
                             ffViewModel.setSelectedWaypointId(null)
                         }) {
                             IconDelete()
@@ -274,7 +271,7 @@ fun MainPage(
                             }
                         }
                         items(temporaryLinks, key = { it.id }) {
-                            TemporaryLinkCard(platform, viewModel, it)
+                            TemporaryLinkCard(platform, ffViewModel, it)
                         }
                         item {
                             if (waypoints.isNotEmpty()) {
@@ -291,9 +288,9 @@ fun MainPage(
                         }
                     }
                 } else if (selectedUserId != null) {
-                    val selectedUser by viewModel.getState<User>(selectedUserId!!)
+                    val selectedUser by ffViewModel.userByIdState(selectedUserId!!)
                     val requestPickContact = platform.requestPickContact { name, photo ->
-                        viewModel.upsertAsync(selectedUser.copy(name = name, photo = photo))
+                        ffViewModel.upsertUser(selectedUser.copy(name = name, photo = photo))
                     }
                     Column {
                         UserCard(selectedUser, userPositions[selectedUser.id], true) {}
@@ -312,7 +309,7 @@ fun MainPage(
                                     Checkbox(
                                         selectedUser.sendingEnabled,
                                         { send ->
-                                            viewModel.upsertAsync(selectedUser.copy(sendingEnabled = send))
+                                            ffViewModel.upsertUser(selectedUser.copy(sendingEnabled = send))
                                         })
                                 }
                             }
@@ -355,19 +352,19 @@ fun MainPage(
         }) { paddingValues ->
         Box(Modifier.padding(paddingValues).fillMaxWidth()) {
             val selectedUserObj = if (selectedUserId != null) {
-                val user by viewModel.getState<User>(selectedUserId!!)
+                val user by ffViewModel.userByIdState(selectedUserId!!)
                 SelectedUser(user, isShowingPresent, historicalPosition)
             } else null
 
             val selectedWaypointObj = if (selectedWaypointId != null) {
-                val waypoint by viewModel.getState<Waypoint>(selectedWaypointId!!) { Waypoint.NEW_WAYPOINT }
+                val waypoint by ffViewModel.waypointByIdState(selectedWaypointId!!) { Waypoint.NEW_WAYPOINT }
                 SelectedWaypoint(waypoint, waypointRange.toDoubleOrNull() ?: 0.0) {
                     ffViewModel.setWaypointCoord(it)
                 }
             } else null
 
             MapView(
-                viewModel,
+                ffViewModel,
                 onUserClick = {
                     ffViewModel.selectUser(it)
                 },
@@ -556,7 +553,7 @@ fun AwaitingRequestCard(backStack: NavBackStack<Route>, id: Long) {
 }
 
 @Composable
-fun TemporaryLinkCard(platform: Platform, viewModel: DatabaseViewModel, temporaryLink: TemporaryLink) {
+fun TemporaryLinkCard(platform: Platform, ffViewModel: FindFamilyViewModel, temporaryLink: TemporaryLink) {
     val context = LocalContext.current
     Card {
         ListItem({
@@ -572,7 +569,7 @@ fun TemporaryLinkCard(platform: Platform, viewModel: DatabaseViewModel, temporar
                 }
                 Spacer(Modifier.width(16.dp))
                 IconButton({
-                    viewModel.delete(temporaryLink)
+                    ffViewModel.deleteTemporaryLink(temporaryLink)
                 }) {
                     IconDelete()
                 }

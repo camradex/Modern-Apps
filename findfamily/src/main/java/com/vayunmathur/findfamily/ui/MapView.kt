@@ -43,11 +43,10 @@ import coil.request.ImageRequest
 import com.vayunmathur.findfamily.data.Coord
 import com.vayunmathur.findfamily.data.User
 import com.vayunmathur.findfamily.data.Waypoint
-import com.vayunmathur.findfamily.data.getLatestMap
 import com.vayunmathur.findfamily.data.radians
 import com.vayunmathur.findfamily.data.toPosition
+import com.vayunmathur.findfamily.util.FindFamilyViewModel
 import com.vayunmathur.library.ui.invisibleClickable
-import com.vayunmathur.library.util.DatabaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.maplibre.compose.camera.CameraPosition
@@ -72,15 +71,15 @@ private fun Position.toCoord() = Coord(latitude, longitude)
 
 @Composable
 fun MapView(
-    viewModel: DatabaseViewModel,
+    viewModel: FindFamilyViewModel,
     onUserClick: (Long) -> Unit,
     onMapClick: () -> Unit,
     selectedUser: SelectedUser? = null,
     selectedWaypoint: SelectedWaypoint? = null,
 ) {
-    val users by viewModel.data<User>().collectAsState()
-    val waypoints by viewModel.data<Waypoint>().collectAsState()
-    val userPositions by remember { viewModel.getLatestMap() }.collectAsState(emptyMap())
+    val users by viewModel.users.collectAsState()
+    val waypoints by viewModel.waypoints.collectAsState()
+    val userPositions by viewModel.latestLocationByUser.collectAsState()
 
     var initialized by remember { mutableStateOf(false) }
 

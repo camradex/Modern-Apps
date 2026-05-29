@@ -30,19 +30,22 @@ import androidx.work.WorkerParameters
 import com.vayunmathur.findfamily.data.Coord
 import com.vayunmathur.findfamily.data.FFDatabase
 import com.vayunmathur.findfamily.data.LocationValue
+import com.vayunmathur.findfamily.data.LocationValueDao
 import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.TemporaryLink
+import com.vayunmathur.findfamily.data.TemporaryLinkDao
 import com.vayunmathur.findfamily.data.User
+import com.vayunmathur.findfamily.data.UserDao
 import com.vayunmathur.findfamily.data.Waypoint
-import com.vayunmathur.findfamily.data.getLatestMap
+import com.vayunmathur.findfamily.data.WaypointDao
 import com.vayunmathur.findfamily.data.havershine
 import com.vayunmathur.findfamily.MainActivity
 import com.vayunmathur.findfamily.Migration_1_2
 import com.vayunmathur.findfamily.Migration_2_3
 import com.vayunmathur.findfamily.R
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.buildDatabase
+import com.vayunmathur.library.util.getAll
 import com.vayunmathur.findfamily.util.startRepeatedTask
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +85,10 @@ class LocationTrackingService : Service(), SensorEventListener {
         }
     }
 
-    private lateinit var viewModel: DatabaseViewModel
+    private lateinit var userDao: UserDao
+    private lateinit var waypointDao: WaypointDao
+    private lateinit var locationValueDao: LocationValueDao
+    private lateinit var temporaryLinkDao: TemporaryLinkDao
     private lateinit var bm: BatteryManager
     
     private var isGpsRunning = false
@@ -106,9 +112,9 @@ class LocationTrackingService : Service(), SensorEventListener {
         val location = lastKnownLocation ?: return
         if (Networking.userid == 0L) return
         
-        val currentUsers = viewModel.getAll<User>()
-        val currentWaypoints = viewModel.getAll<Waypoint>()
-        val currentLinks = viewModel.getAll<TemporaryLink>()
+        val currentUsers = userDao.getAll<User>()
+        val currentWaypoints = waypointDao.getAll<Waypoint>()
+        val currentLinks = temporaryLinkDao.getAll<TemporaryLink>()
         val userIDs = currentUsers.map { it.id }
         val now = Clock.System.now()
 
@@ -122,11 +128,11 @@ class LocationTrackingService : Service(), SensorEventListener {
         )
 
         withContext(Dispatchers.IO) {
-            viewModel.upsertAsync(locationValue)
+            locationValueDao.upsert(locationValue)
             Networking.ensureUserExists()
             
             if (currentUsers.none { it.id == Networking.userid }) {
-                viewModel.upsert(
+                userDao.upsert(
                     User(
                         getString(R.string.me_label),
                         null,
@@ -142,17 +148,17 @@ class LocationTrackingService : Service(), SensorEventListener {
 
             currentUsers.forEach { Networking.publishLocation(locationValue, it) }
             currentLinks.filter { now < it.deleteAt }.forEach { Networking.publishLocation(locationValue, it) }
-            currentLinks.filter { now >= it.deleteAt }.forEach { viewModel.delete(it) }
+            currentLinks.filter { now >= it.deleteAt }.forEach { temporaryLinkDao.delete(it) }
 
             delay(3000)
             Networking.receiveLocations()?.let { locations ->
                 val usersRecieved = locations.map { it.userid }.distinct()
                 val newUsers = usersRecieved.filter { it !in userIDs && it != Networking.userid }
-                viewModel.upsertAll(newUsers.map {
+                userDao.upsertAll(newUsers.map {
                     User(" ", null, "Unknown Location", false, RequestStatus.AWAITING_REQUEST, Clock.System.now(), null, it)
                 })
 
-                val latestMap = viewModel.getLatestMap().first()
+                val latestMap = locationValueDao.getLatest().first().associateBy { it.userid }
                 currentUsers.forEach { user ->
                     val lastLoc = locations.filter { it.userid == user.id }.maxByOrNull { it.timestamp } ?: return@forEach
                     val lastSavedLoc = latestMap[user.id]
@@ -169,7 +175,7 @@ class LocationTrackingService : Service(), SensorEventListener {
                     } ?: "Unknown Location"
 
                     if (newLocationName != user.locationName) {
-                        viewModel.update<User>(user.id) { it.copy(locationName = newLocationName, lastLocationChangeTime = lastLoc.timestamp) }
+                        userDao.upsert(user.copy(locationName = newLocationName, lastLocationChangeTime = lastLoc.timestamp))
                         if (user.id != Networking.userid) {
                             if (inWaypoint != null) {
                                 createNotificationWithCategory(user.name, getString(R.string.notification_entered_waypoint, user.name, inWaypoint.name), "ENTRY_EXIT")
@@ -179,7 +185,7 @@ class LocationTrackingService : Service(), SensorEventListener {
                         }
                     }
                 }
-                viewModel.upsertAll(locations)
+                locationValueDao.upsertAll(locations)
             }
         }
     }
@@ -232,13 +238,11 @@ class LocationTrackingService : Service(), SensorEventListener {
     private fun startTracking() {
         serviceScope.launch {
             val db = buildDatabase<FFDatabase>()
-            viewModel = DatabaseViewModel(db,
-                User::class to db.userDao(),
-                Waypoint::class to db.waypointDao(),
-                LocationValue::class to db.locationValueDao(),
-                TemporaryLink::class to db.temporaryLinkDao()
-            )
-            Networking.init(viewModel, DataStoreUtils.getInstance(this@LocationTrackingService))
+            userDao = db.userDao()
+            waypointDao = db.waypointDao()
+            locationValueDao = db.locationValueDao()
+            temporaryLinkDao = db.temporaryLinkDao()
+            Networking.init(userDao, DataStoreUtils.getInstance(this@LocationTrackingService))
             
             launch {
                 while (isActive) {

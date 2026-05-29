@@ -6,6 +6,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.LocationManager
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -14,11 +20,16 @@ import androidx.lifecycle.viewModelScope
 import com.vayunmathur.findfamily.R
 import com.vayunmathur.findfamily.data.Coord
 import com.vayunmathur.findfamily.data.LocationValue
+import com.vayunmathur.findfamily.data.LocationValueDao
 import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.TemporaryLink
+import com.vayunmathur.findfamily.data.TemporaryLinkDao
 import com.vayunmathur.findfamily.data.User
+import com.vayunmathur.findfamily.data.UserDao
 import com.vayunmathur.findfamily.data.Waypoint
-import com.vayunmathur.library.util.DatabaseViewModel
+import com.vayunmathur.findfamily.data.WaypointDao
+import com.vayunmathur.library.util.get
+import com.vayunmathur.library.util.getAll
 import dev.whyoleg.cryptography.algorithms.RSA
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,6 +56,8 @@ import kotlin.time.Duration.Companion.days
  * Owns:
  *  - selection state (selected user / waypoint, history vs present, historical position)
  *  - waypoint editing form state + persistence
+ *  - exposed DB-backed flows for users / waypoints / temporary links and the
+ *    latest LocationValue per user (`latestLocationByUser`)
  *  - raw per-user location-history flow (keyed on selected user)
  *  - location-permission flags (foreground + background)
  *  - cached feature-availability check (network provider + geocoder)
@@ -54,10 +68,69 @@ import kotlin.time.Duration.Companion.days
  */
 class FindFamilyViewModel(
     application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val userDao: UserDao,
+    private val waypointDao: WaypointDao,
+    private val locationValueDao: LocationValueDao,
+    private val temporaryLinkDao: TemporaryLinkDao,
 ) : AndroidViewModel(application) {
 
     private val ctx: Context get() = getApplication()
+
+    // ------------------------------------------------------------------
+    // DB-backed exposed flows (replace DatabaseViewModel.data<T>())
+    // ------------------------------------------------------------------
+
+    val users: StateFlow<List<User>> = userDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val waypoints: StateFlow<List<Waypoint>> = waypointDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val temporaryLinks: StateFlow<List<TemporaryLink>> = temporaryLinkDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val latestLocationByUser: StateFlow<Map<Long, LocationValue>> = locationValueDao.getLatest()
+        .map { list -> list.associateBy { it.userid } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    // ------------------------------------------------------------------
+    // Composable single-item accessors (replace DatabaseViewModel.getState<T>())
+    // ------------------------------------------------------------------
+
+    @Composable
+    fun userByIdState(id: Long, default: () -> User? = { null }): State<User> {
+        val list by users.collectAsState()
+        return remember { derivedStateOf { (list.firstOrNull { it.id == id } ?: default())!! } }
+    }
+
+    @Composable
+    fun waypointByIdState(id: Long, default: () -> Waypoint? = { null }): State<Waypoint> {
+        val list by waypoints.collectAsState()
+        return remember { derivedStateOf { (list.firstOrNull { it.id == id } ?: default())!! } }
+    }
+
+    // ------------------------------------------------------------------
+    // Mutation methods
+    // ------------------------------------------------------------------
+
+    fun deleteUser(user: User) {
+        viewModelScope.launch(Dispatchers.IO) { userDao.delete(user) }
+    }
+
+    fun upsertUser(user: User, onDone: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            userDao.upsert(user)
+            withContext(Dispatchers.Main) { onDone() }
+        }
+    }
+
+    fun deleteWaypoint(waypoint: Waypoint) {
+        viewModelScope.launch(Dispatchers.IO) { waypointDao.delete(waypoint) }
+    }
+
+    fun deleteTemporaryLink(link: TemporaryLink) {
+        viewModelScope.launch(Dispatchers.IO) { temporaryLinkDao.delete(link) }
+    }
 
     // ------------------------------------------------------------------
     // Selection state
@@ -163,10 +236,12 @@ class FindFamilyViewModel(
         if (name.isBlank()) return
         val id = _selectedWaypointId.value ?: return
         val coord = _waypointCoord.value
-        viewModelScope.launch {
-            val base = if (id == 0L) Waypoint.NEW_WAYPOINT else databaseViewModel.get<Waypoint>(id)
-            databaseViewModel.upsert(base.copy(name = name, range = range, coord = coord))
-            _selectedWaypointId.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val base = if (id == 0L) Waypoint.NEW_WAYPOINT else waypointDao.get<Waypoint>(id)
+            waypointDao.upsert(base.copy(name = name, range = range, coord = coord))
+            withContext(Dispatchers.Main) {
+                _selectedWaypointId.value = null
+            }
         }
     }
 
@@ -178,9 +253,9 @@ class FindFamilyViewModel(
     val locationHistory: StateFlow<List<LocationValue>> = _selectedUserId
         .flatMapLatest { userId ->
             if (userId == null) flowOf(emptyList())
-            else databaseViewModel.data<LocationValue>("userid = $userId")
+            else locationValueDao.getByUseridFlow(userId)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ------------------------------------------------------------------
     // Permissions
@@ -252,14 +327,9 @@ class FindFamilyViewModel(
                 ),
                 Clock.System.now() + expiry,
             )
-            databaseViewModel.upsert(newLink)
+            temporaryLinkDao.upsert(newLink)
             withContext(Dispatchers.Main) { onDone() }
         }
-    }
-
-    /** Upsert a new/updated [User]; invokes [onDone] when persisted. */
-    fun upsertUser(user: User, onDone: () -> Unit = {}) {
-        databaseViewModel.upsertAsync(user) { onDone() }
     }
 
     // ------------------------------------------------------------------
@@ -268,9 +338,9 @@ class FindFamilyViewModel(
 
     init {
         // Trim location history older than a week.
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val cutoff = Clock.System.now() - 7.days
-            databaseViewModel.deleteIf<LocationValue>("timestamp < ${cutoff.epochSeconds}")
+            locationValueDao.deleteOlderThan(cutoff.epochSeconds)
         }
         // Schedule the recurring sync work that drives location-tracking restarts.
         ensureSync(ctx)
@@ -279,10 +349,10 @@ class FindFamilyViewModel(
         // the LocationTrackingService before we read Networking.userid.
         viewModelScope.launch {
             delay(1000)
-            val users = databaseViewModel.getAll<User>()
-            if (users.none { it.id == Networking.userid }) {
+            val allUsers = withContext(Dispatchers.IO) { userDao.getAll<User>() }
+            if (allUsers.none { it.id == Networking.userid }) {
                 withContext(Dispatchers.IO) {
-                    databaseViewModel.upsert(
+                    userDao.upsert(
                         User(
                             ctx.getString(R.string.me_label),
                             null,
@@ -300,16 +370,25 @@ class FindFamilyViewModel(
     }
 }
 
-/** Factory for constructing [FindFamilyViewModel] with the shared [DatabaseViewModel]. */
+/** Factory for constructing [FindFamilyViewModel] with the four DAOs. */
 class FindFamilyViewModelFactory(
     private val application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val userDao: UserDao,
+    private val waypointDao: WaypointDao,
+    private val locationValueDao: LocationValueDao,
+    private val temporaryLinkDao: TemporaryLinkDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(FindFamilyViewModel::class.java)) {
             "Unexpected ViewModel class: $modelClass"
         }
-        return FindFamilyViewModel(application, databaseViewModel) as T
+        return FindFamilyViewModel(
+            application,
+            userDao,
+            waypointDao,
+            locationValueDao,
+            temporaryLinkDao,
+        ) as T
     }
 }

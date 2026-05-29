@@ -3,9 +3,9 @@ import com.vayunmathur.findfamily.data.LocationValue
 import com.vayunmathur.findfamily.data.LocationValueCompatible
 import com.vayunmathur.findfamily.data.TemporaryLink
 import com.vayunmathur.findfamily.data.User
+import com.vayunmathur.findfamily.data.UserDao
 import com.vayunmathur.library.network.NetworkClient
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.DatabaseViewModel
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.RSA
 import dev.whyoleg.cryptography.algorithms.SHA512
@@ -29,12 +29,12 @@ object Networking {
     var userid = 0L
         private set
 
-    private lateinit var viewModel : DatabaseViewModel
+    private lateinit var userDao: UserDao
     private lateinit var dataStoreUtils: DataStoreUtils
 
-    suspend fun init(viewModel: DatabaseViewModel, dataStoreUtils: DataStoreUtils) {
+    suspend fun init(userDao: UserDao, dataStoreUtils: DataStoreUtils) {
         Networking.dataStoreUtils = dataStoreUtils
-        Networking.viewModel = viewModel
+        Networking.userDao = userDao
         val (privateKey, publicKey) = crypto.keyPairGenerator(digest = SHA512).generateKey().let { Pair(it.privateKey, it.publicKey) }
         dataStoreUtils.setByteArray("privateKey", privateKey.encodeToByteArray(RSA.PrivateKey.Format.PEM), true)
         dataStoreUtils.setByteArray("publicKey", publicKey.encodeToByteArray(RSA.PublicKey.Format.PEM), true)
@@ -118,7 +118,7 @@ object Networking {
         } else {
             getKey(user.id)?.also {
                 val keyString = Base64.encode(it.encodeToByteArray(RSA.PublicKey.Format.PEM))
-                viewModel.upsertAsync(user.copy(encryptionKey = keyString))
+                userDao.upsert(user.copy(encryptionKey = keyString))
             }
         } ?: return false
         return makeRequest<Boolean, LocationSharingData>("/api/location/publish", encryptLocation(location, user.id, key)) ?: false

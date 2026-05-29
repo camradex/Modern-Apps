@@ -44,7 +44,6 @@ import com.vayunmathur.findfamily.ui.dialogs.AddLinkDialog
 import com.vayunmathur.findfamily.ui.dialogs.AddPersonDialog
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.dialog.DatePickerDialog
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.DialogPage
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.NavBackStack
@@ -60,16 +59,22 @@ import com.vayunmathur.findfamily.util.FindFamilyViewModelFactory
 import com.vayunmathur.findfamily.util.Platform
 
 class MainActivity : ComponentActivity() {
-    private lateinit var viewModel: DatabaseViewModel
+    private lateinit var userDao: com.vayunmathur.findfamily.data.UserDao
+    private lateinit var waypointDao: com.vayunmathur.findfamily.data.WaypointDao
+    private lateinit var locationValueDao: com.vayunmathur.findfamily.data.LocationValueDao
+    private lateinit var temporaryLinkDao: com.vayunmathur.findfamily.data.TemporaryLinkDao
     private val ffViewModel: FindFamilyViewModel by viewModels {
-        FindFamilyViewModelFactory(application, viewModel)
+        FindFamilyViewModelFactory(application, userDao, waypointDao, locationValueDao, temporaryLinkDao)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val db = buildDatabase<FFDatabase>()
-        viewModel = DatabaseViewModel(db, User::class to db.userDao(), Waypoint::class to db.waypointDao(), LocationValue::class to db.locationValueDao(), TemporaryLink::class to db.temporaryLinkDao())
+        userDao = db.userDao()
+        waypointDao = db.waypointDao()
+        locationValueDao = db.locationValueDao()
+        temporaryLinkDao = db.temporaryLinkDao()
         val platform = Platform(this)
         setContent {
             DynamicTheme {
@@ -96,7 +101,7 @@ class MainActivity : ComponentActivity() {
                         onBackgroundGranted = { ffViewModel.refreshPermissions() }
                     )
                 } else {
-                    Navigation(platform, viewModel, ffViewModel, ffViewModel.missingFeatures)
+                    Navigation(platform, ffViewModel, ffViewModel.missingFeatures)
                 }
             }
         }
@@ -223,7 +228,6 @@ sealed interface Route: NavKey {
 @Composable
 fun Navigation(
     platform: Platform,
-    viewModel: DatabaseViewModel,
     ffViewModel: FindFamilyViewModel,
     showMissingFeatures: Boolean,
 ) {
@@ -237,14 +241,14 @@ fun Navigation(
 
     MainNavigation(backStack) {
         entry<Route.MainPage> {
-            MainPage(platform, backStack, viewModel, ffViewModel, it.selectedUserId, it.selectedWaypointId)
+            MainPage(platform, backStack, ffViewModel, it.selectedUserId, it.selectedWaypointId)
         }
         entry<Route.UserPageHistoryDatePicker>(metadata = DialogPage()) {
             DatePickerDialog(backStack, "HistoryDatePicker", it.initialDate, maxDate = Clock.System.now().toLocalDateTime(
                 TimeZone.currentSystemDefault()).date)
         }
         entry<Route.AddPersonDialog>(metadata = DialogPage()) {
-            AddPersonDialog(backStack, viewModel, ffViewModel, platform, it.id)
+            AddPersonDialog(backStack, ffViewModel, platform, it.id)
         }
         entry<Route.AddLinkDialog>(metadata = DialogPage()) {
             AddLinkDialog(backStack, ffViewModel)
