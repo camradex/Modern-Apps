@@ -57,12 +57,12 @@ class AlchemistViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Unlocked inventory (persisted) ---
     val itemIds: StateFlow<Set<Long>> = ds.stringSetFlow("available_items")
         .map { set -> set.map { it.toLong() }.toSet() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val availableItems: StateFlow<List<AlchemyItem>> =
         combine(_allItems, itemIds) { items, ids ->
             items.filter { it.id in ids }.sortedBy { it.name }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Placed elements on the play area (committed positions) ---
     private val _placedElements = MutableStateFlow<List<PlacedItem>>(emptyList())
