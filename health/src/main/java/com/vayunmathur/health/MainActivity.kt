@@ -60,6 +60,7 @@ import com.vayunmathur.health.ui.BodyPage
 import com.vayunmathur.health.ui.HealthMetricConfig
 import com.vayunmathur.health.ui.ImmunizationsPage
 import com.vayunmathur.health.ui.LabResultsPage
+import com.vayunmathur.health.ui.NutritionDetailsPage
 import com.vayunmathur.health.ui.NutritionPage
 import com.vayunmathur.health.ui.RecipeEditorPage
 import com.vayunmathur.health.ui.RecipeManagementPage
@@ -178,6 +179,9 @@ sealed interface Route: NavKey {
     data object NutritionDetails: Route
 
     @Serializable
+    data object NutritionFullBreakdown: Route
+
+    @Serializable
     data object RecipeManagement: Route
 
     @Serializable
@@ -241,6 +245,9 @@ fun Navigation(viewModel: HealthViewModel) {
         }
         entry<Route.NutritionDetails> {
             NutritionPage(backStack, viewModel)
+        }
+        entry<Route.NutritionFullBreakdown> {
+            NutritionDetailsPage(backStack, viewModel)
         }
         entry<Route.RecipeManagement> {
             RecipeManagementPage(backStack, viewModel)

@@ -1,10 +1,7 @@
 package com.vayunmathur.health.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -14,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -23,11 +21,8 @@ import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
 import com.vayunmathur.health.data.RecordType
 import com.vayunmathur.health.ui.components.GroupedSection
-import com.vayunmathur.health.ui.components.GroupedSectionDivider
-import com.vayunmathur.health.ui.components.HealthRow
 import com.vayunmathur.health.ui.components.MetricRing
 import com.vayunmathur.health.util.HealthViewModel
-import com.vayunmathur.health.util.displayString
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.round
 import com.vayunmathur.library.ui.*
@@ -37,344 +32,243 @@ import kotlin.time.Instant
 import kotlinx.datetime.*
 
 data class NutrientDV(
-        val name: String,
-        val type: RecordType,
-        val dailyValue: Double,
-        val unit: String,
-        val sumFunction: (RecordType, Instant, Instant) -> kotlinx.coroutines.flow.Flow<Double>
+    val name: String,
+    val type: RecordType,
+    val dailyValue: Double,
+    val unit: String,
+    val sumFunction: (RecordType, Instant, Instant) -> kotlinx.coroutines.flow.Flow<Double>
 )
 
+/** Shared nutrient catalog used by both NutritionPage and NutritionDetailsPage. */
+internal fun nutrientCatalog(viewModel: HealthViewModel): List<NutrientDV> = listOf(
+    NutrientDV("Protein", RecordType.Nutrition, 50.0, "g") { t, s, e -> viewModel.sumProteinInRange(t, s, e) },
+    NutrientDV("Carbohydrates", RecordType.Nutrition, 275.0, "g") { t, s, e -> viewModel.sumCarbsInRange(t, s, e) },
+    NutrientDV("Fat", RecordType.Nutrition, 78.0, "g") { t, s, e -> viewModel.sumFatInRange(t, s, e) },
+    NutrientDV("Fiber", RecordType.Nutrition, 28.0, "g") { t, s, e -> viewModel.sumFiberInRange(t, s, e) },
+    NutrientDV("Sugar", RecordType.Nutrition, 50.0, "g") { t, s, e -> viewModel.sumSugarInRange(t, s, e) },
+    NutrientDV("Sodium", RecordType.Nutrition, 2300.0, "mg") { t, s, e -> viewModel.sumSodiumInRange(t, s, e) },
+    NutrientDV("Cholesterol", RecordType.Nutrition, 300.0, "mg") { t, s, e -> viewModel.sumCholesterolInRange(t, s, e) },
+    NutrientDV("Saturated Fat", RecordType.Nutrition, 20.0, "g") { t, s, e -> viewModel.sumSaturatedFatInRange(t, s, e) },
+    NutrientDV("Trans Fat", RecordType.Nutrition, 2.0, "g") { t, s, e -> viewModel.sumTransFatInRange(t, s, e) },
+    NutrientDV("Vitamin A", RecordType.Nutrition, 900.0, "µg") { t, s, e -> viewModel.sumVitaminAInRange(t, s, e) },
+    NutrientDV("Vitamin C", RecordType.Nutrition, 90.0, "mg") { t, s, e -> viewModel.sumVitaminCInRange(t, s, e) },
+    NutrientDV("Vitamin D", RecordType.Nutrition, 20.0, "µg") { t, s, e -> viewModel.sumVitaminDInRange(t, s, e) },
+    NutrientDV("Vitamin E", RecordType.Nutrition, 15.0, "mg") { t, s, e -> viewModel.sumVitaminEInRange(t, s, e) },
+    NutrientDV("Vitamin K", RecordType.Nutrition, 120.0, "µg") { t, s, e -> viewModel.sumVitaminKInRange(t, s, e) },
+    NutrientDV("Vitamin B6", RecordType.Nutrition, 1.7, "mg") { t, s, e -> viewModel.sumVitaminB6InRange(t, s, e) },
+    NutrientDV("Vitamin B12", RecordType.Nutrition, 2.4, "µg") { t, s, e -> viewModel.sumVitaminB12InRange(t, s, e) },
+    NutrientDV("Thiamin", RecordType.Nutrition, 1.2, "mg") { t, s, e -> viewModel.sumThiaminInRange(t, s, e) },
+    NutrientDV("Riboflavin", RecordType.Nutrition, 1.3, "mg") { t, s, e -> viewModel.sumRiboflavinInRange(t, s, e) },
+    NutrientDV("Niacin", RecordType.Nutrition, 16.0, "mg") { t, s, e -> viewModel.sumNiacinInRange(t, s, e) },
+    NutrientDV("Folate", RecordType.Nutrition, 400.0, "µg") { t, s, e -> viewModel.sumFolateInRange(t, s, e) },
+    NutrientDV("Biotin", RecordType.Nutrition, 30.0, "µg") { t, s, e -> viewModel.sumBiotinInRange(t, s, e) },
+    NutrientDV("Pantothenic Acid", RecordType.Nutrition, 5.0, "mg") { t, s, e -> viewModel.sumPantothenicAcidInRange(t, s, e) },
+    NutrientDV("Calcium", RecordType.Nutrition, 1300.0, "mg") { t, s, e -> viewModel.sumCalciumInRange(t, s, e) },
+    NutrientDV("Iron", RecordType.Nutrition, 18.0, "mg") { t, s, e -> viewModel.sumIronInRange(t, s, e) },
+    NutrientDV("Magnesium", RecordType.Nutrition, 420.0, "mg") { t, s, e -> viewModel.sumMagnesiumInRange(t, s, e) },
+    NutrientDV("Phosphorus", RecordType.Nutrition, 1250.0, "mg") { t, s, e -> viewModel.sumPhosphorusInRange(t, s, e) },
+    NutrientDV("Iodine", RecordType.Nutrition, 150.0, "µg") { t, s, e -> viewModel.sumIodineInRange(t, s, e) },
+    NutrientDV("Zinc", RecordType.Nutrition, 11.0, "mg") { t, s, e -> viewModel.sumZincInRange(t, s, e) },
+    NutrientDV("Selenium", RecordType.Nutrition, 55.0, "µg") { t, s, e -> viewModel.sumSeleniumInRange(t, s, e) },
+    NutrientDV("Copper", RecordType.Nutrition, 0.9, "mg") { t, s, e -> viewModel.sumCopperInRange(t, s, e) },
+    NutrientDV("Manganese", RecordType.Nutrition, 2.3, "mg") { t, s, e -> viewModel.sumManganeseInRange(t, s, e) },
+    NutrientDV("Chromium", RecordType.Nutrition, 35.0, "µg") { t, s, e -> viewModel.sumChromiumInRange(t, s, e) },
+    NutrientDV("Molybdenum", RecordType.Nutrition, 45.0, "µg") { t, s, e -> viewModel.sumMolybdenumInRange(t, s, e) },
+    NutrientDV("Chloride", RecordType.Nutrition, 2300.0, "mg") { t, s, e -> viewModel.sumChlorideInRange(t, s, e) },
+    NutrientDV("Potassium", RecordType.Nutrition, 4700.0, "mg") { t, s, e -> viewModel.sumPotassiumInRange(t, s, e) },
+    NutrientDV("Caffeine", RecordType.Nutrition, 400.0, "mg") { t, s, e -> viewModel.sumCaffeineInRange(t, s, e) },
+    NutrientDV("Hydration", RecordType.Hydration, 3.0, "L") { t, s, e -> viewModel.sumInRange(t, s, e) }
+)
+
+/**
+ * Slim nutrition home — answers "how am I doing on nutrition today?" at a glance.
+ * Full meal log + nutrient breakdown live in [NutritionDetailsPage].
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
-    val initialPage = 999
-    val pagerState = rememberPagerState(initialPage = initialPage) { 1000 }
     val tz = TimeZone.currentSystemDefault()
     val today = Clock.System.todayIn(tz)
+    val dayStart = today.atStartOfDayIn(tz)
+    val dayEnd = dayStart.plus(24.hours)
 
-    val nutrients = remember(viewModel) {
-        listOf(
-                NutrientDV("Protein", RecordType.Nutrition, 50.0, "g") { t, s, e ->
-                    viewModel.sumProteinInRange(t, s, e)
-                },
-                NutrientDV("Carbohydrates", RecordType.Nutrition, 275.0, "g") { t, s, e ->
-                    viewModel.sumCarbsInRange(t, s, e)
-                },
-                NutrientDV("Fat", RecordType.Nutrition, 78.0, "g") { t, s, e ->
-                    viewModel.sumFatInRange(t, s, e)
-                },
-                NutrientDV("Fiber", RecordType.Nutrition, 28.0, "g") { t, s, e ->
-                    viewModel.sumFiberInRange(t, s, e)
-                },
-                NutrientDV("Sugar", RecordType.Nutrition, 50.0, "g") { t, s, e ->
-                    viewModel.sumSugarInRange(t, s, e)
-                },
-                NutrientDV("Sodium", RecordType.Nutrition, 2300.0, "mg") { t, s, e ->
-                    viewModel.sumSodiumInRange(t, s, e)
-                },
-                NutrientDV("Cholesterol", RecordType.Nutrition, 300.0, "mg") { t, s, e ->
-                    viewModel.sumCholesterolInRange(t, s, e)
-                },
-                NutrientDV("Saturated Fat", RecordType.Nutrition, 20.0, "g") { t, s, e ->
-                    viewModel.sumSaturatedFatInRange(t, s, e)
-                },
-                NutrientDV("Trans Fat", RecordType.Nutrition, 2.0, "g") { t, s, e ->
-                    viewModel.sumTransFatInRange(t, s, e)
-                },
-                NutrientDV("Vitamin A", RecordType.Nutrition, 900.0, "µg") { t, s, e ->
-                    viewModel.sumVitaminAInRange(t, s, e)
-                },
-                NutrientDV("Vitamin C", RecordType.Nutrition, 90.0, "mg") { t, s, e ->
-                    viewModel.sumVitaminCInRange(t, s, e)
-                },
-                NutrientDV("Vitamin D", RecordType.Nutrition, 20.0, "µg") { t, s, e ->
-                    viewModel.sumVitaminDInRange(t, s, e)
-                },
-                NutrientDV("Vitamin E", RecordType.Nutrition, 15.0, "mg") { t, s, e ->
-                    viewModel.sumVitaminEInRange(t, s, e)
-                },
-                NutrientDV("Vitamin K", RecordType.Nutrition, 120.0, "µg") { t, s, e ->
-                    viewModel.sumVitaminKInRange(t, s, e)
-                },
-                NutrientDV("Vitamin B6", RecordType.Nutrition, 1.7, "mg") { t, s, e ->
-                    viewModel.sumVitaminB6InRange(t, s, e)
-                },
-                NutrientDV("Vitamin B12", RecordType.Nutrition, 2.4, "µg") { t, s, e ->
-                    viewModel.sumVitaminB12InRange(t, s, e)
-                },
-                NutrientDV("Thiamin", RecordType.Nutrition, 1.2, "mg") { t, s, e ->
-                    viewModel.sumThiaminInRange(t, s, e)
-                },
-                NutrientDV("Riboflavin", RecordType.Nutrition, 1.3, "mg") { t, s, e ->
-                    viewModel.sumRiboflavinInRange(t, s, e)
-                },
-                NutrientDV("Niacin", RecordType.Nutrition, 16.0, "mg") { t, s, e ->
-                    viewModel.sumNiacinInRange(t, s, e)
-                },
-                NutrientDV("Folate", RecordType.Nutrition, 400.0, "µg") { t, s, e ->
-                    viewModel.sumFolateInRange(t, s, e)
-                },
-                NutrientDV("Biotin", RecordType.Nutrition, 30.0, "µg") { t, s, e ->
-                    viewModel.sumBiotinInRange(t, s, e)
-                },
-                NutrientDV("Pantothenic Acid", RecordType.Nutrition, 5.0, "mg") { t, s, e ->
-                    viewModel.sumPantothenicAcidInRange(t, s, e)
-                },
-                NutrientDV("Calcium", RecordType.Nutrition, 1300.0, "mg") { t, s, e ->
-                    viewModel.sumCalciumInRange(t, s, e)
-                },
-                NutrientDV("Iron", RecordType.Nutrition, 18.0, "mg") { t, s, e ->
-                    viewModel.sumIronInRange(t, s, e)
-                },
-                NutrientDV("Magnesium", RecordType.Nutrition, 420.0, "mg") { t, s, e ->
-                    viewModel.sumMagnesiumInRange(t, s, e)
-                },
-                NutrientDV("Phosphorus", RecordType.Nutrition, 1250.0, "mg") { t, s, e ->
-                    viewModel.sumPhosphorusInRange(t, s, e)
-                },
-                NutrientDV("Iodine", RecordType.Nutrition, 150.0, "µg") { t, s, e ->
-                    viewModel.sumIodineInRange(t, s, e)
-                },
-                NutrientDV("Zinc", RecordType.Nutrition, 11.0, "mg") { t, s, e ->
-                    viewModel.sumZincInRange(t, s, e)
-                },
-                NutrientDV("Selenium", RecordType.Nutrition, 55.0, "µg") { t, s, e ->
-                    viewModel.sumSeleniumInRange(t, s, e)
-                },
-                NutrientDV("Copper", RecordType.Nutrition, 0.9, "mg") { t, s, e ->
-                    viewModel.sumCopperInRange(t, s, e)
-                },
-                NutrientDV("Manganese", RecordType.Nutrition, 2.3, "mg") { t, s, e ->
-                    viewModel.sumManganeseInRange(t, s, e)
-                },
-                NutrientDV("Chromium", RecordType.Nutrition, 35.0, "µg") { t, s, e ->
-                    viewModel.sumChromiumInRange(t, s, e)
-                },
-                NutrientDV("Molybdenum", RecordType.Nutrition, 45.0, "µg") { t, s, e ->
-                    viewModel.sumMolybdenumInRange(t, s, e)
-                },
-                NutrientDV("Chloride", RecordType.Nutrition, 2300.0, "mg") { t, s, e ->
-                    viewModel.sumChlorideInRange(t, s, e)
-                },
-                NutrientDV("Potassium", RecordType.Nutrition, 4700.0, "mg") { t, s, e ->
-                    viewModel.sumPotassiumInRange(t, s, e)
-                },
-                NutrientDV("Caffeine", RecordType.Nutrition, 400.0, "mg") { t, s, e ->
-                    viewModel.sumCaffeineInRange(t, s, e)
-                },
-                NutrientDV("Hydration", RecordType.Hydration, 3.0, "L") { t, s, e ->
-                    viewModel.sumInRange(t, s, e)
-                }
-        )
-    }
+    val totalCalories by remember(dayStart, dayEnd) {
+        viewModel.sumInRange(RecordType.Nutrition, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val totalProtein by remember(dayStart, dayEnd) {
+        viewModel.sumProteinInRange(RecordType.Nutrition, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val totalCarbs by remember(dayStart, dayEnd) {
+        viewModel.sumCarbsInRange(RecordType.Nutrition, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val totalFat by remember(dayStart, dayEnd) {
+        viewModel.sumFatInRange(RecordType.Nutrition, dayStart, dayEnd)
+    }.collectAsState(0.0)
+    val loggedMeals by remember(dayStart, dayEnd) {
+        viewModel.getAllRecordsInRange(RecordType.Nutrition, dayStart, dayEnd)
+    }.collectAsState(emptyList())
 
     var fabExpanded by remember { mutableStateOf(false) }
     var showHydrationDialog by remember { mutableStateOf(false) }
     var showMealDialog by remember { mutableStateOf(false) }
 
-    val selectedDay = remember(pagerState.currentPage) {
-        today.minus(initialPage - pagerState.currentPage, DateTimeUnit.DAY)
-    }
-    val selectedDayInstant = remember(selectedDay) {
-        if (selectedDay == today) null
-        else java.time.Instant.ofEpochMilli(selectedDay.atStartOfDayIn(tz).toEpochMilliseconds())
-    }
-
     if (showHydrationDialog) {
-        LogHydrationDialog(viewModel = viewModel, initialTime = selectedDayInstant, onDismiss = { showHydrationDialog = false })
+        LogHydrationDialog(viewModel = viewModel, initialTime = null, onDismiss = { showHydrationDialog = false })
     }
     if (showMealDialog) {
-        LogMealDialog(viewModel = viewModel, initialTime = selectedDayInstant, onDismiss = { showMealDialog = false })
+        LogMealDialog(viewModel = viewModel, initialTime = null, onDismiss = { showMealDialog = false })
     }
 
     Scaffold(
-            topBar = {
-                TopAppBar(
-                        title = { Text(stringResource(R.string.label_nutrition_details)) },
-                )
-            },
-            floatingActionButton = {
-                FloatingActionButtonMenu(
-                    expanded = fabExpanded,
-                    button = {
-                        ToggleFloatingActionButton(fabExpanded, { fabExpanded = it }) {
-                            if (!fabExpanded) IconAdd() else IconClose()
-                        }
+        topBar = {
+            TopAppBar(title = { Text(stringResource(R.string.label_nutrition_details)) })
+        },
+        floatingActionButton = {
+            FloatingActionButtonMenu(
+                expanded = fabExpanded,
+                button = {
+                    ToggleFloatingActionButton(fabExpanded, { fabExpanded = it }) {
+                        if (!fabExpanded) IconAdd() else IconClose()
                     }
+                }
+            ) {
+                FloatingActionButtonMenuItem(
+                    onClick = { fabExpanded = false; showHydrationDialog = true },
+                    text = { Text("Log Hydration") },
+                    icon = { IconFire() }
+                )
+                FloatingActionButtonMenuItem(
+                    onClick = { fabExpanded = false; showMealDialog = true },
+                    text = { Text("Log Meal") },
+                    icon = { IconFire() }
+                )
+                FloatingActionButtonMenuItem(
+                    onClick = { fabExpanded = false; backStack.add(Route.RecipeManagement) },
+                    text = { Text("Recipes") },
+                    icon = { IconAdd() }
+                )
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // Calorie ring
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    FloatingActionButtonMenuItem(
-                        onClick = {
-                            fabExpanded = false
-                            showHydrationDialog = true
-                        },
-                        text = { Text("Log Hydration") },
-                        icon = { IconFire() }
+                    val caloriesGoal = 2000.0
+                    val calorieProgress = (totalCalories / caloriesGoal).toFloat().coerceIn(0f, 1f)
+                    MetricRing(
+                        progress = calorieProgress,
+                        label = "kcal",
+                        value = totalCalories.round(0).toInt().toString(),
+                        modifier = Modifier.size(140.dp),
+                        color = HealthColors.Nutrition,
                     )
-                    FloatingActionButtonMenuItem(
-                        onClick = {
-                            fabExpanded = false
-                            showMealDialog = true
-                        },
-                        text = { Text("Log Meal") },
-                        icon = { IconFire() }
-                    )
-                    FloatingActionButtonMenuItem(
-                        onClick = {
-                            fabExpanded = false
-                            backStack.add(Route.RecipeManagement)
-                        },
-                        text = { Text("Recipes") },
-                        icon = { IconAdd() }
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Calories",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "${totalCalories.round(0).toInt()} / ${caloriesGoal.toInt()} kcal",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
-    ) { padding ->
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            val day = today.minus(initialPage - page, DateTimeUnit.DAY)
-            val dayStart = day.atStartOfDayIn(tz)
-            val dayEnd = dayStart.plus(24.hours)
 
-            val totalCalories by remember(dayStart, dayEnd) { viewModel.sumInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(0.0)
-            val totalProtein by remember(dayStart, dayEnd) { viewModel.sumProteinInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(0.0)
-            val totalCarbs by remember(dayStart, dayEnd) { viewModel.sumCarbsInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(0.0)
-            val totalFat by remember(dayStart, dayEnd) { viewModel.sumFatInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(0.0)
-
-            val loggedMeals by remember(dayStart, dayEnd) { viewModel.getAllRecordsInRange(RecordType.Nutrition, dayStart, dayEnd) }.collectAsState(emptyList())
-            val loggedHydration by remember(dayStart, dayEnd) { viewModel.getAllRecordsInRange(RecordType.Hydration, dayStart, dayEnd) }.collectAsState(emptyList())
-            val allLogs = (loggedMeals + loggedHydration).sortedByDescending { it.startTime }
-            val otherNutrients = nutrients.filter { it.name !in listOf("Protein", "Carbohydrates", "Fat") }
-
-            LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(
-                        top = 8.dp + padding.calculateTopPadding(),
-                        bottom = 96.dp + padding.calculateBottomPadding()
-                    )
+            // Macros as 3 compact rings
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                item {
-                    Text(
-                        text = if (day == today) stringResource(R.string.label_today) else day.displayString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    )
-                }
+                CompactMacroRing("Protein", totalProtein, 50.0, "g", proteinColor)
+                CompactMacroRing("Carbs", totalCarbs, 275.0, "g", carbsColor)
+                CompactMacroRing("Fat", totalFat, 78.0, "g", fatColor)
+            }
 
-                item {
-                    GroupedSection(title = "Today", accentColor = HealthColors.Nutrition) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            val caloriesGoal = 2000.0
-                            val calorieProgress = (totalCalories / caloriesGoal).toFloat().coerceIn(0f, 1f)
-                            MetricRing(
-                                progress = calorieProgress,
-                                label = "kcal",
-                                value = totalCalories.round(0).toInt().toString(),
-                                modifier = Modifier.size(96.dp),
-                                color = HealthColors.Nutrition,
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Calories",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = "${totalCalories.round(0).toInt()} / ${caloriesGoal.toInt()} kcal",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                        GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Protein", totalProtein, 50.0, "g", proteinColor)
-                        GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Carbs", totalCarbs, 275.0, "g", carbsColor)
-                        GroupedSectionDivider(insetStart = 16.dp)
-                        MacroRow("Fat", totalFat, 78.0, "g", fatColor)
-                    }
-                }
-
-                if (allLogs.isNotEmpty()) {
-                    item {
-                        GroupedSection(title = "Logged today", accentColor = HealthColors.Nutrition) {
-                            allLogs.forEachIndexed { idx, log ->
-                                if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
-                                val headline = log.metadata
-                                    ?: if (log.type == RecordType.Hydration) "Hydration" else "Meal"
-                                val supporting = if (log.type == RecordType.Nutrition) {
-                                    "${log.nutritionData?.calories?.round(0)?.toInt() ?: 0} kcal • " +
-                                        "${log.nutritionData?.protein?.round(1) ?: 0}g P • " +
-                                        "${log.nutritionData?.carbohydrates?.round(1) ?: 0}g C • " +
-                                        "${log.nutritionData?.fat?.round(1) ?: 0}g F"
-                                } else {
-                                    "${log.value.round(2)} L"
-                                }
-                                HealthRow(
-                                    headline = headline,
-                                    supporting = supporting,
-                                    trailing = {
-                                        IconButton(onClick = { viewModel.deleteRecord(log) }) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.baseline_delete_24),
-                                                contentDescription = "Unlog",
-                                                tint = MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    GroupedSection(title = "Nutrient breakdown", accentColor = HealthColors.Nutrition) {
-                        otherNutrients.forEachIndexed { idx, nutrient ->
-                            if (idx > 0) GroupedSectionDivider(insetStart = 16.dp)
-                            NutrientProgressRow(nutrient, dayStart, dayEnd)
-                        }
-                    }
-                }
+            // Meals link + breakdown CTA
+            GroupedSection(accentColor = HealthColors.Nutrition) {
+                val totalCal = loggedMeals.sumOf { it.nutritionData?.calories ?: 0.0 }
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            if (loggedMeals.isEmpty()) "No meals logged today"
+                            else "${loggedMeals.size} meals · ${totalCal.round(0).toInt()} cal"
+                        )
+                    },
+                    supportingContent = { Text("View full breakdown") },
+                    trailingContent = {
+                        Icon(
+                            painter = painterResource(R.drawable.outline_arrow_forward_24),
+                            contentDescription = null,
+                            tint = HealthColors.Nutrition,
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { backStack.add(Route.NutritionFullBreakdown) },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MacroRow(label: String, value: Double, goal: Double, unit: String, color: androidx.compose.ui.graphics.Color = HealthColors.Nutrition) {
+private fun CompactMacroRing(
+    label: String,
+    value: Double,
+    goal: Double,
+    unit: String,
+    color: Color,
+) {
     val progress = (value / goal).toFloat().coerceIn(0f, 1f)
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = color.copy(alpha = 0.95f))
-            Text(
-                text = "${value.round(0).toInt()} / ${goal.toInt()} $unit",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth().height(4.dp),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        MetricRing(
+            progress = progress,
+            label = "",
+            value = "${value.round(0).toInt()}",
+            modifier = Modifier.size(72.dp),
             color = color,
-            trackColor = color.copy(alpha = 0.18f),
-            strokeCap = StrokeCap.Round,
+            strokeWidth = 6.dp,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = color.copy(alpha = 0.95f),
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "${value.round(0).toInt()}/${goal.toInt()}$unit",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
+/** Single nutrient row used by NutritionDetailsPage. */
 @Composable
-private fun NutrientProgressRow(nutrient: NutrientDV, start: Instant, end: Instant) {
-    val currentAmount by remember(nutrient, start, end) { nutrient.sumFunction(nutrient.type, start, end) }.collectAsState(0.0)
+internal fun NutrientProgressRow(nutrient: NutrientDV, start: Instant, end: Instant) {
+    val currentAmount by remember(nutrient, start, end) {
+        nutrient.sumFunction(nutrient.type, start, end)
+    }.collectAsState(0.0)
     val progress = (currentAmount / nutrient.dailyValue).toFloat().coerceIn(0f, 1f)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(
