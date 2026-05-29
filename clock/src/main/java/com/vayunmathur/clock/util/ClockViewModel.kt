@@ -10,9 +10,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vayunmathur.clock.Route
 import com.vayunmathur.clock.data.Alarm
+import com.vayunmathur.clock.data.AlarmDao
 import com.vayunmathur.clock.data.Timer
+import com.vayunmathur.clock.data.TimerDao
 import com.vayunmathur.clock.ui.sendTimerNotification
-import com.vayunmathur.library.util.DatabaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,14 +39,53 @@ import kotlin.time.Instant
  *  - a shared 100ms wall-clock tick (paused while no UI subscribes)
  *  - stopwatch run state, lap list, and derived counting time
  *  - inbound AlarmClock.ACTION_* intent dispatch (set alarm / set timer / show alarms)
- *
- * The shared [DatabaseViewModel] is injected so this VM can persist alarms / timers
- * created by external intents.
+ *  - alarm and timer DAOs for persistence
  */
 class ClockViewModel(
     application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val timerDao: TimerDao,
+    private val alarmDao: AlarmDao,
 ) : AndroidViewModel(application) {
+
+    // --- Database-backed lists -----------------------------------------------
+
+    val timers: StateFlow<List<Timer>> = timerDao.getAllFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+        emptyList(),
+    )
+
+    val alarms: StateFlow<List<Alarm>> = alarmDao.getAllFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+        emptyList(),
+    )
+
+    fun upsert(timer: Timer, andThen: (Long) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = timerDao.upsert(timer)
+            andThen(id)
+        }
+    }
+
+    fun upsert(alarm: Alarm, andThen: (Long) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = alarmDao.upsert(alarm)
+            andThen(id)
+        }
+    }
+
+    fun delete(timer: Timer) {
+        viewModelScope.launch(Dispatchers.IO) {
+            timerDao.delete(timer)
+        }
+    }
+
+    fun delete(alarm: Alarm) {
+        viewModelScope.launch(Dispatchers.IO) {
+            alarmDao.delete(alarm)
+        }
+    }
 
     // --- City → timezone map ---------------------------------------------------
 
@@ -157,7 +197,7 @@ class ClockViewModel(
                     val alarm = Alarm(time, message ?: "", true, daysMask)
                     val ctx = getApplication<Application>()
                     viewModelScope.launch(Dispatchers.IO) {
-                        val id = databaseViewModel.upsert(alarm)
+                        val id = alarmDao.upsert(alarm)
                         AlarmScheduler.get().schedule(ctx, alarm.copy(id = id))
                     }
                     null
@@ -180,7 +220,7 @@ class ClockViewModel(
                     )
                     val ctx = getApplication<Application>()
                     viewModelScope.launch(Dispatchers.IO) {
-                        val id = databaseViewModel.upsert(timer)
+                        val id = timerDao.upsert(timer)
                         sendTimerNotification(ctx, timer.copy(id = id), true)
                     }
                     null
@@ -225,16 +265,17 @@ class ClockViewModel(
     }
 }
 
-/** Factory for [ClockViewModel] that injects the shared [DatabaseViewModel]. */
+/** Factory for [ClockViewModel] that injects the DAOs directly. */
 class ClockViewModelFactory(
     private val application: Application,
-    private val databaseViewModel: DatabaseViewModel,
+    private val timerDao: TimerDao,
+    private val alarmDao: AlarmDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(ClockViewModel::class.java)) {
             "Unexpected ViewModel class: $modelClass"
         }
-        return ClockViewModel(application, databaseViewModel) as T
+        return ClockViewModel(application, timerDao, alarmDao) as T
     }
 }

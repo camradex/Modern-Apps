@@ -4,11 +4,13 @@ import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.vayunmathur.library.util.DatabaseItem
 import com.vayunmathur.library.util.DefaultConverters
 import com.vayunmathur.library.util.TrueDao
+import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalTime
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -46,9 +48,16 @@ data class Alarm(
 ): DatabaseItem
 
 @Dao
-interface TimerDao: TrueDao<Timer>
+interface TimerDao: TrueDao<Timer> {
+    @Query("SELECT * FROM Timer")
+    fun getAllFlow(): Flow<List<Timer>>
+}
+
 @Dao
-interface AlarmDao: TrueDao<Alarm>
+interface AlarmDao: TrueDao<Alarm> {
+    @Query("SELECT * FROM Alarm")
+    fun getAllFlow(): Flow<List<Alarm>>
+}
 
 @TypeConverters(DefaultConverters::class)
 @Database(entities = [Timer::class, Alarm::class], version = 1)

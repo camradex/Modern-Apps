@@ -44,8 +44,8 @@ import com.vayunmathur.clock.Route
 import com.vayunmathur.clock.data.Alarm
 import com.vayunmathur.library.ui.IconAdd
 import com.vayunmathur.library.ui.IconDelete
+import com.vayunmathur.clock.util.ClockViewModel
 import com.vayunmathur.library.util.BottomNavBar
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.ResultEffect
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.format
@@ -54,8 +54,8 @@ import kotlinx.datetime.format.char
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlarmPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, newAlarmParams: Route.NewAlarmDialog? = null) {
-    val alarms by viewModel.data<Alarm>().collectAsState()
+fun AlarmPage(backStack: NavBackStack<Route>, clockViewModel: ClockViewModel, newAlarmParams: Route.NewAlarmDialog? = null) {
+    val alarms by clockViewModel.alarms.collectAsState()
     val context = LocalContext.current
     val alarmScheduler = remember { AlarmScheduler.get() }
     ResultEffect<LocalTime>("alarm_time") {
@@ -64,8 +64,9 @@ fun AlarmPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, newA
             daysMask = daysMask or (1 shl (day - 1))
         }
         val newAlarm = Alarm(it, newAlarmParams?.message ?: "", true, daysMask)
-        val id = viewModel.upsert(newAlarm)
-        alarmScheduler.schedule(context,newAlarm.copy(id = id))
+        clockViewModel.upsert(newAlarm) { id ->
+            alarmScheduler.schedule(context, newAlarm.copy(id = id))
+        }
     }
     Scaffold(topBar = {
         TopAppBar({Text(stringResource(R.string.label_alarm))})
@@ -99,7 +100,7 @@ fun AlarmPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, newA
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(alarms, key = { it.id }) { alarm ->
-                    AlarmCard(backStack, alarm, viewModel, alarmScheduler)
+                    AlarmCard(backStack, alarm, clockViewModel, alarmScheduler)
                 }
             }
         }
@@ -111,7 +112,7 @@ fun AlarmPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, newA
 fun AlarmCard(
     backStack: NavBackStack<Route>,
     alarm: Alarm,
-    viewModel: DatabaseViewModel,
+    clockViewModel: ClockViewModel,
     alarmScheduler: AlarmScheduler
 ) {
     val context = LocalContext.current
@@ -120,7 +121,7 @@ fun AlarmCard(
         if(newAlarm.enabled) {
             alarmScheduler.schedule(context, newAlarm)
         }
-        viewModel.upsert(newAlarm)
+        clockViewModel.upsert(newAlarm)
     }
     Card(
         onClick = { backStack.add(Route.AlarmSetTimeDialog(alarm.id, alarm.time)) },
@@ -171,12 +172,12 @@ fun AlarmCard(
                         } else {
                             alarmScheduler.cancel(context, newAlarm)
                         }
-                        viewModel.upsertAsync(alarm.copy(enabled = it))
+                        clockViewModel.upsert(alarm.copy(enabled = it))
                     })
                     Spacer(Modifier.width(8.dp))
                     IconButton({
                         alarmScheduler.cancel(context, alarm)
-                        viewModel.delete(alarm)
+                        clockViewModel.delete(alarm)
                     }) {
                         IconDelete()
                     }
@@ -194,7 +195,7 @@ fun AlarmCard(
                             if(newAlarm.enabled) {
                                 alarmScheduler.schedule(context, newAlarm)
                             }
-                            viewModel.upsertAsync(newAlarm)
+                            clockViewModel.upsert(newAlarm)
                         }
                     ) {
                         Text(day.toString())

@@ -30,7 +30,7 @@ import com.vayunmathur.clock.R
 import com.vayunmathur.clock.Route
 import com.vayunmathur.clock.data.Timer
 import com.vayunmathur.clock.ui.sendTimerNotification
-import com.vayunmathur.library.util.DatabaseViewModel
+import com.vayunmathur.clock.util.ClockViewModel
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -39,7 +39,7 @@ import kotlin.time.Duration.Companion.seconds
 @Composable
 fun NewTimerDialog(
     backStack: NavBackStack<Route>,
-    viewModel: DatabaseViewModel,
+    clockViewModel: ClockViewModel,
     initialLengthSeconds: Int? = null,
     initialMessage: String? = null
 ) {
@@ -113,7 +113,7 @@ fun NewTimerDialog(
                     if (h > 0 || m > 0 || s > 0) {
                         val duration = h.hours + m.minutes + s.seconds
                         val timer = Timer(true, name, Clock.System.now(), duration, duration)
-                        viewModel.upsertAsync(timer) {
+                        clockViewModel.upsert(timer) {
                             sendTimerNotification(context, timer.copy(id = it), true)
                         }
                         backStack.pop()

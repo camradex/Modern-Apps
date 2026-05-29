@@ -65,7 +65,6 @@ import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconPause
 import com.vayunmathur.library.ui.IconPlay
 import com.vayunmathur.library.util.BottomNavBar
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -76,9 +75,9 @@ import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, clockViewModel: ClockViewModel) {
+fun TimerPage(backStack: NavBackStack<Route>, clockViewModel: ClockViewModel) {
     val now by clockViewModel.now.collectAsState()
-    val timers by viewModel.data<Timer>().collectAsState(initial = emptyList())
+    val timers by clockViewModel.timers.collectAsState()
     var isAddingTimer by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -106,7 +105,7 @@ fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, cloc
                 paddingValues = paddingValues,
                 onStart = { duration ->
                     val timer = Timer(true, "", Clock.System.now(), duration, duration)
-                    viewModel.upsertAsync(timer) {
+                    clockViewModel.upsert(timer) {
                         sendTimerNotification(context, timer.copy(id = it), true)
                     }
                     isAddingTimer = false
@@ -125,7 +124,7 @@ fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, cloc
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(timers, key = { it.id }) { timer ->
-                    TimerCard(timer, now, viewModel, clockViewModel)
+                    TimerCard(timer, now, clockViewModel)
                 }
             }
         }
@@ -284,7 +283,7 @@ fun ActionKeypadButton(text: String, modifier: Modifier = Modifier, onClick: () 
 }
 
 @Composable
-fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel, clockViewModel: ClockViewModel) {
+fun TimerCard(timer: Timer, now: Instant, clockViewModel: ClockViewModel) {
     val context = LocalContext.current
 
     // Calculate actual remaining time for the UI via the shared VM helper.
@@ -316,7 +315,7 @@ fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel, clockVie
                 )
                 IconButton(onClick = {
                     sendTimerNotification(context, timer, false)
-                    viewModel.delete(timer)
+                    clockViewModel.delete(timer)
                 }) {
                     IconDelete()
                 }
@@ -367,7 +366,7 @@ fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel, clockVie
                             remainingLength = newLength,
                             totalLength = timer.totalLength + 1.minutes
                         )
-                        viewModel.upsertAsync(updatedTimer)
+                        clockViewModel.upsert(updatedTimer)
                         if (timer.isRunning) {
                             sendTimerNotification(context, updatedTimer, true)
                         }
@@ -381,11 +380,11 @@ fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel, clockVie
                 FloatingActionButton(
                     onClick = {
                         if (timer.isRunning) {
-                            viewModel.upsertAsync(timer.stopped())
+                            clockViewModel.upsert(timer.stopped())
                             sendTimerNotification(context, timer, false)
                         } else {
                             val startedTimer = timer.started()
-                            viewModel.upsertAsync(startedTimer)
+                            clockViewModel.upsert(startedTimer)
                             sendTimerNotification(context, startedTimer, true)
                         }
                     },

@@ -33,9 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.clock.data.Alarm
 import com.vayunmathur.clock.data.ClockDatabase
-import com.vayunmathur.clock.data.Timer
 import com.vayunmathur.clock.ui.AlarmPage
 import com.vayunmathur.clock.ui.ClockPage
 import com.vayunmathur.clock.ui.StopwatchPage
@@ -49,7 +47,6 @@ import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.dialog.TimePickerDialogContent
 import com.vayunmathur.library.util.BottomBarItem
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.DialogPage
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.buildDatabase
@@ -61,9 +58,9 @@ import kotlinx.serialization.Serializable
 import kotlin.time.Clock
 
 class MainActivity : ComponentActivity() {
-    private lateinit var viewModel: DatabaseViewModel
+    private val db by lazy { buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true) }
     private val clockViewModel: ClockViewModel by viewModels {
-        ClockViewModelFactory(application, viewModel)
+        ClockViewModelFactory(application, db.timerDao(), db.alarmDao())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,8 +88,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         val ds = DataStoreUtils.getInstance(this)
-        val db = buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
-        viewModel = DatabaseViewModel(db, Timer::class to db.timerDao(), Alarm::class to db.alarmDao())
 
         val initialRoute = clockViewModel.handleIncomingIntent(intent)
 
@@ -113,7 +108,7 @@ class MainActivity : ComponentActivity() {
                 if (!hasPermissions && permissions.isNotEmpty()) {
                     InitialPermissionsScreen(permissions) { hasPermissions = it }
                 } else {
-                    Navigation(ds, viewModel, clockViewModel, initialRoute)
+                    Navigation(ds, clockViewModel, initialRoute)
                 }
             }
         }
@@ -183,20 +178,19 @@ fun mainPages() = listOf(
 @Composable
 fun Navigation(
     ds: DataStoreUtils,
-    viewModel: DatabaseViewModel,
     clockViewModel: ClockViewModel,
     initialRoute: Route?,
 ) {
     val backStack = rememberNavBackStack<Route>(listOfNotNull(Route.Alarm, initialRoute).distinct())
     MainNavigation(backStack) {
         entry<Route.Alarm> {
-            AlarmPage(backStack, viewModel, initialRoute as? Route.NewAlarmDialog)
+            AlarmPage(backStack, clockViewModel, initialRoute as? Route.NewAlarmDialog)
         }
         entry<Route.Clock> {
             ClockPage(backStack, ds, clockViewModel)
         }
         entry<Route.Timer> {
-            TimerPage(backStack, viewModel, clockViewModel)
+            TimerPage(backStack, clockViewModel)
         }
         entry<Route.Stopwatch> {
             StopwatchPage(backStack, clockViewModel)
@@ -205,7 +199,7 @@ fun Navigation(
             SelectTimeZonesDialog(backStack, ds, clockViewModel)
         }
         entry<Route.NewTimerDialog>(metadata = DialogPage()) { key ->
-            NewTimerDialog(backStack, viewModel, key.lengthSeconds, key.message)
+            NewTimerDialog(backStack, clockViewModel, key.lengthSeconds, key.message)
         }
         entry<Route.NewAlarmDialog>(metadata = DialogPage()) { key ->
             val initialTime = if (key.hour != null && key.minutes != null) {
