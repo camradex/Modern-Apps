@@ -137,6 +137,19 @@ fun MainPage(
     val users by viewModel.data<User>().collectAsState()
     val temporaryLinks by viewModel.data<TemporaryLink>().collectAsState()
     val waypoints by viewModel.data<Waypoint>().collectAsState()
+
+    // Filter once per `users` change rather than on every recomposition.
+    val connectedUsers by remember(users) {
+        derivedStateOf {
+            users.filter {
+                it.requestStatus == RequestStatus.MUTUAL_CONNECTION ||
+                    it.requestStatus == RequestStatus.AWAITING_RESPONSE
+            }
+        }
+    }
+    val awaitingRequestUsers by remember(users) {
+        derivedStateOf { users.filter { it.requestStatus == RequestStatus.AWAITING_REQUEST } }
+    }
     val userPositions by remember { viewModel.getLatestMap() }.collectAsState(emptyMap())
 
     val context = LocalContext.current
@@ -231,14 +244,14 @@ fun MainPage(
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
                         items(
-                            users.filter { it.requestStatus == RequestStatus.MUTUAL_CONNECTION || it.requestStatus == RequestStatus.AWAITING_RESPONSE },
+                            connectedUsers,
                             key = { it.id }
                         ) {
                             UserCard(it, userPositions[it.id], true) {
                                 ffViewModel.selectUser(it.id)
                             }
                         }
-                        if (users.any { it.requestStatus == RequestStatus.AWAITING_REQUEST }) {
+                        if (awaitingRequestUsers.isNotEmpty()) {
                             item {
                                 Text(
                                     stringResource(R.string.section_location_sharing_requests),
@@ -247,7 +260,7 @@ fun MainPage(
                             }
                         }
                         items(
-                            users.filter { it.requestStatus == RequestStatus.AWAITING_REQUEST },
+                            awaitingRequestUsers,
                             key = { it.id }
                         ) {
                             AwaitingRequestCard(backStack, it.id)
