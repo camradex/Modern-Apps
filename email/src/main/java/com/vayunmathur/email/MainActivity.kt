@@ -3,7 +3,6 @@ package com.vayunmathur.email
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -32,29 +31,12 @@ import com.vayunmathur.email.data.EmailDatabase
 import com.vayunmathur.email.data.EmailSyncWorker
 import com.vayunmathur.library.ui.*
 import com.vayunmathur.library.util.*
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import java.security.MessageDigest
-import java.security.SecureRandom
 
 class MainActivity : ComponentActivity() {
-    private val scope = CoroutineScope(Dispatchers.Main)
-
-    private val clientId = "827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp.apps.googleusercontent.com"
-    private val redirectUri = "com.googleusercontent.apps.827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp:/oauth2redirect"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,37 +61,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: EmailViewModel = viewModel()
             DynamicTheme {
-                MainContent(
-                    viewModel = viewModel,
-                    onLaunchGoogleSignIn = { startGoogleLogin() }
-                )
+                MainContent(viewModel = viewModel)
             }
         }
-    }
-
-    /**
-     * Public so the Compose [com.vayunmathur.email.ui.AddAccountScreen] can
-     * trigger the Chrome-Custom-Tabs OAuth flow without owning the redirect
-     * URI / PKCE state itself.
-     */
-    fun startGoogleLogin() {
-        val verifier = generateCodeVerifier()
-        TokenState.codeVerifier = verifier
-        val challenge = generateCodeChallenge(verifier)
-
-        val authUri = Uri.parse("https://accounts.google.com/o/oauth2/v2/auth")
-            .buildUpon()
-            .appendQueryParameter("client_id", clientId)
-            .appendQueryParameter("redirect_uri", redirectUri)
-            .appendQueryParameter("response_type", "code")
-            .appendQueryParameter("scope", "https://mail.google.com/ email profile")
-            .appendQueryParameter("code_challenge", challenge)
-            .appendQueryParameter("code_challenge_method", "S256")
-            .appendQueryParameter("access_type", "offline")
-            .appendQueryParameter("prompt", "select_account")
-            .build()
-
-        startActivity(Intent(Intent.ACTION_VIEW, authUri))
     }
 
     override fun onStart() {
@@ -129,8 +83,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data
-        val expectedScheme = "com.googleusercontent.apps.827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp"
-        
+
         val accountEmail = intent?.getStringExtra("accountEmail")
         val threadId = intent?.getStringExtra("threadId")
         if (accountEmail != null && threadId != null) {
@@ -139,83 +92,13 @@ class MainActivity : ComponentActivity() {
             IntentState.navigationRoute = Route.Composer()
         }
 
-        if (data != null && data.scheme == expectedScheme && data.path == "/oauth2redirect") {
-            val code = data.getQueryParameter("code")
-            if (code != null) {
-                exchangeCodeForToken(code)
-            }
-        } else if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SENDTO) {
+        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SENDTO) {
             val to = if (intent.action == Intent.ACTION_SENDTO) data?.schemeSpecificPart ?: "" else ""
             val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT) ?: ""
             val body = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-            
+
             IntentState.navigationRoute = Route.Composer(to, subject, body)
         }
-    }
-
-    private fun exchangeCodeForToken(code: String) {
-        val verifier = TokenState.codeVerifier ?: return
-
-        scope.launch {
-            try {
-                HttpClient(CIO) {
-                    install(ContentNegotiation) {
-                        json(Json { ignoreUnknownKeys = true })
-                    }
-                }.use { client ->
-                    val httpResponse = client.submitForm(
-                        url = "https://oauth2.googleapis.com/token",
-                        formParameters = parameters {
-                            append("client_id", clientId)
-                            append("code", code)
-                            append("code_verifier", verifier)
-                            append("grant_type", "authorization_code")
-                            append("redirect_uri", redirectUri)
-                        }
-                    )
-
-                    if (httpResponse.status.isSuccess()) {
-                        val response: TokenResponse = httpResponse.body()
-                        
-                        val userInfo: UserInfo = client.get("https://www.googleapis.com/oauth2/v3/userinfo") {
-                            bearerAuth(response.accessToken)
-                        }.body()
-
-                        val dao = EmailDatabase.getInstance(this@MainActivity).emailDao()
-                        dao.insertAccount(EmailAccount(
-                            email = userInfo.email,
-                            accessToken = response.accessToken,
-                            refreshToken = response.refreshToken
-                        ))
-                        
-                        EmailSyncWorker.schedulePeriodicSync(this@MainActivity)
-                        EmailSyncWorker.runOneOffSync(this@MainActivity)
-                        // (Re)start IDLE now that we have at least one account.
-                        com.vayunmathur.email.data.ImapIdleService.start(this@MainActivity)
-                    } else {
-                        val errorText = httpResponse.bodyAsText()
-                        android.util.Log.e("OAuthError", "Failed to exchange code: $errorText")
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun generateCodeVerifier(): String {
-        val sr = SecureRandom()
-        val code = ByteArray(32)
-        sr.nextBytes(code)
-        return Base64.encodeToString(code, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING).trim()
-    }
-
-    private fun generateCodeChallenge(verifier: String): String {
-        val bytes = verifier.toByteArray()
-        val md = MessageDigest.getInstance("SHA-256")
-        md.update(bytes)
-        val digest = md.digest()
-        return Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING).trim()
     }
 }
 
@@ -223,69 +106,18 @@ object IntentState {
     var navigationRoute by mutableStateOf<Route?>(null)
 }
 
-object TokenState {
-    var codeVerifier: String? = null
-}
-
-@Serializable
-data class TokenResponse(
-    @kotlinx.serialization.SerialName("access_token") val accessToken: String,
-    @kotlinx.serialization.SerialName("expires_in") val expiresIn: Int,
-    @kotlinx.serialization.SerialName("refresh_token") val refreshToken: String? = null,
-    @kotlinx.serialization.SerialName("scope") val scope: String,
-    @kotlinx.serialization.SerialName("token_type") val tokenType: String
-)
-
-@Serializable
-data class UserInfo(
-    val email: String,
-    val name: String? = null,
-    val picture: String? = null
-)
-
 @Composable
-fun MainContent(viewModel: EmailViewModel, onLaunchGoogleSignIn: () -> Unit) {
+fun MainContent(viewModel: EmailViewModel) {
     val accounts by viewModel.accounts.collectAsState(emptyList())
     if (accounts.isEmpty()) {
         // First run: jump straight into the add-account picker. The conditional
         // above auto-swaps us into EmailApp once the first account lands.
         com.vayunmathur.email.ui.AddAccountScreen(
             onBack = null,
-            onLaunchGoogleSignIn = onLaunchGoogleSignIn,
             onAccountAdded = {},
         )
     } else {
-        EmailApp(viewModel = viewModel, onLaunchGoogleSignIn = onLaunchGoogleSignIn)
-    }
-}
-
-// Kept for backwards-compat if anything else references it; the active first-
-// run UI is now AddAccountScreen.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LoginScreen(onGoogleLogin: () -> Unit) {
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Email") }) }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Welcome to Email",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-            Button(
-                onClick = onGoogleLogin,
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text("Sign in with Google")
-            }
-        }
+        EmailApp(viewModel = viewModel)
     }
 }
 
@@ -310,7 +142,7 @@ sealed interface Route : NavKey {
 }
 
 @Composable
-fun EmailApp(viewModel: EmailViewModel, onLaunchGoogleSignIn: () -> Unit) {
+fun EmailApp(viewModel: EmailViewModel) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val context = LocalContext.current
@@ -480,7 +312,6 @@ fun EmailApp(viewModel: EmailViewModel, onLaunchGoogleSignIn: () -> Unit) {
             entry<Route.AddAccount>(metadata = ListDetailPage()) {
                 com.vayunmathur.email.ui.AddAccountScreen(
                     onBack = { backStack.pop() },
-                    onLaunchGoogleSignIn = onLaunchGoogleSignIn,
                     onAccountAdded = { backStack.pop() },
                 )
             }
@@ -668,7 +499,7 @@ fun MessageListScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                     items(messages, key = { "${it.accountEmail}|${it.folderName}|${it.id}" }) { message ->
-                        val accountColor = Color(EmailAccount(message.accountEmail, "", "").getColor())
+                        val accountColor = Color(EmailAccount(message.accountEmail).getColor())
                         val isSelected = message.id in selectedUids
                         
                         Row(
@@ -814,7 +645,7 @@ fun MessageItem(
     val senderName = msg.from.substringBefore("<").trim().ifEmpty { msg.from }
     val senderEmail = msg.from.substringAfter("<").substringBefore(">").trim()
     val initial = senderName.take(1).uppercase()
-    val avatarColor = Color(EmailAccount(msg.accountEmail, "", "").getColor())
+    val avatarColor = Color(EmailAccount(msg.accountEmail).getColor())
 
     Column {
         // Header

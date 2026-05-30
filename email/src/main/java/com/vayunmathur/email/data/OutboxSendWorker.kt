@@ -42,7 +42,7 @@ class OutboxSendWorker(
             return Result.success()
         }
 
-        val accounts = dao.getAccounts().associateBy { it.email }.toMutableMap()
+        val accounts = dao.getAccounts().associateBy { it.email }
         val manager = EmailManager()
         var anyFailed = false
         val now = System.currentTimeMillis()
@@ -60,11 +60,9 @@ class OutboxSendWorker(
                 continue
             }
             val uris = decodePaths(entry.attachmentLocalPaths).map { Uri.fromFile(File(it)) }
-            val sendResult = trySendWithRefresh(manager, account, entry, uris)
+            val sendResult = trySend(manager, account, entry, uris)
             when (sendResult) {
                 is SendResult.Success -> {
-                    // Cache the (possibly refreshed) account for subsequent entries.
-                    accounts[sendResult.account.email] = sendResult.account
                     Log.d(TAG, "Sent outbox entry #${entry.id} to ${entry.to}")
                     attachmentDirFor(applicationContext, entry.id).deleteRecursively()
                     dao.deleteOutboxEntry(entry)
@@ -90,27 +88,26 @@ class OutboxSendWorker(
     }
 
     private sealed class SendResult {
-        data class Success(val account: com.vayunmathur.email.EmailAccount) : SendResult()
+        object Success : SendResult()
         data class Failure(val message: String, val cause: Throwable?) : SendResult()
     }
 
     /**
-     * Send the entry, refreshing the access token once on auth failure and
-     * retrying. Returns either Success (with the account whose token may have
-     * been refreshed) or Failure.
+     * Send the entry once. Returns either Success or Failure with the
+     * underlying error message.
      */
-    private suspend fun trySendWithRefresh(
+    private suspend fun trySend(
         manager: EmailManager,
         account: com.vayunmathur.email.EmailAccount,
         entry: com.vayunmathur.email.OutboxEntry,
         uris: List<android.net.Uri>,
     ): SendResult {
-        suspend fun attempt(acct: com.vayunmathur.email.EmailAccount): kotlin.Result<Unit> = runCatching {
+        val result = runCatching {
             manager.sendMessage(
                 context = applicationContext,
-                server = acct.smtpServer(),
-                user = acct.email,
-                auth = acct.authType(),
+                server = account.smtpServer(),
+                user = account.email,
+                auth = account.authType(),
                 to = entry.to,
                 subject = entry.subject,
                 body = entry.body,
@@ -120,28 +117,9 @@ class OutboxSendWorker(
                 references = entry.references,
             )
         }
-
-        val first = attempt(account)
-        if (first.isSuccess) return SendResult.Success(account)
-        val firstErr = first.exceptionOrNull()
-        if (firstErr !is javax.mail.AuthenticationFailedException) {
-            return SendResult.Failure(formatError(firstErr), firstErr)
-        }
-        // Token likely expired — refresh and retry exactly once.
-        // Password accounts can't be auto-refreshed; treat as a hard failure.
-        if (account.authType != "oauth2") {
-            return SendResult.Failure(formatError(firstErr), firstErr)
-        }
-        Log.d(TAG, "Auth failure on send; refreshing token for ${account.email}")
-        val refreshed = TokenRefresher.refresh(applicationContext, account)
-            ?: return SendResult.Failure(
-                "Auth failed and token refresh failed — re-login required",
-                firstErr,
-            )
-        val second = attempt(refreshed)
-        if (second.isSuccess) return SendResult.Success(refreshed)
-        val secondErr = second.exceptionOrNull()
-        return SendResult.Failure(formatError(secondErr), secondErr)
+        if (result.isSuccess) return SendResult.Success
+        val err = result.exceptionOrNull()
+        return SendResult.Failure(formatError(err), err)
     }
 
     private fun formatError(t: Throwable?): String {

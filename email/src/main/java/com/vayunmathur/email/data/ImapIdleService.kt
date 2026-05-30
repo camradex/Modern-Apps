@@ -38,8 +38,8 @@ import kotlinx.coroutines.withContext
  * in the foreground.
  *
  * IDLE connections naturally time out after ~29 minutes on most servers — we
- * just catch the disconnect and reconnect with exponential backoff. If we get
- * an `AuthenticationFailedException` we refresh the OAuth token first.
+ * just catch the disconnect and reconnect with exponential backoff. On
+ * auth-failed we stop retrying since app passwords can't be auto-refreshed.
  */
 class ImapIdleService : Service() {
 
@@ -72,8 +72,7 @@ class ImapIdleService : Service() {
         }
     }
 
-    private suspend fun idleLoop(initial: com.vayunmathur.email.EmailAccount) {
-        var account = initial
+    private suspend fun idleLoop(account: com.vayunmathur.email.EmailAccount) {
         var backoffMs = 2_000L
         val maxBackoffMs = 60_000L
         while (scope.coroutineContext.isActive) {
@@ -83,19 +82,8 @@ class ImapIdleService : Service() {
                 backoffMs = 2_000L
                 delay(1_000L)
             } catch (e: javax.mail.AuthenticationFailedException) {
-                if (account.authType != "oauth2") {
-                    Log.w(TAG, "IDLE auth failed for password account ${account.email}; stopping retries")
-                    return
-                }
-                Log.d(TAG, "IDLE auth failed for ${account.email}; refreshing token")
-                val refreshed = TokenRefresher.refresh(applicationContext, account)
-                if (refreshed != null) {
-                    account = refreshed
-                    backoffMs = 2_000L
-                } else {
-                    Log.w(TAG, "IDLE token refresh failed for ${account.email}; sleeping")
-                    delay(maxBackoffMs)
-                }
+                Log.w(TAG, "IDLE auth failed for ${account.email}; stopping retries")
+                return
             } catch (e: Exception) {
                 Log.w(TAG, "IDLE error for ${account.email}: ${e.javaClass.simpleName}: ${e.message}")
                 delay(backoffMs)

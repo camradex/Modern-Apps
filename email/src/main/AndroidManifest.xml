@@ -23,12 +23,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.googleusercontent.apps.827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp" />
-            </intent-filter>
 
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

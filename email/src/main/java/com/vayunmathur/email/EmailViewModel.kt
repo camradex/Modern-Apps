@@ -9,7 +9,6 @@ import com.vayunmathur.email.data.EmailSyncState
 import com.vayunmathur.email.data.EmailSyncWorker
 import com.vayunmathur.email.data.OutboxManager
 import com.vayunmathur.email.data.OutboxSendWorker
-import com.vayunmathur.email.data.TokenRefresher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -191,18 +190,7 @@ class EmailViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             try {
-                try {
-                    attemptSend(account)
-                } catch (e: javax.mail.AuthenticationFailedException) {
-                    // For OAuth2 accounts the token might just be expired —
-                    // refresh + retry once. Password accounts can't be
-                    // auto-fixed, so just let the error fall through to the
-                    // outbox-save path.
-                    if (account.authType != "oauth2") throw e
-                    val refreshed = TokenRefresher.refresh(getApplication(), account)
-                        ?: throw e
-                    attemptSend(refreshed)
-                }
+                attemptSend(account)
                 onSuccess()
             } catch (e: Exception) {
                 val msg = e.message ?: e::class.simpleName ?: "Unknown error"
@@ -252,13 +240,7 @@ class EmailViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             try {
-                val (body, isHtml, attachments) = try {
-                    attempt(account)
-                } catch (e: javax.mail.AuthenticationFailedException) {
-                    if (account.authType != "oauth2") throw e
-                    val refreshed = TokenRefresher.refresh(getApplication(), account) ?: throw e
-                    attempt(refreshed)
-                }
+                val (body, isHtml, attachments) = attempt(account)
                 if (body != null || attachments.isNotEmpty()) {
                     dao.insertMessages(listOf(message.copy(body = body, isHtml = isHtml, hasAttachments = attachments.isNotEmpty())))
                     if (attachments.isNotEmpty()) dao.insertAttachments(attachments)

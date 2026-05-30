@@ -36,20 +36,18 @@ import kotlinx.coroutines.withContext
 
 /**
  * Add-account flow: pick a preset (Gmail / Outlook / Yahoo / iCloud / Fastmail
- * / Custom) → either kick off the Google OAuth flow (Gmail) or collect an app
- * password (everything else). After a successful "Test connection" the account
- * is encrypted-and-persisted and a one-off sync is kicked off.
+ * / Custom) → collect an app password (all providers). After a successful
+ * "Test connection" the account is encrypted-and-persisted and a one-off
+ * sync is kicked off.
  *
  * @param onBack pop the screen. Null when the screen is the first-run gate
  *   (the parent re-renders to the inbox automatically once an account exists).
- * @param onLaunchGoogleSignIn delegates to [com.vayunmathur.email.MainActivity.startGoogleLogin].
- * @param onAccountAdded invoked after a non-Gmail account is saved.
+ * @param onAccountAdded invoked after the account is saved.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddAccountScreen(
     onBack: (() -> Unit)?,
-    onLaunchGoogleSignIn: () -> Unit,
     onAccountAdded: () -> Unit,
 ) {
     var selectedProviderId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -82,9 +80,8 @@ fun AddAccountScreen(
             if (selectedProvider == null) {
                 ProviderPicker(onPick = { selectedProviderId = it.id })
             } else {
-                ProviderForm(
+                PasswordForm(
                     preset = selectedProvider,
-                    onLaunchGoogleSignIn = onLaunchGoogleSignIn,
                     onAccountAdded = onAccountAdded,
                 )
             }
@@ -114,7 +111,6 @@ private fun ProviderPicker(onPick: (ProviderPreset) -> Unit) {
                     Text(preset.displayName, style = MaterialTheme.typography.titleMedium)
                     Text(
                         when (preset.id) {
-                            PROVIDER_GMAIL -> "Sign in with Google"
                             PROVIDER_CUSTOM -> "Enter IMAP/SMTP server details manually"
                             else -> "App password"
                         },
@@ -123,41 +119,6 @@ private fun ProviderPicker(onPick: (ProviderPreset) -> Unit) {
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ProviderForm(
-    preset: ProviderPreset,
-    onLaunchGoogleSignIn: () -> Unit,
-    onAccountAdded: () -> Unit,
-) {
-    if (preset.id == PROVIDER_GMAIL) {
-        GmailForm(onLaunchGoogleSignIn = onLaunchGoogleSignIn)
-    } else {
-        PasswordForm(preset = preset, onAccountAdded = onAccountAdded)
-    }
-}
-
-@Composable
-private fun GmailForm(onLaunchGoogleSignIn: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            "You'll be redirected to Google to sign in. New mail will start syncing automatically once you're back.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(
-            onClick = onLaunchGoogleSignIn,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Continue with Google")
         }
     }
 }
@@ -389,9 +350,6 @@ private suspend fun testAndPersistAccount(
 
     val account = EmailAccount(
         email = email,
-        accessToken = "",
-        refreshToken = null,
-        expiresAt = 0,
         provider = providerId,
         imapHost = imap.host,
         imapPort = imap.port,

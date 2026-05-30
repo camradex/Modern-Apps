@@ -58,14 +58,18 @@ data class Attachment(
 @Entity
 data class EmailAccount(
     @PrimaryKey val email: String,
-    val accessToken: String,
+    /**
+     * Legacy OAuth-token columns. Kept in the schema so old DB rows still
+     * load, but no longer written: every account now uses an app password.
+     */
+    val accessToken: String = "",
     val refreshToken: String? = null,
     val expiresAt: Long = 0,
     /**
      * Preset identifier — `gmail`, `outlook`, `yahoo`, `icloud`, `fastmail`, or
-     * `custom`. Used to (a) skip Gmail-only behaviour (virtual folder filtering,
-     * OAuth token refresh) for non-Gmail accounts, and (b) display the provider
-     * name in account-picker UIs.
+     * `custom`. Used to (a) skip Gmail-only behaviour (virtual folder filtering)
+     * for non-Gmail accounts, and (b) display the provider name in
+     * account-picker UIs.
      *
      * `@ColumnInfo(defaultValue = ...)` is required so the schema generated
      * from this entity matches `MIGRATION_6_7`, which `ALTER TABLE`s these
@@ -89,10 +93,14 @@ data class EmailAccount(
     val smtpPort: Int = 465,
     @ColumnInfo(defaultValue = "1")
     val smtpUseSsl: Boolean = true,
-    /** `oauth2` (Google) or `password` (app passwords / IMAP+SMTP). */
+    /**
+     * Auth scheme. Only `password` is supported now; the column is preserved
+     * with its original default for legacy DB compatibility, but every newly
+     * added account stores credentials as an encrypted app password.
+     */
     @ColumnInfo(defaultValue = "oauth2")
-    val authType: String = "oauth2",
-    /** AES-256-GCM ciphertext of the app password — null for OAuth2 accounts. */
+    val authType: String = "password",
+    /** AES-256-GCM ciphertext of the app password. */
     val passwordEncrypted: ByteArray? = null,
     /** GCM IV used to decrypt [passwordEncrypted]. */
     val passwordIv: ByteArray? = null,

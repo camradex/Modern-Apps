@@ -32,27 +32,21 @@ fun EmailAccount.imapServer(): ServerConfig = ServerConfig(imapHost, imapPort, i
 fun EmailAccount.smtpServer(): ServerConfig = ServerConfig(smtpHost, smtpPort, smtpUseSsl)
 
 /**
- * Decrypt the stored credentials and produce an [EmailManager.AuthType]
- * appropriate for this account — OAuth bearer token for Gmail, app password
- * for everything else.
+ * Decrypt the stored credentials and produce an [EmailManager.AuthType] —
+ * always app-password (the only auth scheme this app supports).
  */
 fun EmailAccount.authType(): EmailManager.AuthType {
-    return if (authType == "oauth2") {
-        EmailManager.AuthType.OAuth2(accessToken)
-    } else {
-        val cipher = passwordEncrypted
-            ?: error("Password account ${email} is missing passwordEncrypted")
-        val iv = passwordIv
-            ?: error("Password account ${email} is missing passwordIv")
-        EmailManager.AuthType.Password(CredentialCrypto.decrypt(cipher, iv))
-    }
+    val cipher = passwordEncrypted
+        ?: error("Account ${email} is missing passwordEncrypted")
+    val iv = passwordIv
+        ?: error("Account ${email} is missing passwordIv")
+    return EmailManager.AuthType.Password(CredentialCrypto.decrypt(cipher, iv))
 }
 
 class EmailManager {
 
     sealed class AuthType {
         data class Password(val value: String) : AuthType()
-        data class OAuth2(val accessToken: String) : AuthType()
     }
 
     private fun getImapSession(auth: AuthType, server: ServerConfig): Session {
@@ -64,9 +58,6 @@ class EmailManager {
             properties["mail.imaps.ssl.enable"] = "true"
             properties["mail.imaps.fetchsize"] = "1048576"
             properties["mail.imaps.partialfetch"] = "true"
-            if (auth is AuthType.OAuth2) {
-                properties["mail.imaps.auth.mechanisms"] = "XOAUTH2"
-            }
         } else {
             properties["mail.store.protocol"] = "imap"
             properties["mail.imap.host"] = server.host
@@ -75,9 +66,6 @@ class EmailManager {
             properties["mail.imap.starttls.required"] = "true"
             properties["mail.imap.fetchsize"] = "1048576"
             properties["mail.imap.partialfetch"] = "true"
-            if (auth is AuthType.OAuth2) {
-                properties["mail.imap.auth.mechanisms"] = "XOAUTH2"
-            }
         }
         return Session.getInstance(properties).also { registerProviders(it) }
     }
@@ -90,9 +78,6 @@ class EmailManager {
             properties["mail.smtps.port"] = server.port.toString()
             properties["mail.smtps.ssl.enable"] = "true"
             properties["mail.smtps.auth"] = "true"
-            if (auth is AuthType.OAuth2) {
-                properties["mail.smtps.auth.mechanisms"] = "XOAUTH2"
-            }
         } else {
             properties["mail.transport.protocol"] = "smtp"
             properties["mail.smtp.host"] = server.host
@@ -100,9 +85,6 @@ class EmailManager {
             properties["mail.smtp.starttls.enable"] = "true"
             properties["mail.smtp.starttls.required"] = "true"
             properties["mail.smtp.auth"] = "true"
-            if (auth is AuthType.OAuth2) {
-                properties["mail.smtp.auth.mechanisms"] = "XOAUTH2"
-            }
         }
         return Session.getInstance(properties).also { registerProviders(it) }
     }
@@ -133,10 +115,7 @@ class EmailManager {
         val session = getImapSession(auth, server)
         val store = session.getStore(server.imapProtocol)
         try {
-            val credential = when (auth) {
-                is AuthType.Password -> auth.value
-                is AuthType.OAuth2 -> auth.accessToken
-            }
+            val credential = (auth as AuthType.Password).value
             store.connect(server.host, server.port, user, credential)
             block(store)
         } finally {
@@ -474,10 +453,7 @@ class EmailManager {
 
         val transport = session.getTransport(server.smtpProtocol)
         try {
-            val credential = when (auth) {
-                is AuthType.Password -> auth.value
-                is AuthType.OAuth2 -> auth.accessToken
-            }
+            val credential = (auth as AuthType.Password).value
             transport.connect(server.host, server.port, user, credential)
             transport.sendMessage(message, message.allRecipients)
         } finally {

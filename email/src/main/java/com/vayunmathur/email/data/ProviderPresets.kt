@@ -6,9 +6,9 @@ import com.vayunmathur.email.ServerConfig
  * Built-in email provider with pre-filled IMAP/SMTP server settings + a short
  * instruction list for users who need to create an app password.
  *
- * `gmail` is the only OAuth2 preset; the rest use app passwords (long random
- * strings the user generates in their provider's account-security settings).
- * `custom` is the escape hatch — host/port/security are entered manually.
+ * Every preset authenticates with an app password (a long random string the
+ * user generates in their provider's account-security settings). `custom` is
+ * the escape hatch — host/port/security are entered manually.
  */
 data class ProviderPreset(
     val id: String,
@@ -35,9 +35,14 @@ val PROVIDER_PRESETS: List<ProviderPreset> = listOf(
         displayName = "Gmail",
         imap = ServerConfig("imap.gmail.com", 993, useSsl = true),
         smtp = ServerConfig("smtp.gmail.com", 465, useSsl = true),
-        authType = "oauth2",
-        appPasswordHelpUrl = null,
-        instructions = emptyList(),
+        authType = "password",
+        appPasswordHelpUrl = "https://support.google.com/accounts/answer/185833",
+        instructions = listOf(
+            "Two-step verification must be enabled on your Google account.",
+            "Go to https://myaccount.google.com/apppasswords.",
+            "Pick \"Mail\" and \"Other\" — name it \"Email\".",
+            "Copy the 16-character app password Google shows and paste it below.",
+        ),
     ),
     ProviderPreset(
         id = PROVIDER_OUTLOOK,

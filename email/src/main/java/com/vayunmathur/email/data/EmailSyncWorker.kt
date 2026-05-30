@@ -16,8 +16,7 @@ class EmailSyncWorker(appContext: Context, workerParams: WorkerParameters) :
     override suspend fun doWork(): Result {
         val db = EmailDatabase.getInstance(applicationContext)
         val dao = db.emailDao()
-        // Mutable so we can swap in a refreshed account on auth failure.
-        val accounts = dao.getAccounts().toMutableList()
+        val accounts = dao.getAccounts()
 
         if (accounts.isEmpty()) {
             Log.d("EmailSync", "No accounts to sync")
@@ -29,16 +28,13 @@ class EmailSyncWorker(appContext: Context, workerParams: WorkerParameters) :
         var hasErrors = false
         var accountsProcessed = 0
 
-        for ((i, original) in accounts.withIndex()) {
-            // `account` may be replaced with a refreshed copy below.
-            var account = original
+        for (account in accounts) {
             try {
                 Log.d("EmailSync", ">>> Starting sync for account: ${account.email}")
-                var auth = account.authType()
+                val auth = account.authType()
 
                 // Open a SINGLE store for the whole account — folders + every
                 // folder's message sync all reuse one TCP/TLS connection.
-                // On auth failure we refresh the token and retry once.
                 suspend fun runSync(authToUse: EmailManager.AuthType, accountToUse: com.vayunmathur.email.EmailAccount) {
                     manager.withStore(accountToUse.imapServer(), accountToUse.email, authToUse) { store ->
                         Log.d("EmailSync", "Fetching folders for ${accountToUse.email}...")
@@ -150,20 +146,7 @@ class EmailSyncWorker(appContext: Context, workerParams: WorkerParameters) :
                     }
                 }
 
-                try {
-                    runSync(auth, account)
-                } catch (e: javax.mail.AuthenticationFailedException) {
-                    // Only OAuth2 accounts can be auto-recovered. Password
-                    // accounts surface the auth error to the user instead.
-                    if (account.authType != "oauth2") throw e
-                    Log.d("EmailSync", "Auth failed for ${account.email}; refreshing token")
-                    val refreshed = TokenRefresher.refresh(applicationContext, account)
-                        ?: throw e
-                    account = refreshed
-                    accounts[i] = refreshed
-                    auth = EmailManager.AuthType.OAuth2(refreshed.accessToken)
-                    runSync(auth, refreshed)
-                }
+                runSync(auth, account)
 
                 Log.d("EmailSync", "<<< Completed sync for account: ${account.email}")
             } catch (e: Exception) {
