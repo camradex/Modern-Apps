@@ -171,10 +171,21 @@ object Networking {
         val cipher = key.encryptor()
         val str = json.encodeToString(envelope)
         val encryptedData = Base64.encode(cipher.encrypt(str.encodeToByteArray()))
-        return makeRequest<Boolean, LocationSharingData>(
-            "/api/uwb/publish",
-            LocationSharingData(recipientUserId.toULong(), encryptedData)
-        ) ?: false
+        // We can't reuse `makeRequest<Boolean, ...>` here because the server
+        // returns `204 No Content` (no body) on success, and Ktor's content
+        // negotiation throws `NoTransformationFoundException` trying to
+        // deserialize an empty body into a `Boolean`. `performRequest` returns
+        // the raw response and we treat any 2xx status as success.
+        val bodyJson = json.encodeToString(LocationSharingData(recipientUserId.toULong(), encryptedData))
+        return checkNetworkDown {
+            val resp = NetworkClient.performRequest(
+                url = "$URL/api/uwb/publish",
+                method = "POST",
+                headers = mapOf("Content-Type" to "application/json"),
+                body = bodyJson
+            )
+            resp.status in 200..299
+        } ?: false
     }
 
     /**

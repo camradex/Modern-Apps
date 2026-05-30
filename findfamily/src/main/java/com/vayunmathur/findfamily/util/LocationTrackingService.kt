@@ -98,6 +98,7 @@ class LocationTrackingService : Service(), SensorEventListener {
     private var lastMovementTime = 0L
     private var lastKnownLocation: Location? = null
     private var heartbeatJob: Job? = null
+    private var uwbPollJob: Job? = null
     private var trackingInitialized = false
 
     private val networkListener = LocationListener { location ->
@@ -212,19 +213,26 @@ class LocationTrackingService : Service(), SensorEventListener {
                 }
                 locationValueDao.upsertAll(locations)
             }
+        }
+    }
 
-            // 4. Drain the UWB session-setup channel. Each envelope is published
-            //    onto UwbInbox so an open Precision Finding screen can react; if
-            //    the envelope is a REQUEST and the screen isn't open, post a
-            //    notification offering to launch it.
-            Networking.receiveUwbMessages()?.forEach { envelope ->
-                UwbInbox.tryEmit(envelope)
-                if (envelope.kind == UwbEnvelopeKind.REQUEST) {
-                    val senderId = envelope.sender.toLong()
-                    val senderName = currentUsers.firstOrNull { it.id == senderId }?.name
-                        ?: getString(R.string.uwb_unknown_peer_name)
-                    createUwbRequestNotification(senderName, senderId)
-                }
+    /**
+     * Fast-path drain of the UWB session-setup channel, run on a dedicated
+     * coroutine every 3s (vs. the 30s heartbeat). Each envelope is forwarded
+     * to [UwbInbox] so the manager / open screen can react; REQUEST envelopes
+     * also fire a local notification so the user knows ranging is happening.
+     */
+    private suspend fun drainUwbInbox() {
+        val envelopes = Networking.receiveUwbMessages() ?: return
+        if (envelopes.isEmpty()) return
+        val users = userDao.getAll()
+        for (envelope in envelopes) {
+            UwbInbox.tryEmit(envelope)
+            if (envelope.kind == UwbEnvelopeKind.REQUEST) {
+                val senderId = envelope.sender.toLong()
+                val senderName = users.firstOrNull { it.id == senderId }?.name
+                    ?: getString(R.string.uwb_unknown_peer_name)
+                createUwbRequestNotification(senderName, senderId)
             }
         }
     }
@@ -312,6 +320,20 @@ class LocationTrackingService : Service(), SensorEventListener {
                 while (isActive) {
                     syncHeartbeat()
                     delay(30.seconds)
+                }
+            }
+
+            // Separate, faster poll for the UWB session-setup channel. The
+            // location heartbeat runs every 30s for battery reasons, but UWB
+            // REQUEST envelopes need to be picked up quickly so the responder
+            // device auto-accepts within a few seconds. This loop ONLY drains
+            // /api/uwb/receive — no location publish/receive, no geocoding,
+            // no waypoint logic.
+            uwbPollJob?.cancel()
+            uwbPollJob = launch {
+                while (isActive) {
+                    drainUwbInbox()
+                    delay(3.seconds)
                 }
             }
         }

@@ -177,10 +177,14 @@ fun MainPage(
                     } else if (selectedUserId != null) {
                         if (selectedUserId != Networking.userid) {
                             val user by ffViewModel.userByIdState(selectedUserId!!)
-                            IconButton({
-                                backStack.add(Route.UwbRangingPage(selectedUserId!!))
-                            }) {
-                                IconNavigationArrow()
+                            // UWB Precision Finding requires the public android.ranging API
+                            // (Android 15+). Hide the entry point on older devices.
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                                IconButton({
+                                    backStack.add(Route.UwbRangingPage(selectedUserId!!))
+                                }) {
+                                    IconNavigationArrow()
+                                }
                             }
                             IconButton({
                                 ffViewModel.deleteUser(user)

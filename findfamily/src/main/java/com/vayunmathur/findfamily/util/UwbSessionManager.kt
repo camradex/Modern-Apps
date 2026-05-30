@@ -1,0 +1,470 @@
+package com.vayunmathur.findfamily.util
+
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import androidx.annotation.RequiresApi
+import com.vayunmathur.findfamily.data.UserDao
+import com.vayunmathur.findfamily.uwb.RangingSample
+import com.vayunmathur.findfamily.uwb.UwbAccessoryProtocol
+import com.vayunmathur.findfamily.uwb.UwbBytes
+import com.vayunmathur.findfamily.uwb.UwbController
+import com.vayunmathur.findfamily.uwb.UwbEnvelope
+import com.vayunmathur.findfamily.uwb.UwbEnvelopeKind
+import com.vayunmathur.findfamily.uwb.UwbHandshake
+import com.vayunmathur.findfamily.uwb.UwbInbox
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Process-global UWB ranging session owner.
+ *
+ * Built on the public `android.ranging.RangingManager` API (Android 15+).
+ * This is the only on-device UWB API that works on GrapheneOS — the legacy
+ * `androidx.core.uwb` only ships a GMS-mediated backend that sandboxed Play
+ * Services can't fulfil. Accordingly the entire UWB feature requires API 35.
+ *
+ * Hoisting the session out of the (activity-scoped) ViewModel into a
+ * service-scoped singleton lets the existing foreground `LocationTrackingService`
+ * auto-accept incoming Precision Finding requests from peers — i.e. range in
+ * the background without requiring the user to tap a notification first.
+ * This works because the session is owned by the foreground service rather
+ * than an Activity, so Android keeps the process eligible for ranging
+ * callbacks.
+ */
+object UwbSessionManager {
+
+    /** UI-facing state machine for the Precision Finding screen. */
+    sealed interface UwbSessionState {
+        data object Idle : UwbSessionState
+        data object Starting : UwbSessionState
+        data object WaitingForPeer : UwbSessionState
+        data class Ranging(val sample: RangingSample) : UwbSessionState
+        data object PeerDisconnected : UwbSessionState
+        data class Unsupported(val reason: String) : UwbSessionState
+        data class Failed(val reason: String) : UwbSessionState
+    }
+
+    private val _state: MutableStateFlow<UwbSessionState> = MutableStateFlow(UwbSessionState.Idle)
+    val state: StateFlow<UwbSessionState> = _state.asStateFlow()
+
+    /** The peer userid currently being ranged with (or attempted), if any. */
+    private val _peerUserId: MutableStateFlow<Long?> = MutableStateFlow(null)
+    val peerUserId: StateFlow<Long?> = _peerUserId.asStateFlow()
+
+    /** True iff this device's API level supports the AOSP ranging API. */
+    val isSupportedSdk: Boolean get() =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
+
+    private const val TAG = "UwbSessionManager"
+    private const val TIMEOUT_MS = 60_000L
+
+    private val initialized = AtomicBoolean(false)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private lateinit var appContext: Context
+    private lateinit var userDao: UserDao
+
+    private var controller: UwbController? = null
+    private var streamJob: Job? = null
+    private var waitJob: Job? = null
+    private var currentSessionId: String? = null
+
+    /**
+     * Wire up the manager. No-op on devices below API 35. Safe to call
+     * multiple times — only the first call has effect.
+     */
+    fun init(context: Context, userDao: UserDao) {
+        if (!isSupportedSdk) { Log.i(TAG, "init: SDK ${Build.VERSION.SDK_INT} < 35, UWB disabled"); return }
+        if (!initialized.compareAndSet(false, true)) { Log.i(TAG, "init: already initialized"); return }
+        Log.i(TAG, "init: hooking up UwbInbox subscriber")
+        appContext = context.applicationContext
+        UwbSessionManager.userDao = userDao
+
+        // Subscribe to the global UWB envelope inbox for the whole process
+        // lifetime. CANCELs from the peer tear down our local session
+        // whether we're idle / waiting / ranging; REQUESTs trigger the
+        // responder (auto-accept) path when we're idle.
+        scope.launch {
+            UwbInbox.flow.collect { env ->
+                when (env.kind) {
+                    UwbEnvelopeKind.REQUEST -> {
+                        if (_state.value is UwbSessionState.Idle) {
+                            acceptIncoming(env)
+                        }
+                        // If already busy, drop — UWB is one-session-at-a-time.
+                    }
+                    UwbEnvelopeKind.CANCEL -> {
+                        if (env.sessionId == currentSessionId) {
+                            stopLocal()
+                        }
+                    }
+                    // ACK and CONFIG envelopes are consumed by the waiting
+                    // initiator/responder coroutines via UwbInbox.flow.first {...}.
+                    else -> {}
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Initiator path (user tapped "Find with Precision" on the screen)
+    // -----------------------------------------------------------------
+
+    fun startAsInitiator(peerUserId: Long) {
+        Log.i(TAG, "startAsInitiator(peer=$peerUserId) entered. isSupportedSdk=$isSupportedSdk initialized=${initialized.get()} state=${_state.value}")
+        if (!isSupportedSdk) {
+            _state.value = UwbSessionState.Unsupported(
+                "Precision Finding requires Android 15 or newer."
+            )
+            return
+        }
+        if (!initialized.get()) { Log.w(TAG, "startAsInitiator: NOT INITIALIZED — service hasn't called init() yet"); return }
+        if (_state.value !is UwbSessionState.Idle) { Log.i(TAG, "startAsInitiator: not idle, skipping"); return }
+        _state.value = UwbSessionState.Starting
+        val sessionId = UUID.randomUUID().toString()
+        currentSessionId = sessionId
+        _peerUserId.value = peerUserId
+
+        scope.launch {
+            Log.i(TAG, "startAsInitiator: launched coroutine, loading peer from DB")
+            val peerUser = userDao.getAll().firstOrNull { it.id == peerUserId }
+            Log.i(TAG, "startAsInitiator: peerUser=${peerUser?.name} platform=${peerUser?.platform}")
+            if (peerUser == null) {
+                _state.value = UwbSessionState.Failed("Unknown peer")
+                stopLocal()
+                return@launch
+            }
+            if (peerUser.platform == "ios") {
+                beginCrossPlatformInitiateToIos(peerUserId, sessionId)
+                return@launch
+            }
+
+            val ctrl = UwbController(appContext)
+            controller = ctrl
+            Log.i(TAG, "startAsInitiator: opening controller")
+            val info = ctrl.openController().getOrElse {
+                Log.e(TAG, "openController failed", it)
+                _state.value = UwbSessionState.Unsupported(it.message ?: "UWB not available on this device")
+                return@launch
+            }
+            Log.i(TAG, "startAsInitiator: controller opened (addr=${info.localAddress.joinToString(":") { "%02x".format(it) }} ch=${info.channelNumber} pi=${info.preambleIndex}); publishing REQUEST")
+
+            val envelope = UwbEnvelope(
+                sessionId = sessionId,
+                sender = Networking.userid.toULong(),
+                senderPlatform = "android",
+                kind = UwbEnvelopeKind.REQUEST,
+                payload = UwbHandshake(
+                    addressB64 = UwbBytes.b64(info.localAddress),
+                    channelNumber = info.channelNumber,
+                    preambleIndex = info.preambleIndex,
+                    sessionKeyB64 = UwbBytes.b64(info.sessionKey),
+                    sessionId = info.sessionId
+                )
+            )
+            val ok = Networking.publishUwbMessage(envelope, peerUserId, peerUser)
+            Log.i(TAG, "startAsInitiator: publishUwbMessage returned $ok")
+            if (!ok) {
+                _state.value = UwbSessionState.Failed("Could not reach peer")
+                stopLocal()
+                return@launch
+            }
+            _state.value = UwbSessionState.WaitingForPeer
+
+            waitJob = launch {
+                Log.i(TAG, "startAsInitiator: parked waiting for ACK on sessionId=$sessionId")
+                val ack = waitForEnvelope(sessionId, TIMEOUT_MS) { env ->
+                    env.kind == UwbEnvelopeKind.ACK || env.kind == UwbEnvelopeKind.CANCEL
+                }
+                if (ack == null) {
+                    _state.value = UwbSessionState.Failed("Peer did not respond")
+                    stopLocal()
+                    return@launch
+                }
+                if (ack.kind == UwbEnvelopeKind.CANCEL) {
+                    _state.value = UwbSessionState.Idle
+                    stopLocal()
+                    return@launch
+                }
+                val peerAddress = ack.payload?.addressB64?.let(UwbBytes::from)
+                if (peerAddress == null) {
+                    _state.value = UwbSessionState.Failed("Invalid peer ack")
+                    stopLocal()
+                    return@launch
+                }
+                startRangingStream(
+                    ctrl,
+                    role = UwbController.Role.Initiator,
+                    localAddress = info.localAddress,
+                    peerAddress = peerAddress,
+                    sessionId = info.sessionId,
+                    sessionKey = info.sessionKey,
+                    channelNumber = info.channelNumber,
+                    preambleIndex = info.preambleIndex
+                )
+            }
+        }
+    }
+
+    /**
+     * Cross-platform initiator: Android user tapped on an iOS peer. We open
+     * controlee, ship accessoryData in the REQUEST, and park waiting for
+     * iOS's shareableConfigurationData reply.
+     */
+    private suspend fun beginCrossPlatformInitiateToIos(peerUserId: Long, sessionId: String) {
+        val peerUser = userDao.getAll().firstOrNull { it.id == peerUserId }
+        val ctrl = UwbController(appContext)
+        controller = ctrl
+        val localAddress = ctrl.openControlee().getOrElse {
+            _state.value = UwbSessionState.Unsupported(it.message ?: "UWB not available on this device")
+            return
+        }
+        val accessoryData = UwbAccessoryProtocol.encodeAccessoryConfigurationData(localAddress)
+        val envelope = UwbEnvelope(
+            sessionId = sessionId,
+            sender = Networking.userid.toULong(),
+            senderPlatform = "android",
+            kind = UwbEnvelopeKind.REQUEST,
+            payload = UwbHandshake(accessoryConfigDataB64 = UwbBytes.b64(accessoryData))
+        )
+        val ok = Networking.publishUwbMessage(envelope, peerUserId, peerUser)
+        if (!ok) {
+            _state.value = UwbSessionState.Failed("Could not reach peer")
+            stopLocal()
+            return
+        }
+        _state.value = UwbSessionState.WaitingForPeer
+        waitJob = scope.launch {
+            val shareable = waitForEnvelope(sessionId, TIMEOUT_MS) { env ->
+                env.kind == UwbEnvelopeKind.CONFIG && env.payload?.shareableConfigDataB64 != null
+            }
+            if (shareable == null) {
+                _state.value = UwbSessionState.Failed("iOS peer did not return ranging config")
+                stopLocal()
+                return@launch
+            }
+            val parsed = try {
+                UwbAccessoryProtocol.parseShareableConfigurationData(
+                    UwbBytes.from(shareable.payload!!.shareableConfigDataB64!!)
+                )
+            } catch (e: Throwable) {
+                _state.value = UwbSessionState.Failed(e.message ?: "Could not parse iOS config")
+                stopLocal()
+                return@launch
+            }
+            startRangingStream(
+                ctrl,
+                role = UwbController.Role.Responder,
+                localAddress = localAddress,
+                peerAddress = parsed.peerAddress,
+                sessionId = parsed.sessionId,
+                sessionKey = parsed.sessionKey,
+                channelNumber = parsed.channelNumber,
+                preambleIndex = parsed.preambleIndex
+            )
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Responder path (REQUEST envelope arrived — auto-accept in background)
+    // -----------------------------------------------------------------
+
+    private fun acceptIncoming(request: UwbEnvelope) {
+        if (!isSupportedSdk) return
+        currentSessionId = request.sessionId
+        _peerUserId.value = request.sender.toLong()
+        _state.value = UwbSessionState.Starting
+
+        scope.launch {
+            // Cross-platform: iOS sender (no FiRa payload, only accessoryData).
+            if (request.senderPlatform == "ios" || request.payload?.addressB64 == null) {
+                beginCrossPlatformAsAccessory(request)
+                return@launch
+            }
+            // After the early return above, payload + addressB64 are both non-null.
+            val payload = request.payload
+            val peerAddress = UwbBytes.from(payload.addressB64)
+            val sessionId = payload.sessionId ?: return@launch
+            val sessionKey = payload.sessionKeyB64?.let(UwbBytes::from) ?: return@launch
+            val channel = payload.channelNumber ?: return@launch
+            val preamble = payload.preambleIndex ?: return@launch
+
+            val ctrl = UwbController(appContext)
+            controller = ctrl
+            val localAddress = ctrl.openControlee().getOrElse {
+                _state.value = UwbSessionState.Unsupported(it.message ?: "UWB not available on this device")
+                stopLocal()
+                return@launch
+            }
+            val ack = UwbEnvelope(
+                sessionId = request.sessionId,
+                sender = Networking.userid.toULong(),
+                senderPlatform = "android",
+                kind = UwbEnvelopeKind.ACK,
+                payload = UwbHandshake(addressB64 = UwbBytes.b64(localAddress))
+            )
+            val peer = userDao.getAll().firstOrNull { it.id == request.sender.toLong() }
+            val ok = Networking.publishUwbMessage(ack, request.sender.toLong(), peer)
+            if (!ok) {
+                _state.value = UwbSessionState.Failed("Could not reach peer")
+                stopLocal()
+                return@launch
+            }
+            startRangingStream(
+                ctrl,
+                role = UwbController.Role.Responder,
+                localAddress = localAddress,
+                peerAddress = peerAddress,
+                sessionId = sessionId,
+                sessionKey = sessionKey,
+                channelNumber = channel,
+                preambleIndex = preamble
+            )
+        }
+    }
+
+    private suspend fun beginCrossPlatformAsAccessory(request: UwbEnvelope) {
+        val ctrl = UwbController(appContext)
+        controller = ctrl
+        val localAddress = ctrl.openControlee().getOrElse {
+            _state.value = UwbSessionState.Unsupported(it.message ?: "UWB not available on this device")
+            stopLocal()
+            return
+        }
+        val accessoryData = UwbAccessoryProtocol.encodeAccessoryConfigurationData(localAddress)
+        val configEnvelope = UwbEnvelope(
+            sessionId = request.sessionId,
+            sender = Networking.userid.toULong(),
+            senderPlatform = "android",
+            kind = UwbEnvelopeKind.CONFIG,
+            payload = UwbHandshake(accessoryConfigDataB64 = UwbBytes.b64(accessoryData))
+        )
+        val peer = userDao.getAll().firstOrNull { it.id == request.sender.toLong() }
+        val ok = Networking.publishUwbMessage(configEnvelope, request.sender.toLong(), peer)
+        if (!ok) {
+            _state.value = UwbSessionState.Failed("Could not reach peer")
+            stopLocal()
+            return
+        }
+        _state.value = UwbSessionState.WaitingForPeer
+        val shareable = waitForEnvelope(request.sessionId, TIMEOUT_MS) { env ->
+            env.kind == UwbEnvelopeKind.CONFIG && env.payload?.shareableConfigDataB64 != null
+        }
+        if (shareable == null) {
+            _state.value = UwbSessionState.Failed("iOS peer did not return ranging config")
+            stopLocal()
+            return
+        }
+        val parsed = try {
+            UwbAccessoryProtocol.parseShareableConfigurationData(
+                UwbBytes.from(shareable.payload!!.shareableConfigDataB64!!)
+            )
+        } catch (e: Throwable) {
+            _state.value = UwbSessionState.Failed(e.message ?: "Could not parse iOS config")
+            stopLocal()
+            return
+        }
+        startRangingStream(
+            ctrl,
+            role = UwbController.Role.Responder,
+            localAddress = localAddress,
+            peerAddress = parsed.peerAddress,
+            sessionId = parsed.sessionId,
+            sessionKey = parsed.sessionKey,
+            channelNumber = parsed.channelNumber,
+            preambleIndex = parsed.preambleIndex
+        )
+    }
+
+    // -----------------------------------------------------------------
+    // Common: drive the RangingResult flow into the state machine
+    // -----------------------------------------------------------------
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private fun startRangingStream(
+        ctrl: UwbController,
+        role: UwbController.Role,
+        localAddress: ByteArray,
+        peerAddress: ByteArray,
+        sessionId: Int,
+        sessionKey: ByteArray,
+        channelNumber: Int,
+        preambleIndex: Int,
+    ) {
+        streamJob?.cancel()
+        streamJob = scope.launch {
+            try {
+                ctrl.stream(
+                    role = role,
+                    localAddress = localAddress,
+                    peerAddress = peerAddress,
+                    sessionId = sessionId,
+                    sessionKey = sessionKey,
+                    channelNumber = channelNumber,
+                    preambleIndex = preambleIndex,
+                ).collect { sample ->
+                    _state.value = if (sample.peerDisconnected) {
+                        UwbSessionState.PeerDisconnected
+                    } else {
+                        UwbSessionState.Ranging(sample)
+                    }
+                }
+            } catch (e: Exception) {
+                _state.value = UwbSessionState.Failed(e.message ?: "Ranging failed")
+            }
+        }
+    }
+
+    /**
+     * User-initiated stop. Sends a CANCEL envelope to the peer so its UI can
+     * exit too, then tears down the local UWB scope.
+     */
+    fun stop() {
+        val sessionId = currentSessionId
+        val peerId = _peerUserId.value
+        if (sessionId != null && peerId != null) {
+            scope.launch {
+                val peer = userDao.getAll().firstOrNull { it.id == peerId }
+                Networking.publishUwbMessage(
+                    UwbEnvelope(
+                        sessionId = sessionId,
+                        sender = Networking.userid.toULong(),
+                        senderPlatform = "android",
+                        kind = UwbEnvelopeKind.CANCEL
+                    ),
+                    peerId,
+                    peer
+                )
+            }
+        }
+        stopLocal()
+    }
+
+    private fun stopLocal() {
+        streamJob?.cancel(); streamJob = null
+        waitJob?.cancel(); waitJob = null
+        controller?.stop(); controller = null
+        currentSessionId = null
+        _peerUserId.value = null
+        _state.value = UwbSessionState.Idle
+    }
+
+    private suspend fun waitForEnvelope(
+        sessionId: String,
+        timeoutMs: Long,
+        predicate: (UwbEnvelope) -> Boolean,
+    ): UwbEnvelope? = withTimeoutOrNull(timeoutMs) {
+        UwbInbox.flow.first { it.sessionId == sessionId && predicate(it) }
+    }
+}
