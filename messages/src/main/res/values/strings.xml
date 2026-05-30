@@ -1,0 +1,56 @@
+<resources>
+    <string name="app_name">Messages</string>
+
+    <!-- Inbox -->
+    <string name="inbox_title">Messages</string>
+    <string name="inbox_empty">No conversations yet</string>
+    <string name="inbox_search_placeholder">Search messages…</string>
+    <string name="inbox_setup_messages_title">Connect your phone</string>
+    <string name="inbox_setup_messages_desc">Pair with your phone\'s Google Messages app to see your SMS conversations here.</string>
+    <string name="inbox_setup_voice_title">Sign in to Google Voice</string>
+    <string name="inbox_setup_voice_desc">Sign in to your Google Voice number to see messages sent to it.</string>
+    <string name="inbox_setup_action">Set up</string>
+    <string name="inbox_repair_messages">Phone pairing expired — tap to re-pair</string>
+    <string name="inbox_relogin_voice">Voice sign-in expired — tap to sign in again</string>
+
+    <!-- Conversation -->
+    <string name="conversation_compose_placeholder">Send a message</string>
+    <string name="conversation_send">Send</string>
+    <string name="message_state_pending">Sending…</string>
+    <string name="message_state_failed">Failed — tap to retry</string>
+
+    <!-- Setup screens -->
+    <string name="setup_messages_title">Pair Google Messages</string>
+    <string name="setup_messages_hint">On your phone, open Google Messages, tap the menu, then \"Device pairing\", and scan the QR code below.</string>
+    <string name="setup_voice_title">Sign in to Google Voice</string>
+    <string name="setup_done">Done</string>
+    <string name="setup_back">Back</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_sources">Sources</string>
+    <string name="settings_resync">Force resync</string>
+    <string name="settings_disconnect_messages">Unpair Google Messages</string>
+    <string name="settings_disconnect_voice">Sign out of Google Voice</string>
+
+    <!-- Sources -->
+    <string name="source_messages">Phone (Messages)</string>
+    <string name="source_voice">Google Voice</string>
+
+    <!-- Notifications -->
+    <string name="channel_sync_name">Background sync</string>
+    <string name="channel_sync_desc">Keeps the connection to your phone and Voice active</string>
+    <string name="channel_incoming_name">New messages</string>
+    <string name="channel_incoming_desc">Alerts when a new message arrives</string>
+    <string name="notification_sync_title">Messages</string>
+    <string name="notification_sync_text_both">Connected to phone + Voice</string>
+    <string name="notification_sync_text_messages">Connected to phone</string>
+    <string name="notification_sync_text_voice">Connected to Voice</string>
+    <string name="notification_sync_text_none">Disconnected</string>
+    <string name="notification_quick_reply_label">Reply</string>
+    <string name="notification_action_mark_read">Mark as read</string>
+    <string name="notification_action_stop">Stop</string>
+
+    <!-- Permissions -->
+    <string name="permissions_post_notifications">Allow notifications so new messages can alert you.</string>
+</resources>

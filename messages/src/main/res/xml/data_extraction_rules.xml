@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only sharedpref is included in backup; everything else (cookies,
+     WebView local storage, the Room cache) is intentionally per-install
+     so a backup doesn't carry an authenticated Google session to a
+     different physical device. The omitted domains are excluded by
+     default — no explicit <exclude> needed. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

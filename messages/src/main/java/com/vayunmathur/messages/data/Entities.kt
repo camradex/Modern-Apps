@@ -1,0 +1,82 @@
+package com.vayunmathur.messages.data
+
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+/**
+ * One conversation row.
+ *
+ * The [id] is a string with a source prefix so that two conversations from
+ * different sources can't collide (e.g. "msgs:thread_42" vs "voice:thread_42").
+ * The puppet sets the prefix; the data layer only stores it.
+ */
+@Entity(tableName = "conversations")
+data class Conversation(
+    @PrimaryKey val id: String,
+    val source: MessageSource,
+    /** Display name surfaced by the underlying web app. May be a phone
+     *  number if the user has no contact stored for the peer. */
+    val peerName: String?,
+    /** E.164-normalized number for one-on-one chats; null for groups. */
+    @ColumnInfo(name = "peer_phone_e164") val peerPhoneE164: String?,
+    @ColumnInfo(name = "avatar_url") val avatarUrl: String?,
+    @ColumnInfo(name = "last_preview") val lastMessagePreview: String?,
+    /** Timestamp of the last message in the thread, epoch-ms. */
+    @ColumnInfo(name = "last_ts") val lastMessageTimestamp: Long,
+    @ColumnInfo(name = "unread_count") val unreadCount: Int,
+    /** Whether this thread has > 2 participants. Drives both the avatar
+     *  treatment (group glyph vs single photo) and the row title format. */
+    @ColumnInfo(name = "is_group") val isGroup: Boolean = false,
+    /** Number of OTHER participants (i.e. excluding the local user). */
+    @ColumnInfo(name = "participant_count") val participantCount: Int = 0,
+    /** Conversation type as the relay reports it: "SMS", "RCS",
+     *  or null/UNKNOWN. Used for the per-row chip. */
+    @ColumnInfo(name = "conv_type") val conversationType: String? = null,
+)
+
+/**
+ * One message row.
+ *
+ * [id] is also source-prefixed because the underlying web apps assign
+ * their own per-thread numeric ids that aren't unique across sources.
+ */
+@Entity(
+    tableName = "messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = Conversation::class,
+            parentColumns = ["id"],
+            childColumns = ["conversation_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("conversation_id"), Index("timestamp")],
+)
+data class Message(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "conversation_id") val conversationId: String,
+    val body: String,
+    val direction: MessageDirection,
+    val state: MessageState,
+    /** Epoch-ms. */
+    @ColumnInfo(name = "timestamp") val timestamp: Long,
+    /** Display name of the sender (mainly useful when group messages
+     *  arrive — for direct messages this matches the conversation peer). */
+    @ColumnInfo(name = "sender_name") val senderName: String?,
+    /**
+     * JSON-serialized list of [com.vayunmathur.messages.data.Reaction]
+     * applied to this message (`[{"emoji":"❤️","count":2}, …]`). null
+     * when none. Stored as a compact blob to avoid a second table for
+     * what's effectively per-message metadata.
+     */
+    @ColumnInfo(name = "reactions_json") val reactionsJson: String? = null,
+)
+
+/** Aggregated reaction on a message. The relay surfaces these per-emoji
+ *  with a participant list; we collapse to "emoji + count" because v1
+ *  doesn't need to attribute the reaction to a specific participant. */
+@kotlinx.serialization.Serializable
+data class Reaction(val emoji: String, val count: Int)
