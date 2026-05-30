@@ -117,23 +117,9 @@ jobs:
           git commit -m "chore: prepare release $VERSION_NAME" || echo "No changes to commit"
           git tag "$VERSION_NAME"
 
-      - name: Build and Sign APKs (Parallel & No Lint)
+      - name: Build and Sign APKs
         run: |
-          # Construct the list of tasks (e.g., :app:assembleRelease :module2:assembleRelease)
-          TASKS=""
-          for dir in ${{ env.module_dirs }}; do
-            gradle_path=$(echo $dir | sed 's|/|:|g')
-            TASKS="$TASKS :$gradle_path:assembleRelease"
-          done
-
-          echo "Starting parallel build for tasks: $TASKS"
-
-          # Flags explained:
-          # -x lint: Skips the Android Lint task
-          # -x test: Skips unit tests
-          # --parallel: Builds modules in parallel
-          ./gradlew $TASKS \
-            --parallel \
+          ./gradlew assembleRelease \
             --no-daemon \
             -x lint \
             -x test \
