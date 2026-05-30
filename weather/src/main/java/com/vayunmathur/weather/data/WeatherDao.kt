@@ -1,0 +1,58 @@
+package com.vayunmathur.weather.data
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface WeatherDao {
+
+    // ---- SavedLocation ----
+
+    @Query("SELECT * FROM SavedLocation ORDER BY displayOrder ASC, id ASC")
+    fun observeLocations(): Flow<List<SavedLocation>>
+
+    @Query("SELECT * FROM SavedLocation ORDER BY displayOrder ASC, id ASC")
+    suspend fun getLocations(): List<SavedLocation>
+
+    @Query("SELECT * FROM SavedLocation WHERE id = :id LIMIT 1")
+    suspend fun getLocationById(id: Long): SavedLocation?
+
+    @Query("SELECT * FROM SavedLocation WHERE isCurrent = 1 LIMIT 1")
+    suspend fun getCurrentDeviceLocation(): SavedLocation?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLocation(location: SavedLocation): Long
+
+    @Upsert
+    suspend fun upsertLocation(location: SavedLocation)
+
+    @Delete
+    suspend fun deleteLocation(location: SavedLocation)
+
+    @Query("UPDATE SavedLocation SET displayOrder = :order WHERE id = :id")
+    suspend fun setOrder(id: Long, order: Int)
+
+    /**
+     * Replaces the existing "current device" row (if any) with [newRow] in a
+     * single transaction. Used by the location provider when it gets a fresh
+     * GPS fix.
+     */
+    @androidx.room.Transaction
+    suspend fun replaceCurrentDeviceLocation(newRow: SavedLocation) {
+        getCurrentDeviceLocation()?.let { deleteLocation(it) }
+        insertLocation(newRow.copy(isCurrent = true))
+    }
+
+    // ---- WeatherCache ----
+
+    @Upsert
+    suspend fun upsertCache(cache: WeatherCache)
+
+    @Query("SELECT * FROM WeatherCache WHERE latRounded = :lat AND lonRounded = :lon LIMIT 1")
+    suspend fun getCache(lat: Double, lon: Double): WeatherCache?
+}

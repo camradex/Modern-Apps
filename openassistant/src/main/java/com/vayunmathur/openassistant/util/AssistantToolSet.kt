@@ -14,6 +14,7 @@ import com.vayunmathur.library.intents.contacts.ContactData
 import com.vayunmathur.library.intents.findfamily.FamilyMemberData
 import com.vayunmathur.library.intents.music.MusicSearchResult
 import com.vayunmathur.library.intents.music.PlayMusicData
+import com.vayunmathur.library.intents.weather.WeatherData
 import com.vayunmathur.openassistant.MainActivity
 import com.vayunmathur.library.intents.notes.NoteData
 import com.vayunmathur.openassistant.data.Memory
@@ -202,6 +203,7 @@ class AssistantToolSet(
                 "com.vayunmathur.calendar" -> "Calendar"
                 "com.vayunmathur.findfamily" -> "FindFamily"
                 "com.vayunmathur.music" -> "Music"
+                "com.vayunmathur.weather" -> "Weather"
                 else -> packageName
             }
             return "The $appName app is required but not installed. [Download from GitHub](https://github.com/vayun-mathur/Modern-Apps)."
@@ -409,8 +411,33 @@ class AssistantToolSet(
         return "Conversation title set successfully"
     }
 
-    @Tool(description = "Get weather")
-    fun get_weather(latitude: Double, longitude: Double): String = "Weather: 22°C, Sunny."
+    @Tool(description = "Get the current weather conditions at a specific latitude/longitude. Returns temperature, feels-like, condition, hi/lo, humidity, wind, UV, sunrise and sunset.")
+    fun get_weather(latitude: Double, longitude: Double): String = runBlocking {
+        try {
+            val result: WeatherData = launchIntent(
+                context,
+                "com.vayunmathur.weather",
+                "com.vayunmathur.weather.intents.GetWeatherIntent",
+                WeatherLatLonRequest(latitude, longitude)
+            )
+            result.error ?: result.toString()
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
+    }
+
+    @Tool(description = "Get the current weather conditions for a named place (city, address, landmark). Prefer this over get_weather when the user says a place name instead of coordinates.")
+    fun get_weather_by_name(@ToolParam(description = "city or place name") location: String): String = runBlocking {
+        try {
+            val result: WeatherData = launchIntent(
+                context,
+                "com.vayunmathur.weather",
+                "com.vayunmathur.weather.intents.GetWeatherByNameIntent",
+                WeatherNameRequest(location)
+            )
+            result.error ?: result.toString()
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
+    }
 
     @Tool(description = "Get a list of all memories")
     fun get_memories(): String = runBlocking {
@@ -442,6 +469,18 @@ class AssistantToolSet(
 
 class MissingAppException(val packageName: String) : Exception("App $packageName is not installed.")
 class StopInferenceException : Exception("STOP")
+
+/**
+ * Mirror of the input payload that [GetWeatherIntent] in the Weather app
+ * expects. kotlinx.serialization is structural, so JSON written from here
+ * deserializes into the other side as long as field names + types match.
+ */
+@kotlinx.serialization.Serializable
+data class WeatherLatLonRequest(val latitude: Double, val longitude: Double)
+
+/** Mirror of the [GetWeatherByNameIntent] input. */
+@kotlinx.serialization.Serializable
+data class WeatherNameRequest(val name: String)
 
 inline fun <reified Input : Any, reified Output : Any> launchIntent(
     context: Context,

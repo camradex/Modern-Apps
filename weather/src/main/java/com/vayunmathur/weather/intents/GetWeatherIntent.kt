@@ -1,0 +1,101 @@
+package com.vayunmathur.weather.intents
+
+import com.vayunmathur.library.intents.weather.WeatherData
+import com.vayunmathur.library.util.AssistantIntent
+import com.vayunmathur.weather.network.ForecastResponse
+import com.vayunmathur.weather.network.WeatherApi
+import com.vayunmathur.weather.util.compassDirection
+import com.vayunmathur.weather.util.weatherConditionForCode
+import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.serializer
+import kotlin.time.Instant
+
+/** Input payload for [GetWeatherIntent]: a single coordinate pair. */
+@Serializable
+data class LatLonInput(val latitude: Double, val longitude: Double)
+
+/**
+ * "Headless" activity launched by OpenAssistant's `get_weather` tool. Fetches
+ * a fresh forecast from Open-Meteo for the supplied lat/lon and returns it as
+ * a [WeatherData] payload. No UI — the activity finishes immediately as
+ * dictated by the [AssistantIntent] base class.
+ */
+@OptIn(InternalSerializationApi::class)
+class GetWeatherIntent : AssistantIntent<LatLonInput, WeatherData>(
+    inputSerializer = serializer<LatLonInput>(),
+    outputSerializer = serializer<WeatherData>(),
+) {
+    override suspend fun performCalculation(input: LatLonInput): WeatherData {
+        return try {
+            val forecast = WeatherApi.forecast(input.latitude, input.longitude)
+            forecast.toWeatherData(locationName = null)
+        } catch (e: Exception) {
+            WeatherData(
+                locationName = null,
+                temperatureCelsius = 0.0,
+                feelsLikeCelsius = 0.0,
+                condition = "",
+                highCelsius = 0.0,
+                lowCelsius = 0.0,
+                precipitationChancePercent = 0,
+                humidityPercent = 0,
+                windKph = 0.0,
+                windDirection = "",
+                uvIndex = 0.0,
+                error = e.message ?: "Failed to fetch forecast",
+            )
+        }
+    }
+}
+
+/**
+ * Open-Meteo returns sunrise/sunset as local-time ISO strings with no offset
+ * (`2024-05-30T05:42`). Combine with `utc_offset_seconds` from the response
+ * to get a real epoch.
+ */
+internal fun parseLocalIsoToEpochSec(iso: String, utcOffsetSec: Int): Long? {
+    val padded = if (iso.length == 16) "$iso:00" else iso
+    return runCatching { Instant.parse("${padded}Z").epochSeconds - utcOffsetSec }.getOrNull()
+}
+
+/** Distill a full [ForecastResponse] into the cross-app [WeatherData] payload. */
+internal fun ForecastResponse.toWeatherData(locationName: String?): WeatherData {
+    val current = current ?: return WeatherData(
+        locationName = locationName,
+        temperatureCelsius = 0.0,
+        feelsLikeCelsius = 0.0,
+        condition = "",
+        highCelsius = 0.0,
+        lowCelsius = 0.0,
+        precipitationChancePercent = 0,
+        humidityPercent = 0,
+        windKph = 0.0,
+        windDirection = "",
+        uvIndex = 0.0,
+        error = "No current observations available",
+    )
+    val condition = weatherConditionForCode(current.weatherCode).label
+    val hi = daily?.temperatureMax?.firstOrNull() ?: current.temperature
+    val lo = daily?.temperatureMin?.firstOrNull() ?: current.temperature
+    val precip = daily?.precipitationProbabilityMax?.firstOrNull() ?: 0
+    val uv = daily?.uvIndexMax?.firstOrNull() ?: 0.0
+    val sunrise = daily?.sunrise?.firstOrNull()?.let { parseLocalIsoToEpochSec(it, utcOffsetSeconds) }
+    val sunset = daily?.sunset?.firstOrNull()?.let { parseLocalIsoToEpochSec(it, utcOffsetSeconds) }
+
+    return WeatherData(
+        locationName = locationName,
+        temperatureCelsius = current.temperature,
+        feelsLikeCelsius = current.apparentTemperature,
+        condition = condition,
+        highCelsius = hi,
+        lowCelsius = lo,
+        precipitationChancePercent = precip,
+        humidityPercent = current.relativeHumidity,
+        windKph = current.windSpeed,
+        windDirection = compassDirection(current.windDirection),
+        uvIndex = uv,
+        sunriseEpochSec = sunrise,
+        sunsetEpochSec = sunset,
+    )
+}
