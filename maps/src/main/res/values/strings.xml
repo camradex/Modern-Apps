@@ -90,4 +90,26 @@
     <string name="travel_mode_bicycle">Bicycle</string>
     <string name="travel_mode_drive">Drive</string>
     <string name="travel_mode_transit">Transit</string>
+
+    <!-- Navigation Service / Notification -->
+    <string name="nav_channel_name">Navigation</string>
+    <string name="nav_channel_desc">Live turn-by-turn navigation</string>
+    <string name="nav_default_destination">your destination</string>
+    <string name="nav_destination_format">To %1$s</string>
+    <string name="nav_status_idle">Ready to navigate</string>
+    <string name="nav_status_starting">Starting navigation…</string>
+    <string name="nav_status_recalculating">Recalculating route…</string>
+    <string name="nav_status_arrived">You have arrived</string>
+    <string name="nav_status_failed">Navigation stopped</string>
+    <string name="nav_action_end">End</string>
+    <string name="nav_action_recenter">Recenter</string>
+    <string name="nav_action_start">Start Navigation</string>
+    <string name="nav_drive_content_format">%1$s · ETA %2$s</string>
+    <string name="nav_walk_title_format">Walking to %1$s</string>
+    <string name="nav_bike_title_format">Biking to %1$s</string>
+    <string name="nav_transit_title_default">Transit to %1$s</string>
+    <string name="nav_progress_content_format">%1$d%% · %2$s left · ETA %3$s</string>
+    <string name="nav_arrived_title">You have arrived</string>
+    <string name="nav_arrived_dismiss">Dismiss</string>
+    <string name="nav_off_route">Off route — recalculating…</string>
 </resources>

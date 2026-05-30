@@ -499,12 +499,76 @@ object OfflineRouter {
                             )
                         }
 
+                // Coalesce consecutive maneuvers that stay on the same road.
+                // The native router can emit a chain of small "slight left /
+                // slight right" entries along a curving stretch of road
+                // (e.g. El Camino Real bending through Palo Alto) where
+                // the road name never changes — visually that's "stay on
+                // the same road", not a series of turns. Merge those into
+                // a single step whose polyline + distance + duration is the
+                // sum of the merged steps.
+                val coalescedSteps = mutableListOf<RouteService.Step>()
+                for (step in processedSteps) {
+                    val prev = coalescedSteps.lastOrNull()
+                    // Smart-cast prev to non-null in the merge branch by
+                    // gating on prev != null first.
+                    if (prev != null &&
+                        prev.travelMode == step.travelMode &&
+                        step.travelMode != RouteService.TravelMode.TRANSIT &&
+                        step.navInstruction.maneuver in NON_TURNING_MANEUVERS &&
+                        // Road name unchanged (instruction text is
+                        // road-name-templated, so equal strings ⇒ same road).
+                        sameRoadName(prev.navInstruction.instructions, step.navInstruction.instructions)
+                    ) {
+                        coalescedSteps[coalescedSteps.lastIndex] = prev.copy(
+                            distanceMeters = prev.distanceMeters + step.distanceMeters,
+                            staticDuration = prev.staticDuration + step.staticDuration,
+                            polyline = mergePolylines(prev.polyline, step.polyline),
+                        )
+                    } else {
+                        coalescedSteps.add(step)
+                    }
+                }
+
                 RouteService.Route(
                         duration =
-                                processedSteps.sumOf { it.staticDuration.inWholeSeconds }.seconds,
-                        distanceMeters = processedSteps.sumOf { it.distanceMeters },
+                                coalescedSteps.sumOf { it.staticDuration.inWholeSeconds }.seconds,
+                        distanceMeters = coalescedSteps.sumOf { it.distanceMeters },
                         polyline = fullPolyline,
-                        step = processedSteps
+                        step = coalescedSteps
                 )
             }
+
+    /**
+     * Maneuvers that we treat as "still on the same road" when their
+     * instruction text doesn't change between steps. A SHARP turn or a
+     * RAMP / FORK / MERGE / ROUNDABOUT is always a real maneuver even if
+     * the road name happens to match.
+     */
+    private val NON_TURNING_MANEUVERS = setOf(
+        RouteService.API.Maneuver.STRAIGHT,
+        RouteService.API.Maneuver.TURN_SLIGHT_LEFT,
+        RouteService.API.Maneuver.TURN_SLIGHT_RIGHT,
+        RouteService.API.Maneuver.NAME_CHANGE,
+        RouteService.API.Maneuver.MANEUVER_UNSPECIFIED,
+    )
+
+    /**
+     * Two adjacent maneuvers are considered "on the same road" when the
+     * instruction strings match. Instruction text is templated from the
+     * road name (see the maneuver_* string templates), so identical
+     * instruction strings ⇒ same road.
+     */
+    private fun sameRoadName(prev: String, curr: String): Boolean =
+        prev.isNotBlank() && prev == curr
+
+    /** Concatenate two step polylines, skipping the duplicate join point. */
+    private fun mergePolylines(
+        a: List<org.maplibre.spatialk.geojson.Position>,
+        b: List<org.maplibre.spatialk.geojson.Position>,
+    ): List<org.maplibre.spatialk.geojson.Position> {
+        if (a.isEmpty()) return b
+        if (b.isEmpty()) return a
+        return if (a.last() == b.first()) a + b.drop(1) else a + b
+    }
 }

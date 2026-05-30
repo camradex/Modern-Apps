@@ -49,7 +49,8 @@ fun MyMapLayers(
     route: RouteService.RouteType?,
     styleJson: String?,
     userPosition: Position,
-    userBearing: Float
+    userBearing: Float,
+    navProgress: com.vayunmathur.maps.util.NavigationProgress? = null,
 ) {
     val trafficVersion by OfflineRouter.trafficVersion.collectAsState()
     val context = LocalContext.current
@@ -228,43 +229,15 @@ fun MyMapLayers(
                     }
                     is SpecificFeature.Route -> {
                         if (route != null) {
-                            LaunchedEffect(route, routeSource, styleJson) {
+                            LaunchedEffect(
+                                route, routeSource, styleJson,
+                                navProgress?.segmentIndex,
+                                navProgress?.distanceAlongRoute?.let { (it / 5.0).toInt() }
+                            ) {
                                 if (route is RouteService.Route) {
-                                    val features: List<Feature1> =
-                                        route.step.filter { it.polyline.size >= 2 }.map {
-                                            val color =
-                                                if (it.travelMode ==
-                                                    RouteService.TravelMode
-                                                        .DRIVE
-                                                ) {
-                                                    when {
-                                                        it.speedRatio < 0.5 ->
-                                                            "#F44336" // Red
-                                                        it.speedRatio < 0.9 ->
-                                                            "#FFC107" // Amber/Yellow
-                                                        else -> "#4CAF50" // Green
-                                                    }
-                                                } else if (it.travelMode == RouteService.TravelMode.TRANSIT) {
-                                                    val feed = it.transitDetails?.feedName
-                                                    if (feed != null) {
-                                                        com.vayunmathur.maps.util.GTFSProvider.getRouteColor(context, feed, it.transitDetails.transitLine.name) ?: "#FF0000"
-                                                    } else {
-                                                        "#FF0000"
-                                                    }
-                                                } else "#1710F1"
-
-                                            Feature1(
-                                                LineString(it.polyline),
-                                                JsonObject(
-                                                    mapOf(
-                                                        "route-color" to
-                                                            JsonPrimitive(
-                                                                color
-                                                            )
-                                                    )
-                                                )
-                                            )
-                                        }
+                                    val features: List<Feature1> = buildRouteFeatures(
+                                        route, context, navProgress
+                                    )
                                     routeSource.setData(
                                         GeoJsonData.Features(FeatureCollection(features))
                                     )
@@ -308,4 +281,151 @@ private fun createInvertedMask(countryFeature: Feature1): Feature1 {
     // 3. Create Polygon: [Outer, Hole1, Hole2...]
     val donutGeometry = Polygon(listOf(worldOuterRing) + holes)
     return Feature(geometry = donutGeometry, properties = countryFeature.properties)
+}
+
+/**
+ * Compute the per-step `route-color` for the static (non-navigating) case.
+ * Driving uses traffic-aware red/amber/green, transit uses the GTFS feed
+ * color when available, walk/bike fall through to a single blue.
+ */
+private fun staticColorFor(
+    step: RouteService.Step,
+    context: android.content.Context,
+): String {
+    return when (step.travelMode) {
+        RouteService.TravelMode.DRIVE -> when {
+            step.speedRatio < 0.5 -> "#F44336" // Red
+            step.speedRatio < 0.9 -> "#FFC107" // Amber/Yellow
+            else -> "#4CAF50"                  // Green
+        }
+        RouteService.TravelMode.TRANSIT -> {
+            val feed = step.transitDetails?.feedName
+            if (feed != null) {
+                com.vayunmathur.maps.util.GTFSProvider.getRouteColor(
+                    context, feed, step.transitDetails.transitLine.name
+                ) ?: "#FF0000"
+            } else "#FF0000"
+        }
+        else -> "#1710F1"
+    }
+}
+
+/** Color shown for the portion of the route the user has already traveled. */
+private const val TRAVELED_GRAY = "#9E9E9E"
+
+/**
+ * Build the GeoJSON `Feature` list for the route polyline.
+ *
+ * When [navProgress] is null this returns one feature per [Step] with the
+ * mode-aware static color.
+ *
+ * When [navProgress] is non-null the polyline is split at the snapped point
+ * so that:
+ *  - steps strictly before the current step get the traveled-gray color
+ *  - the current step is split: portion behind the snap → gray; portion
+ *    ahead → original mode color
+ *  - steps strictly after keep their original color
+ *
+ * Splitting at the segment level requires matching the snapped segment
+ * index (which is into the FULL `route.polyline`) to the corresponding
+ * vertex inside the current step's local polyline. The math here is the
+ * mirror of [com.vayunmathur.maps.util.PolylineIndex]'s `stepRanges`
+ * construction (cursor walk; steps share endpoints).
+ */
+private fun buildRouteFeatures(
+    route: RouteService.Route,
+    context: android.content.Context,
+    navProgress: com.vayunmathur.maps.util.NavigationProgress?,
+): List<Feature1> {
+    if (navProgress == null) {
+        return route.step.filter { it.polyline.size >= 2 }.map { step ->
+            Feature1(
+                LineString(step.polyline),
+                JsonObject(mapOf("route-color" to JsonPrimitive(staticColorFor(step, context))))
+            )
+        }
+    }
+
+    val currentStepIdx = navProgress.currentStepIndex
+    val snappedSegIdx = navProgress.segmentIndex // index into route.polyline
+    val snappedPos = navProgress.snappedPosition
+
+    val out = mutableListOf<Feature1>()
+    // Walk the full polyline alongside the steps the same way PolylineIndex
+    // builds stepRanges, so we know the vertex range for each step.
+    var cursor = 0
+    for ((stepIdx, step) in route.step.withIndex()) {
+        val stepLen = step.polyline.size
+        if (stepLen < 2) {
+            // Nothing to render for a degenerate step. Cursor stays where it
+            // was (mirrors PolylineIndex's `ranges.add(cursor..cursor)` /
+            // skipping the cursor advance).
+            continue
+        }
+        val first = cursor
+        val last = (first + stepLen - 1).coerceAtMost(route.polyline.size - 1)
+        val color = staticColorFor(step, context)
+
+        when {
+            stepIdx < currentStepIdx -> {
+                // Entirely behind: gray.
+                out += Feature1(
+                    LineString(step.polyline),
+                    JsonObject(mapOf("route-color" to JsonPrimitive(TRAVELED_GRAY)))
+                )
+            }
+            stepIdx > currentStepIdx -> {
+                // Entirely ahead: original color.
+                out += Feature1(
+                    LineString(step.polyline),
+                    JsonObject(mapOf("route-color" to JsonPrimitive(color)))
+                )
+            }
+            snappedSegIdx < first -> {
+                // Snap fell on an earlier step than our step-index math
+                // attributed to this step (e.g. brief off-by-one near a
+                // boundary, or a glitchy GPS fix). Treat the whole step as
+                // ahead rather than fabricating a gray spur from a snapped
+                // position that isn't on this step's segments.
+                out += Feature1(
+                    LineString(step.polyline),
+                    JsonObject(mapOf("route-color" to JsonPrimitive(color)))
+                )
+            }
+            snappedSegIdx > last -> {
+                // Snap fell on a later step. Treat the whole step as behind.
+                out += Feature1(
+                    LineString(step.polyline),
+                    JsonObject(mapOf("route-color" to JsonPrimitive(TRAVELED_GRAY)))
+                )
+            }
+            else -> {
+                // The active step: split at the snap point. snappedSegIdx is
+                // guaranteed in [first, last] by the two guards above.
+                val localSnapVertex = snappedSegIdx - first
+                // Behind portion: vertices 0..localSnapVertex, with the
+                // snapped position appended so the gray ends exactly under
+                // the user.
+                val behindVertices = step.polyline.subList(0, localSnapVertex + 1).toMutableList()
+                behindVertices.add(snappedPos)
+                if (behindVertices.size >= 2) {
+                    out += Feature1(
+                        LineString(behindVertices),
+                        JsonObject(mapOf("route-color" to JsonPrimitive(TRAVELED_GRAY)))
+                    )
+                }
+                // Ahead portion: snapped position, then remaining vertices.
+                val aheadVertices = mutableListOf(snappedPos)
+                aheadVertices.addAll(step.polyline.subList(localSnapVertex + 1, stepLen))
+                if (aheadVertices.size >= 2) {
+                    out += Feature1(
+                        LineString(aheadVertices),
+                        JsonObject(mapOf("route-color" to JsonPrimitive(color)))
+                    )
+                }
+            }
+        }
+        cursor = last
+    }
+    return out
 }

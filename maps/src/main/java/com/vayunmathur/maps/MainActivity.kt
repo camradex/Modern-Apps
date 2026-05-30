@@ -2,6 +2,7 @@ package com.vayunmathur.maps
 
 import android.Manifest
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -91,7 +92,20 @@ class MainActivity : ComponentActivity() {
                     Triple("https://data.vayunmathur.com/road_names.bin", "road_names.bin", getString(R.string.downloading_road_data))
                 )) {
                     val db = remember { buildAmenityDatabase(this@MainActivity) }
-                    PermissionsChecker(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), getString(R.string.grant_location_permission)) {
+                    val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        // POST_NOTIFICATIONS is runtime-grantable on API 33+
+                        // and required for the navigation foreground-service
+                        // notification to actually display (otherwise the
+                        // service runs invisibly and the user can't End Trip
+                        // from outside the app).
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        )
+                    } else {
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
+                    PermissionsChecker(perms, getString(R.string.grant_location_permission)) {
                         Navigation(db)
                     }
                 }

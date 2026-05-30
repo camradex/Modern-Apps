@@ -1,10 +1,16 @@
 package com.vayunmathur.maps.ui
+import android.content.Intent
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -14,17 +20,29 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.util.round
 import com.vayunmathur.maps.R
 import com.vayunmathur.maps.data.SpecificFeature
+import com.vayunmathur.maps.util.NavigationService
+import com.vayunmathur.maps.util.NavigationSessionManager
 import com.vayunmathur.maps.util.RouteService
 import com.vayunmathur.maps.util.SelectedFeatureViewModel
 
 @Composable
-fun BottomSheetContent(viewModel: SelectedFeatureViewModel, selectedFeature: SpecificFeature?, setSelectedFeature: (SpecificFeature?) -> Unit, route: Map<RouteService.TravelMode, RouteService.RouteType?>?, selectedRouteType: RouteService.TravelMode, setSelectedRouteType: (RouteService.TravelMode) -> Unit, inactiveNavigation: SpecificFeature.Route?) {
+fun BottomSheetContent(
+    viewModel: SelectedFeatureViewModel,
+    selectedFeature: SpecificFeature?,
+    setSelectedFeature: (SpecificFeature?) -> Unit,
+    route: Map<RouteService.TravelMode, RouteService.RouteType?>?,
+    selectedRouteType: RouteService.TravelMode,
+    setSelectedRouteType: (RouteService.TravelMode) -> Unit,
+    inactiveNavigation: SpecificFeature.Route?,
+    navState: NavigationSessionManager.NavState = NavigationSessionManager.NavState.Idle,
+) {
     when (selectedFeature) {
         is SpecificFeature.Admin0Label -> {
             Column {
@@ -95,19 +113,72 @@ fun BottomSheetContent(viewModel: SelectedFeatureViewModel, selectedFeature: Spe
                             }
                         }
                     }
-                    val route = route[selectedRouteType]
-                    if(route != null) {
-                        if(route !is RouteService.EmptyRoute) {
-                            ListItem({ Text(route.duration.toString()) }, supportingContent = {
-                                Text(stringResource(R.string.distance_km, (route.distanceMeters / 1000.0).round(2)))
+                    val routeForMode = route[selectedRouteType]
+                    if(routeForMode != null) {
+                        if(routeForMode !is RouteService.EmptyRoute) {
+                            ListItem({ Text(routeForMode.duration.toString()) }, supportingContent = {
+                                Text(stringResource(R.string.distance_km, (routeForMode.distanceMeters / 1000.0).round(2)))
                             })
+                            // "Start Navigation" only when we have a concrete
+                            // Route (steps + polyline) and aren't already in
+                            // an active navigation session.
+                            //
+                            // We also hide the button for TRANSIT: the
+                            // navigation engine snaps GPS to the route
+                            // polyline and computes ETA from progress along
+                            // it, which doesn't model trains/buses well, and
+                            // mid-trip recalc would replace transit steps
+                            // with walking steps. Users can still see the
+                            // transit step list; we just don't offer to
+                            // "drive" them through it.
+                            val lastWaypoint = selectedFeature.waypoints.lastOrNull()
+                            val canStart = routeForMode is RouteService.Route &&
+                                    navState is NavigationSessionManager.NavState.Idle &&
+                                    selectedRouteType != RouteService.TravelMode.TRANSIT &&
+                                    lastWaypoint != null
+                            if (routeForMode is RouteService.Route &&
+                                navState is NavigationSessionManager.NavState.Idle &&
+                                selectedRouteType != RouteService.TravelMode.TRANSIT
+                            ) {
+                                val context = LocalContext.current
+                                Button(
+                                    onClick = {
+                                        if (lastWaypoint == null) return@Button
+                                        val destPos = lastWaypoint.position
+                                        val destName = lastWaypoint.name
+                                        val intent = Intent(context, NavigationService::class.java)
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                            context.startForegroundService(intent)
+                                        } else {
+                                            context.startService(intent)
+                                        }
+                                        NavigationSessionManager.init(context)
+                                        NavigationSessionManager.start(
+                                            route = routeForMode,
+                                            mode = selectedRouteType,
+                                            destination = destPos,
+                                            destinationLabel = destName,
+                                        )
+                                    },
+                                    enabled = canStart,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
+                                ) {
+                                    Text(stringResource(R.string.nav_action_start))
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                         }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            when (route) {
+                            when (routeForMode) {
                                 is RouteService.Route -> {
-                                    itemsIndexed(route.step) { idx, it ->
-                                        Card(shape = verticalShape(idx, route.step.size)) {
+                                    itemsIndexed(routeForMode.step) { idx, it ->
+                                        Card(shape = verticalShape(idx, routeForMode.step.size)) {
                                             ListItem({
                                                 Text(it.navInstruction.instructions)
                                             }, leadingContent = {

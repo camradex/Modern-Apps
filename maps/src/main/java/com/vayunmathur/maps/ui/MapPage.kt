@@ -180,6 +180,14 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
     // --- ROUTE COMPUTATION ---
     val route by viewModel.routes.collectAsState(null)
 
+    // --- NAVIGATION SESSION ---
+    val navState by com.vayunmathur.maps.util.NavigationSessionManager.state.collectAsState()
+    val isNavigating = navState !is com.vayunmathur.maps.util.NavigationSessionManager.NavState.Idle
+    var autoFollow by remember { mutableStateOf(true) }
+    var lastProgrammaticMoveMs by remember { mutableStateOf(0L) }
+    val activeRoute = com.vayunmathur.maps.util.NavigationSessionManager.currentRoute
+    val navProgress = (navState as? com.vayunmathur.maps.util.NavigationSessionManager.NavState.Navigating)?.progress
+
     // --- UI & BOTTOM SHEET STATE ---
     var allowProgrammaticHide by retain { mutableStateOf(false) }
 
@@ -213,9 +221,46 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
     var selectedRouteType by retain { mutableStateOf(RouteService.TravelMode.DRIVE) }
 
     // --- RENDER ---
+    // While actively navigating we don't want the bottom sheet to slide up
+    // automatically; the in-screen overlay is the primary nav UI.
+    LaunchedEffect(isNavigating) {
+        if (isNavigating) {
+            hide()
+        }
+    }
+
+    // Camera follow: animate to snapped position / bearing whenever we get
+    // a new progress sample AND the user hasn't panned away.
+    LaunchedEffect(navProgress, autoFollow) {
+        val p = navProgress ?: return@LaunchedEffect
+        if (!autoFollow) return@LaunchedEffect
+        lastProgrammaticMoveMs = System.currentTimeMillis()
+        camera.animateTo(
+            camera.position.copy(
+                target = p.snappedPosition,
+                bearing = p.courseOverGround.toDouble(),
+                tilt = 60.0,
+                zoom = 17.0,
+            ),
+            kotlin.time.Duration.parse("800ms"),
+        )
+    }
+
+    // Detect user-initiated camera moves: if isCameraMoving becomes true
+    // outside the ~1.2s window after our own animateTo, treat it as a pan
+    // and disable auto-follow until the user taps Recenter.
+    LaunchedEffect(camera.isCameraMoving, isNavigating) {
+        if (!isNavigating) return@LaunchedEffect
+        if (camera.isCameraMoving &&
+            System.currentTimeMillis() - lastProgrammaticMoveMs > 1_200
+        ) {
+            autoFollow = false
+        }
+    }
+
     BottomSheetScaffold({
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 48.dp, top = 8.dp)) {
-            BottomSheetContent(viewModel, selectedFeature, { viewModel.set(it) }, route, selectedRouteType, { selectedRouteType = it }, inactiveNavigation)
+            BottomSheetContent(viewModel, selectedFeature, { viewModel.set(it) }, route, selectedRouteType, { selectedRouteType = it }, inactiveNavigation, navState)
         }
     }, Modifier, scaffoldState, 170.dp) { paddingValues ->
         Scaffold(Modifier.padding(top = paddingValues.calculateTopPadding()), topBar = {
@@ -248,12 +293,20 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
                                         listOf("${it}_base", "${it}_hybrid")
                                     }.toSet()
                                 ) ?: emptyList()
-                                // parse() may do network (Wikidata) + Room — do it off Main.
-                                val listedFeatures = withContext(Dispatchers.IO) {
-                                    features.mapNotNull { runCatching { parse(it, db) }.getOrNull() }
+                                // parse() may do network (Wikidata) + Room
+                                // per feature. queryRenderedFeatures returns
+                                // one Feature PER LAYER at the tap point —
+                                // often 2-3 — and we only use the first
+                                // parseable result. Stop at the first hit
+                                // instead of doing every Wikidata round-trip
+                                // serially in the foreground.
+                                val firstFeature = withContext(Dispatchers.IO) {
+                                    features.firstNotNullOfOrNull { raw ->
+                                        runCatching { parse(raw, db) }.getOrNull()
+                                    }
                                 }
 
-                                listedFeatures.firstOrNull()?.let {
+                                firstFeature?.let {
                                     if (selectedFeature is SpecificFeature.Route) viewModel.setInactiveNavigation(
                                         selectedFeature as SpecificFeature.Route
                                     )
@@ -263,8 +316,8 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
                             }
                             ClickResult.Pass
                         }
-                    ) {
-                        MyMapLayers(selectedFeature, route?.get(selectedRouteType), json, userPosition, userBearing)
+                ) {
+                        MyMapLayers(selectedFeature, route?.get(selectedRouteType), json, userPosition, userBearing, navProgress)
                     }
                 }
 
@@ -373,6 +426,24 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
                         }
                     )
                 }
+
+                // Live navigation overlay (top maneuver card, bottom ETA strip,
+                // recenter FAB, arrival card). Hidden when nav is Idle.
+                NavigationOverlay(
+                    navState = navState,
+                    steps = activeRoute?.step ?: emptyList(),
+                    autoFollow = autoFollow,
+                    onRecenter = { autoFollow = true },
+                    onEndTrip = {
+                        com.vayunmathur.maps.util.NavigationSessionManager.stop()
+                        context.stopService(android.content.Intent(context, com.vayunmathur.maps.util.NavigationService::class.java))
+                        autoFollow = true
+                    },
+                    onDismissArrival = {
+                        com.vayunmathur.maps.util.NavigationSessionManager.stop()
+                        context.stopService(android.content.Intent(context, com.vayunmathur.maps.util.NavigationService::class.java))
+                    },
+                )
             }
         }
     }

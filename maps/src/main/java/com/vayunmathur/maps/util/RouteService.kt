@@ -35,20 +35,43 @@ object RouteService {
                 body = request
             )
 
+            val steps = serverRoute.step.map { step ->
+                Step(
+                    distanceMeters = step.distanceMeters,
+                    staticDuration = Duration.parse(step.staticDuration),
+                    polyline = step.polyline.map { Position(it.longitude, it.latitude) },
+                    navInstruction = step.navInstruction,
+                    travelMode = step.travelMode,
+                    transitDetails = step.transitDetails
+                )
+            }
+            // Rebuild the full polyline from concatenated step polylines
+            // (de-duplicating the shared join vertex between steps). The
+            // server's `polyline` field is decoded independently and isn't
+            // guaranteed to be vertex-for-vertex aligned to the step
+            // polylines (different simplification / rounding). PolylineIndex
+            // (the navigation snap engine) relies on the route polyline being
+            // exactly the step concatenation so its per-step vertex ranges
+            // line up; mismatches there cause wrong ETAs / step-transitions.
+            val rebuiltPolyline = mutableListOf<Position>()
+            for (step in steps) {
+                if (step.polyline.isEmpty()) continue
+                if (rebuiltPolyline.isEmpty()) {
+                    rebuiltPolyline.addAll(step.polyline)
+                } else {
+                    val first = step.polyline.first()
+                    if (rebuiltPolyline.last() == first) {
+                        rebuiltPolyline.addAll(step.polyline.drop(1))
+                    } else {
+                        rebuiltPolyline.addAll(step.polyline)
+                    }
+                }
+            }
             return Route(
                 duration = Duration.parse(serverRoute.duration),
                 distanceMeters = serverRoute.distanceMeters,
-                polyline = serverRoute.polyline.map { Position(it.longitude, it.latitude) },
-                step = serverRoute.step.map { step ->
-                    Step(
-                        distanceMeters = step.distanceMeters,
-                        staticDuration = Duration.parse(step.staticDuration),
-                        polyline = step.polyline.map { Position(it.longitude, it.latitude) },
-                        navInstruction = step.navInstruction,
-                        travelMode = step.travelMode,
-                        transitDetails = step.transitDetails
-                    )
-                }
+                polyline = rebuiltPolyline,
+                step = steps,
             )
         } catch (e: Exception) {
             e.printStackTrace()
