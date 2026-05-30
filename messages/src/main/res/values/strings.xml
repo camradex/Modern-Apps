@@ -9,6 +9,7 @@
     <string name="inbox_setup_messages_desc">Pair with your phone\'s Google Messages app to see your SMS conversations here.</string>
     <string name="inbox_setup_voice_title">Sign in to Google Voice</string>
     <string name="inbox_setup_voice_desc">Sign in to your Google Voice number to see messages sent to it.</string>
+    <string name="inbox_setup_voice_action">Sign in</string>
     <string name="inbox_setup_action">Set up</string>
     <string name="inbox_repair_messages">Phone pairing expired — tap to re-pair</string>
     <string name="inbox_relogin_voice">Voice sign-in expired — tap to sign in again</string>
@@ -23,6 +24,10 @@
     <string name="setup_messages_title">Pair Google Messages</string>
     <string name="setup_messages_hint">On your phone, open Google Messages, tap the menu, then \"Device pairing\", and scan the QR code below.</string>
     <string name="setup_voice_title">Sign in to Google Voice</string>
+    <string name="setup_voice_intro">Google blocks embedded sign-ins to voice.google.com from inside other apps, so we can\'t open a normal sign-in form here. The workaround: sign in via a real desktop browser and paste your session cookies below.</string>
+    <string name="setup_voice_placeholder">{\"SID\":\"…\",\"HSID\":\"…\",\"SSID\":\"…\",\"APISID\":\"…\",\"SAPISID\":\"…\"}</string>
+    <string name="setup_voice_field_hint">JSON, cookies.txt (Netscape), cURL command, or raw Cookie header.</string>
+    <string name="setup_voice_sign_in">Sign in</string>
     <string name="setup_done">Done</string>
     <string name="setup_back">Back</string>
 

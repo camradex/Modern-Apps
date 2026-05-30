@@ -26,7 +26,7 @@ import com.vayunmathur.messages.Route
 import com.vayunmathur.messages.data.MessageSource
 import com.vayunmathur.messages.util.MessagesSessionManager
 import com.vayunmathur.messages.util.MessagesViewModel
-import com.vayunmathur.messages.gmessages.GMessagesClient
+import com.vayunmathur.messages.util.SourceConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,12 +56,16 @@ fun SettingsScreen(
             )
             SourceSection(
                 title = stringResource(R.string.source_messages),
-                state = states[MessageSource.MESSAGES_WEB] ?: GMessagesClient.State.Idle,
+                state = states[MessageSource.MESSAGES_WEB] ?: SourceConnectionState.Idle,
                 onConfigure = { backStack.add(Route.PairMessages) },
-                onDisconnect = {
-                    // Clear persisted auth + bounce the session.
-                    MessagesSessionManager.stop()
-                },
+                onDisconnect = { MessagesSessionManager.stop(MessageSource.MESSAGES_WEB) },
+            )
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SourceSection(
+                title = stringResource(R.string.source_voice),
+                state = states[MessageSource.VOICE] ?: SourceConnectionState.Idle,
+                onConfigure = { backStack.add(Route.LoginVoice) },
+                onDisconnect = { MessagesSessionManager.stop(MessageSource.VOICE) },
             )
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             OutlinedButton(
@@ -77,7 +81,7 @@ fun SettingsScreen(
 @Composable
 private fun SourceSection(
     title: String,
-    state: GMessagesClient.State,
+    state: SourceConnectionState,
     onConfigure: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -97,9 +101,11 @@ private fun SourceSection(
     }
 }
 
-private fun describe(state: GMessagesClient.State): String = when (state) {
-    GMessagesClient.State.Idle -> "Not set up"
-    is GMessagesClient.State.Pairing -> "Waiting for QR scan…"
-    GMessagesClient.State.Connected -> "Connected"
-    is GMessagesClient.State.Disconnected -> "Disconnected: ${state.reason}"
+private fun describe(state: SourceConnectionState): String = when (state) {
+    SourceConnectionState.Idle -> "Not set up"
+    is SourceConnectionState.NeedsSetup -> "Setup required"
+    is SourceConnectionState.Pairing -> "Waiting for QR scan…"
+    SourceConnectionState.Connecting -> "Connecting…"
+    SourceConnectionState.Connected -> "Connected"
+    is SourceConnectionState.Disconnected -> "Disconnected: ${state.reason}"
 }

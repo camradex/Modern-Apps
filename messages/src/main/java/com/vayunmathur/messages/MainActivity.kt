@@ -20,6 +20,7 @@ import com.vayunmathur.messages.ui.ConversationScreen
 import com.vayunmathur.messages.ui.InboxScreen
 import com.vayunmathur.messages.ui.SettingsScreen
 import com.vayunmathur.messages.ui.setup.MessagesPairingScreen
+import com.vayunmathur.messages.ui.setup.VoiceLoginScreen
 import com.vayunmathur.messages.util.MessagesViewModel
 import kotlinx.serialization.Serializable
 
@@ -61,6 +62,7 @@ sealed interface Route : NavKey {
     @Serializable data class Conversation(val conversationId: String) : Route
     @Serializable data object Settings : Route
     @Serializable data object PairMessages : Route
+    @Serializable data object LoginVoice : Route
 }
 
 @Composable
@@ -81,6 +83,9 @@ private fun Navigation(
         }
         entry<Route.PairMessages> {
             MessagesPairingScreen(backStack, vm)
+        }
+        entry<Route.LoginVoice> {
+            VoiceLoginScreen(backStack)
         }
     }
 }

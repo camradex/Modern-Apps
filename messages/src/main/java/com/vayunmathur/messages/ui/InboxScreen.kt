@@ -49,7 +49,7 @@ import com.vayunmathur.messages.data.MessageSource
 import com.vayunmathur.messages.data.MessagesDatabase
 import com.vayunmathur.messages.util.MessagesSessionManager
 import com.vayunmathur.messages.util.MessagesViewModel
-import com.vayunmathur.messages.gmessages.GMessagesClient
+import com.vayunmathur.messages.util.SourceConnectionState
 import java.text.DateFormat
 import java.util.Date
 
@@ -91,10 +91,11 @@ fun InboxScreen(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            // Setup prompt for Messages-for-Web (only source today).
+            // Setup prompts for each source.
             SetupPrompts(
                 states = connectionStates,
                 onPairMessages = { backStack.add(Route.PairMessages) },
+                onSetupVoice = { backStack.add(Route.LoginVoice) },
             )
 
             if (conversations.isEmpty()) {
@@ -119,25 +120,30 @@ fun InboxScreen(
     }
 }
 
-/** Shows a source-specific setup card at the top of the inbox when the
- *  puppet is in NeedsSetup or Disconnected. */
+/** Shows source-specific setup cards at the top of the inbox when
+ *  any source needs setup. */
 @Composable
 private fun SetupPrompts(
-    states: Map<MessageSource, GMessagesClient.State>,
+    states: Map<MessageSource, SourceConnectionState>,
     onPairMessages: () -> Unit,
+    onSetupVoice: () -> Unit,
 ) {
     val msgsState = states[MessageSource.MESSAGES_WEB]
-    // Show the setup card when there's no active pairing. Connected
-    // and Pairing both mean "don't bug the user" (Pairing because the
-    // pair screen is already up and driving the QR).
-    if (msgsState !is GMessagesClient.State.Connected &&
-        msgsState !is GMessagesClient.State.Pairing
-    ) {
+    if (msgsState is SourceConnectionState.NeedsSetup || msgsState is SourceConnectionState.Disconnected) {
         SetupCard(
             title = stringResource(R.string.inbox_setup_messages_title),
             description = stringResource(R.string.inbox_setup_messages_desc),
             actionLabel = stringResource(R.string.inbox_setup_action),
             onAction = onPairMessages,
+        )
+    }
+    val voiceState = states[MessageSource.VOICE]
+    if (voiceState is SourceConnectionState.NeedsSetup || voiceState is SourceConnectionState.Disconnected) {
+        SetupCard(
+            title = stringResource(R.string.inbox_setup_voice_title),
+            description = stringResource(R.string.inbox_setup_voice_desc),
+            actionLabel = stringResource(R.string.inbox_setup_voice_action),
+            onAction = onSetupVoice,
         )
     }
 }
@@ -244,6 +250,7 @@ private fun TypeChip(label: String) {
 private fun SourceChip(source: MessageSource) {
     val (label, color) = when (source) {
         MessageSource.MESSAGES_WEB -> "Phone" to MaterialTheme.colorScheme.tertiary
+        MessageSource.VOICE -> "Voice" to MaterialTheme.colorScheme.primary
     }
     Surface(
         shape = RoundedCornerShape(8.dp),

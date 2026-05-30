@@ -11,6 +11,7 @@ import com.vayunmathur.messages.data.MessagesDatabase
 import com.vayunmathur.messages.data.buildMessagesDatabase
 import com.vayunmathur.messages.gmessages.GMEvent
 import com.vayunmathur.messages.gmessages.GMessagesClient
+import com.vayunmathur.messages.gvoice.GVoiceClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,13 +26,13 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Bridges [GMessagesClient]'s state + event streams into Room writes and
- * notification triggers.
+ * Bridges [GMessagesClient] + [GVoiceClient]'s state + event streams
+ * into the same Room writes and notification triggers.
  *
- * Replaces the prior WebView-puppet-based session manager. Same
- * external API (so the foreground service / UI keep compiling without
- * rewiring): [connectionStates] is the per-source state map, [incoming]
- * is the new-message fanout for the notification path.
+ * [connectionStates] is the per-source unified state map (see
+ * [SourceConnectionState]) and [incoming] is the new-message fanout for
+ * the notification path. Adding a new source = subscribing to its state
+ * + event flow here; no consumer needs to change.
  */
 object MessagesSessionManager {
 
@@ -43,12 +44,14 @@ object MessagesSessionManager {
     private lateinit var appContext: Context
     private lateinit var db: MessagesDatabase
 
-    /** Per-source state map. Today there's only MESSAGES_WEB; the map
-     *  keeps the same shape the inbox/service expect. */
-    private val _connectionStates = MutableStateFlow<Map<MessageSource, GMessagesClient.State>>(
-        mapOf(MessageSource.MESSAGES_WEB to GMessagesClient.State.Idle)
+    /** Per-source unified connection state. */
+    private val _connectionStates = MutableStateFlow<Map<MessageSource, SourceConnectionState>>(
+        mapOf(
+            MessageSource.MESSAGES_WEB to SourceConnectionState.Idle,
+            MessageSource.VOICE to SourceConnectionState.Idle,
+        )
     )
-    val connectionStates: StateFlow<Map<MessageSource, GMessagesClient.State>> =
+    val connectionStates: StateFlow<Map<MessageSource, SourceConnectionState>> =
         _connectionStates.asStateFlow()
 
     /** Stream of "you just got a new message" events for the service to
@@ -56,17 +59,20 @@ object MessagesSessionManager {
     private val _incoming = MutableSharedFlow<GMEvent.IncomingMessage>(extraBufferCapacity = 64)
     val incoming: SharedFlow<GMEvent.IncomingMessage> = _incoming.asSharedFlow()
 
-    private var stateCollectorJob: Job? = null
-    private var eventCollectorJob: Job? = null
+    private val collectorJobs = mutableListOf<Job>()
 
     /** Don't fire incoming-message notifications during the initial scan. */
-    private val backfillComplete = mutableMapOf(MessageSource.MESSAGES_WEB to false)
+    private val backfillComplete = mutableMapOf(
+        MessageSource.MESSAGES_WEB to false,
+        MessageSource.VOICE to false,
+    )
 
     fun init(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
         appContext = context.applicationContext
         db = buildMessagesDatabase(appContext)
         GMessagesClient.init(appContext)
+        GVoiceClient.init(appContext)
         Log.i(TAG, "init")
         wireCollectors()
     }
@@ -76,11 +82,24 @@ object MessagesSessionManager {
     fun start() {
         if (!initialized.get()) return
         GMessagesClient.start()
+        GVoiceClient.start()
     }
 
     fun stop() {
         GMessagesClient.stop()
+        GVoiceClient.stop()
         backfillComplete[MessageSource.MESSAGES_WEB] = false
+        backfillComplete[MessageSource.VOICE] = false
+    }
+
+    /** Stop one source independently — used from the per-source
+     *  Disconnect button in Settings. */
+    fun stop(source: MessageSource) {
+        when (source) {
+            MessageSource.MESSAGES_WEB -> GMessagesClient.stop()
+            MessageSource.VOICE -> GVoiceClient.stop()
+        }
+        backfillComplete[source] = false
     }
 
     suspend fun sendMessage(conversationId: String, body: String): Boolean {
@@ -99,7 +118,13 @@ object MessagesSessionManager {
                 senderName = null,
             )
         )
-        val ok = GMessagesClient.sendMessage(conversationId, body)
+        val ok = when (source) {
+            MessageSource.MESSAGES_WEB -> GMessagesClient.sendMessage(conversationId, body)
+            // Voice send isn't wired up yet — same stub-and-FAIL path
+            // the gmessages send had before the SendMessageRequest
+            // builder existed.
+            MessageSource.VOICE -> false
+        }
         db.messageDao().updateState(
             pendingId,
             if (ok) MessageState.SENT else MessageState.FAILED,
@@ -113,8 +138,9 @@ object MessagesSessionManager {
 
     /**
      * Bulk-write a backfill batch of messages in ONE transaction.
-     * Called by [GMessagesClient] when LIST_MESSAGES returns — saves
-     * dozens of separate Flow notifications when populating a thread.
+     * Called by the protocol clients when LIST_MESSAGES / GetThread
+     * returns — saves dozens of separate Flow notifications when
+     * populating a thread.
      */
     suspend fun bulkUpsertMessages(messages: List<Message>) {
         if (messages.isEmpty()) return
@@ -123,18 +149,38 @@ object MessagesSessionManager {
 
     fun forceResync() {
         GMessagesClient.forceResync()
+        GVoiceClient.forceResync()
+    }
+
+    fun fetchMessages(conversationId: String) {
+        when (sourceFor(conversationId)) {
+            MessageSource.MESSAGES_WEB -> GMessagesClient.fetchMessages(conversationId)
+            MessageSource.VOICE -> GVoiceClient.fetchMessages(conversationId)
+            null -> Unit
+        }
     }
 
     private fun wireCollectors() {
-        stateCollectorJob?.cancel()
-        stateCollectorJob = scope.launch {
+        collectorJobs.forEach { it.cancel() }
+        collectorJobs.clear()
+
+        collectorJobs += scope.launch {
             GMessagesClient.state.collect { s ->
-                _connectionStates.value = _connectionStates.value + (MessageSource.MESSAGES_WEB to s)
+                _connectionStates.value =
+                    _connectionStates.value + (MessageSource.MESSAGES_WEB to s.toUnified())
             }
         }
-        eventCollectorJob?.cancel()
-        eventCollectorJob = scope.launch {
+        collectorJobs += scope.launch {
+            GVoiceClient.state.collect { s ->
+                _connectionStates.value =
+                    _connectionStates.value + (MessageSource.VOICE to s.toUnified())
+            }
+        }
+        collectorJobs += scope.launch {
             GMessagesClient.events.collect { handleEvent(it) }
+        }
+        collectorJobs += scope.launch {
+            GVoiceClient.events.collect { handleEvent(it) }
         }
     }
 
@@ -198,6 +244,7 @@ object MessagesSessionManager {
 
     private fun sourceFor(conversationId: String): MessageSource? = when {
         conversationId.startsWith("${MessageSource.MESSAGES_WEB.idPrefix}:") -> MessageSource.MESSAGES_WEB
+        conversationId.startsWith("${MessageSource.VOICE.idPrefix}:") -> MessageSource.VOICE
         else -> null
     }
 }

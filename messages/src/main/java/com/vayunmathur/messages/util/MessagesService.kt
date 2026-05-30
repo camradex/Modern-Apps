@@ -17,7 +17,7 @@ import com.vayunmathur.messages.MainActivity
 import com.vayunmathur.messages.R
 import com.vayunmathur.messages.data.MessageSource
 import com.vayunmathur.messages.gmessages.GMEvent
-import com.vayunmathur.messages.gmessages.GMessagesClient
+import com.vayunmathur.messages.util.SourceConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -140,7 +140,7 @@ class MessagesService : Service() {
         }
     }
 
-    private fun buildSyncNotification(states: Map<MessageSource, GMessagesClient.State>): Notification {
+    private fun buildSyncNotification(states: Map<MessageSource, SourceConnectionState>): Notification {
         val tap = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -168,12 +168,18 @@ class MessagesService : Service() {
         return builder.build()
     }
 
-    private fun describeStates(states: Map<MessageSource, GMessagesClient.State>): String {
-        val msgsConnected = states[MessageSource.MESSAGES_WEB] is GMessagesClient.State.Connected
-        return if (msgsConnected) {
-            getString(R.string.notification_sync_text_messages)
-        } else {
-            getString(R.string.notification_sync_text_none)
+    private fun describeStates(states: Map<MessageSource, SourceConnectionState>): String {
+        val msgsConnected = states[MessageSource.MESSAGES_WEB] is SourceConnectionState.Connected
+        val voiceConnected = states[MessageSource.VOICE] is SourceConnectionState.Connected
+        return when {
+            msgsConnected && voiceConnected ->
+                getString(R.string.notification_sync_text_both)
+            msgsConnected ->
+                getString(R.string.notification_sync_text_messages)
+            voiceConnected ->
+                getString(R.string.notification_sync_text_voice)
+            else ->
+                getString(R.string.notification_sync_text_none)
         }
     }
 

@@ -1,0 +1,316 @@
+package com.vayunmathur.messages.gvoice
+
+import android.content.Context
+import android.util.Log
+import com.vayunmathur.messages.data.MessageSource
+import com.vayunmathur.messages.gmessages.GMEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import requests.Requests
+import responses.Responses
+import threads.Threads
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Process-global owner of the Google Voice protocol session.
+ *
+ * Mirrors the [com.vayunmathur.messages.gmessages.GMessagesClient]
+ * pattern: a singleton with a state machine, an event flow, and
+ * persistence backed by DataStore. Both this and the gmessages client
+ * fan their events into the same [com.vayunmathur.messages.util.MessagesSessionManager]
+ * which writes the unified Room DB.
+ */
+object GVoiceClient {
+
+    private const val TAG = "GVoiceClient"
+
+    sealed interface State {
+        data object Idle : State
+        /** Awaiting user-pasted cookies — UI shows the paste form. */
+        data object NeedsSetup : State
+        data object Connecting : State
+        data object Connected : State
+        data class Disconnected(val reason: String) : State
+    }
+
+    val source: MessageSource = MessageSource.VOICE
+
+    private val _state = MutableStateFlow<State>(State.Idle)
+    val state: StateFlow<State> = _state.asStateFlow()
+
+    private val _events = MutableSharedFlow<GMEvent>(extraBufferCapacity = 256)
+    val events: SharedFlow<GMEvent> = _events.asSharedFlow()
+
+    private val initialized = AtomicBoolean(false)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private lateinit var appContext: Context
+    @Volatile private var rpc: GVoiceRpcClient? = null
+    private var realtime: RealtimeChannel? = null
+    private var backfillJob: Job? = null
+
+    fun init(context: Context) {
+        if (!initialized.compareAndSet(false, true)) return
+        appContext = context.applicationContext
+        Log.i(TAG, "init")
+        runBlocking {
+            val auth = VoiceAuthData.load(appContext)
+            if (auth?.hasRequired() == true) {
+                Log.i(TAG, "resuming from persisted cookies")
+                bootSession(auth)
+            } else {
+                _state.value = State.NeedsSetup
+            }
+        }
+    }
+
+    fun start() {
+        if (!initialized.get()) return
+        if (_state.value is State.Connected) return
+        scope.launch {
+            val auth = VoiceAuthData.load(appContext)
+            if (auth?.hasRequired() == true) bootSession(auth)
+            else _state.value = State.NeedsSetup
+        }
+    }
+
+    fun stop() {
+        Log.i(TAG, "stop — clearing Voice session")
+        backfillJob?.cancel()
+        realtime?.stop()
+        realtime = null
+        rpc?.close()
+        rpc = null
+        scope.launch { VoiceAuthData.clear(appContext) }
+        _state.value = State.NeedsSetup
+    }
+
+    /**
+     * Validate the user-supplied cookies via a GetAccount round-trip;
+     * on success, persist + start the session. Returns null on success
+     * (and transitions state to Connecting → Connected), or a
+     * human-readable error message on failure.
+     */
+    suspend fun submitCookies(cookies: Map<String, String>): String? {
+        val missing = CookieParser.missingRequired(cookies)
+        if (missing.isNotEmpty()) return "Missing required cookies: ${missing.joinToString(", ")}"
+        _state.value = State.Connecting
+        val client = GVoiceRpcClient(cookies)
+        val accountOk = try {
+            val acc = client.postPbLite(
+                url = VoiceEndpoints.EndpointGetAccount,
+                body = Requests.ReqGetAccount.getDefaultInstance(),
+                responseTemplate = Responses.RespGetAccount.getDefaultInstance(),
+            )
+            Log.i(TAG, "GetAccount OK; primary=${acc.account.primaryDestinationID}")
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "GetAccount failed: ${t.message}")
+            client.close()
+            _state.value = State.NeedsSetup
+            return "Sign-in failed: ${t.message?.take(160) ?: "unknown error"}"
+        }
+        if (!accountOk) return "Sign-in validation failed"
+        val authData = VoiceAuthData(cookies)
+        authData.save(appContext)
+        // Tear down any previous session before booting the new one.
+        realtime?.stop()
+        rpc?.close()
+        rpc = client
+        bootSession(authData)
+        return null
+    }
+
+    /** Trigger a re-list of conversations. */
+    fun forceResync() {
+        if (_state.value !is State.Connected) return
+        kickoffBackfill()
+    }
+
+    /** Load (or refresh) messages for a thread. */
+    fun fetchMessages(conversationId: String, count: Int = 100) {
+        if (_state.value !is State.Connected) return
+        scope.launch {
+            val client = rpc ?: return@launch
+            val webId = conversationId.substringAfter(':', conversationId)
+            Log.i(TAG, "fetchMessages threadId=$webId count=$count")
+            val req = Requests.ReqGetThread.newBuilder()
+                .setThreadID(webId)
+                .setMaybeMessageCount(count)
+                .build()
+            val resp = try {
+                client.postPbLite(
+                    url = VoiceEndpoints.EndpointGetThread,
+                    body = req,
+                    responseTemplate = Responses.RespGetThread.getDefaultInstance(),
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "GetThread failed: ${t.message}")
+                return@launch
+            }
+            if (!resp.hasThread()) return@launch
+            val thread = resp.thread
+            for (i in 0 until thread.messagesCount) {
+                emitMessage(thread.getID(), thread.getMessages(i))
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Internals
+    // ----------------------------------------------------------------
+
+    private fun bootSession(auth: VoiceAuthData) {
+        val client = rpc ?: GVoiceRpcClient(auth.cookies).also { rpc = it }
+        client.updateCookies(auth.cookies)
+        rpc = client
+
+        _state.value = State.Connected
+        realtime?.stop()
+        realtime = RealtimeChannel(client) { evt ->
+            when (evt) {
+                RealtimeEvent.Connected -> Log.i(TAG, "realtime connected")
+                is RealtimeEvent.Data -> handleRealtimeData(evt.event)
+            }
+        }.also { it.start(scope) }
+        kickoffBackfill()
+    }
+
+    private fun kickoffBackfill() {
+        backfillJob?.cancel()
+        backfillJob = scope.launch {
+            val client = rpc ?: return@launch
+            Log.i(TAG, "ListThreads (TEXT_THREADS)")
+            val req = Requests.ReqListThreads.newBuilder()
+                .setFolder(Threads.ThreadFolder.TEXT_THREADS)
+                // libgv hard-codes these "unknown" fields — 20 on the
+                // first call (10 on subsequent), 15 for the second.
+                // Without them the server returns 0 threads even though
+                // the account has real conversations.
+                .setUnknownInt2(20)
+                .setUnknownInt3(15)
+                .build()
+            val resp = try {
+                client.postPbLite(
+                    url = VoiceEndpoints.EndpointListThreads,
+                    body = req,
+                    responseTemplate = Responses.RespListThreads.getDefaultInstance(),
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "ListThreads failed: ${t.message}")
+                _state.value = State.Disconnected(t.message ?: "ListThreads failed")
+                return@launch
+            }
+            Log.i(TAG, "ListThreads: ${resp.threadsCount} threads")
+            for (i in 0 until resp.threadsCount) {
+                emitConversation(resp.getThreads(i))
+            }
+        }
+    }
+
+    private suspend fun handleRealtimeData(evt: webchannel.Webchannel.WebChannelEvent) {
+        // Each realtime event can carry thread updates / new message
+        // notifications. The shape is deeply nested; for v1 just
+        // re-trigger the backfill on any event — it's cheap and
+        // guarantees consistency until we wire per-event decoding.
+        Log.d(TAG, "realtime event arrayID=${evt.arrayID} wrappers=${evt.dataWrapperCount}")
+        kickoffBackfill()
+    }
+
+    private suspend fun emitConversation(t: Threads.Thread) {
+        val contact = if (t.contactsCount > 0) t.getContacts(0) else null
+        val peerPhone = contact?.phoneNumber?.takeIf { it.isNotBlank() }
+        // Lookup in device contacts (same as the gmessages path).
+        val device = peerPhone?.let {
+            com.vayunmathur.messages.util.ContactResolver.lookup(appContext, it)
+        }
+
+        val isGroup = t.contactsCount > 1
+        val displayName: String? = when {
+            isGroup -> {
+                val names = (0 until t.contactsCount).mapNotNull { idx ->
+                    val c = t.getContacts(idx)
+                    val phone = c.phoneNumber.takeIf { it.isNotBlank() }
+                    val deviceName = phone?.let {
+                        com.vayunmathur.messages.util.ContactResolver.lookup(appContext, it)?.displayName
+                    }
+                    deviceName ?: c.name.takeIf { n -> n.isNotBlank() } ?: phone
+                }
+                when {
+                    names.isEmpty() -> "Group"
+                    names.size <= 2 -> names.joinToString(", ")
+                    else -> names.take(2).joinToString(", ") + " & ${names.size - 2} others"
+                }
+            }
+            else -> device?.displayName ?: peerPhone ?: contact?.name?.takeIf { it.isNotBlank() }
+        }
+
+        val latest: Threads.Message? = if (t.messagesCount > 0) {
+            t.getMessages(t.messagesCount - 1)
+        } else null
+        val preview = latest?.text?.takeIf { it.isNotBlank() }
+        // Voice's Message.timestamp is epoch-milliseconds (confirmed
+        // against mautrix-gvoice's `time.UnixMilli(msg.Timestamp)`).
+        // Don't scale.
+        val tsMillis = latest?.timestamp ?: 0L
+
+        _events.emit(
+            GMEvent.ConversationUpdate(
+                source = source,
+                conversationId = t.getID(),
+                peerName = displayName,
+                peerPhone = if (isGroup) null else peerPhone,
+                avatarUrl = device?.photoUri,
+                lastPreview = preview,
+                lastTimestamp = tsMillis,
+                // `Thread.read = false` means there are unread messages.
+                unreadCount = if (!t.read) 1 else 0,
+                isGroup = isGroup,
+                participantCount = t.contactsCount,
+                conversationType = "Voice",
+            )
+        )
+    }
+
+    private suspend fun emitMessage(threadId: String, m: Threads.Message) {
+        // Skip non-text messages (calls / voicemail / etc.) for v1.
+        if (m.text.isBlank()) return
+        val outgoing = m.type == Threads.Message.Type.SMS_OUT
+        val tsMs = m.timestamp
+        val peerPhone = if (m.hasContact()) m.contact.phoneNumber.takeIf { it.isNotBlank() } else null
+        _events.emit(
+            GMEvent.MessageUpdate(
+                source = source,
+                conversationId = threadId,
+                messageId = m.getID(),
+                body = m.text,
+                outgoing = outgoing,
+                timestamp = tsMs,
+                senderName = if (m.hasContact()) m.contact.name.takeIf { it.isNotBlank() } else null,
+            )
+        )
+        if (!outgoing) {
+            _events.emit(
+                GMEvent.IncomingMessage(
+                    source = source,
+                    conversationId = threadId,
+                    messageId = m.getID(),
+                    body = m.text,
+                    peerName = if (m.hasContact()) m.contact.name.takeIf { it.isNotBlank() } else null,
+                    peerPhone = peerPhone,
+                    timestamp = tsMs,
+                )
+            )
+        }
+    }
+}

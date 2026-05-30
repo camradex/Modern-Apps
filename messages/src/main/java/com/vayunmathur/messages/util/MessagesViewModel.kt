@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vayunmathur.messages.data.MessagesDatabase
-import com.vayunmathur.messages.gmessages.GMessagesClient
 import kotlinx.coroutines.launch
 
 /**
@@ -38,7 +37,7 @@ class MessagesViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun fetchMessages(conversationId: String) {
-        GMessagesClient.fetchMessages(conversationId)
+        MessagesSessionManager.fetchMessages(conversationId)
     }
 
     fun markRead(conversationId: String) {
