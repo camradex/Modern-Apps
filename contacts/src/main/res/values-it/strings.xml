@@ -76,4 +76,16 @@
     <string name="search_contacts">Cerca contatti</string>
     <string name="include_year">Inclusi anno</string>
     <string name="display">Mostra</string>
+    <string name="system_default">Predefinito di sistema</string>
+    <string name="signal">Signal</string>
+    <string name="whatsapp">WhatsApp</string>
+    <string name="contacts">Contatti</string>
+    <string name="groups">Gruppi</string>
+    <string name="select_group_hint">Seleziona un gruppo per visualizzare i contatti</string>
+    <string name="add_to_group">Aggiungi al gruppo</string>
+    <string name="add_group">Aggiungi gruppo</string>
+    <string name="group_name">Nome gruppo</string>
+    <string name="enter_group_name">Inserisci nome gruppo</string>
+    <string name="delete_group_title">Elimina gruppo</string>
+    <string name="delete_group_confirm">Sei sicuro di voler eliminare questo gruppo? I contatti non verranno eliminati.</string>
 </resources>
