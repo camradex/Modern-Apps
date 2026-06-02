@@ -34,4 +34,12 @@
     <string name="video_stat_format">%1$s vaatamist • %2$s</string>
     <string name="label_description">Kirjeldus</string>
     <string name="label_loading_subscriptions">Viimased tellimused on laadimisel</string>
+    <string name="title_settings">Seadistused</string>
+    <string name="label_sponsorblock">Võta SponsorBlock kasutusele</string>
+    <string name="label_sponsorblock_description">Jäta sponsorite lõigud videotest automaatselt vahele</string>
+    <string name="label_backup_restore">Varundus ja taastamine</string>
+    <string name="label_restore_youpipe">Taasta YouPipe\'i varukoopiast</string>
+    <string name="label_import_newpipe">Impordi NewPipe\'i tellimused</string>
+    <string name="label_import_youtube">Impordi YouTube\'ist (Takeout-liidestus)</string>
+    <string name="label_export_youpipe">Ekspordi tellimused</string>
 </resources>
