@@ -31,4 +31,10 @@
     <string name="enable_feature">Abilita funzionalità</string>
     <string name="disable_ocr">Disabilita indicizzazione AI</string>
     <string name="indexing_progress_details">%1$d di %2$d foto processate</string>
+    <string name="search_placeholder">Cerca foto…</string>
+    <string name="enable_ai_search_title">Abilita ricerca AI</string>
+    <string name="enable_ai_search_description">Scarica il modello AI per cercare foto in base a contenuto e testo</string>
+    <string name="enable_ai_search_button">Abilita</string>
+    <string name="model_downloading_title">Scaricamento del modello AI</string>
+    <string name="model_downloading_description">Scaricamento del modello AI in corso. L\'operazione potrebbe richiedere alcuni minuti a seconda della tua connessione.</string>
 </resources>
