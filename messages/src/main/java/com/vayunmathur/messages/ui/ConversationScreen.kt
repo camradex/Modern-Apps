@@ -2,6 +2,7 @@ package com.vayunmathur.messages.ui
 
 import android.content.ContentUris
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -152,11 +154,11 @@ fun ConversationScreen(
                                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
                                 Uri.encode(phone)
                             )
-                            val contactId = ctx.contentResolver.query(
+                            val contactId: Long? = ctx.contentResolver.query(
                                 lookupUri,
                                 arrayOf(ContactsContract.PhoneLookup._ID),
                                 null, null, null
-                            )?.use { cursor ->
+                            )?.use { cursor: Cursor ->
                                 if (cursor.moveToFirst()) cursor.getLong(0) else null
                             }
                             val editIntent = if (contactId != null) {
