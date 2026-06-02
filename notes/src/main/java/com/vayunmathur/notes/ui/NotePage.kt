@@ -1,10 +1,14 @@
 package com.vayunmathur.notes.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.vayunmathur.library.ui.IconCopy
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconNavigation
@@ -138,11 +143,21 @@ fun NotePage(
                 )
             }
         }, navigationIcon = {
-            IconNavigation {
-                if (showSearchBar) {
-                    showSearchBar = false
-                } else {
-                    backStack.pop()
+            Row {
+                IconNavigation {
+                    if (showSearchBar) {
+                        showSearchBar = false
+                    } else {
+                        backStack.pop()
+                    }
+                }
+                if (!showSearchBar) {
+                    IconButton({
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("note", note.content))
+                    }) {
+                        IconCopy()
+                    }
                 }
             }
         }, actions = {
