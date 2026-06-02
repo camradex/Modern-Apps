@@ -104,13 +104,16 @@ fun VideoPlayer(
     val videoState by ypvm.videoState.collectAsState()
     val sponsorSegments = videoState.sponsorSegments.filter { it.category in sponsorBlockCategories }
 
+    if (videoStreams.isEmpty()) return
+
+    val hasAudio = audioStreams.isNotEmpty()
     var languages by remember { mutableStateOf(audioStreams.map { it.language }.distinct().sorted()) }
-    var language by remember { mutableStateOf(if("en" in languages) "en" else languages.first()) }
+    var language by remember { mutableStateOf(if("en" in languages) "en" else languages.firstOrNull() ?: "") }
     val audioStreamOptions = audioStreams.filter { it.language == language }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var currentVideoStream by remember { mutableStateOf(videoStreams.first()) }
-    var currentAudioStream by remember { mutableStateOf(audioStreamOptions.first()) }
+    var currentAudioStream by remember { mutableStateOf(audioStreamOptions.firstOrNull()) }
     var isControlsVisible by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var bufferedPosition by remember { mutableLongStateOf(0L) }
@@ -209,20 +212,20 @@ fun VideoPlayer(
     LaunchedEffect(controller, currentVideoStream, currentAudioStream, videoInfo.name, videoInfo.author) {
         val player = controller ?: return@LaunchedEffect
 
-        // Pack the audio URI into the extras bundle
-        val extras = Bundle().apply {
-            putString("extra_audio_uri", currentAudioStream.url)
-        }
-
-        val metadata = MediaMetadata.Builder()
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(videoInfo.name)
             .setArtist(videoInfo.author)
-            .setExtras(extras) // Pass the extras bundle
-            .build()
+
+        currentAudioStream?.let { audio ->
+            val extras = Bundle().apply {
+                putString("extra_audio_uri", audio.url)
+            }
+            metadataBuilder.setExtras(extras)
+        }
 
         val mediaItem = MediaItem.Builder()
-            .setUri(currentVideoStream.url) // This becomes the Video source
-            .setMediaMetadata(metadata)
+            .setUri(currentVideoStream.url)
+            .setMediaMetadata(metadataBuilder.build())
             .build()
 
         player.setMediaItem(mediaItem, timeWatched)
@@ -308,44 +311,46 @@ fun VideoPlayer(
                         }
                     }
 
-                    Box {
-                        Surface(
-                            onClick = { isLanguageMenuExpanded = true },
-                            color = Color.Black.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = language, color = Color.White, style = MaterialTheme.typography.labelMedium)
-                                Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
+                    if (hasAudio) {
+                        Box {
+                            Surface(
+                                onClick = { isLanguageMenuExpanded = true },
+                                color = Color.Black.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = language, color = Color.White, style = MaterialTheme.typography.labelMedium)
+                                    Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
+                                }
+                            }
+                            DropdownMenu(expanded = isLanguageMenuExpanded, onDismissRequest = { isLanguageMenuExpanded = false }) {
+                                languages.forEach { stream ->
+                                    DropdownMenuItem(
+                                        text = { Text(stream) },
+                                        onClick = { language = stream; currentAudioStream = audioStreams.find { it.language == stream && it.bitrate == currentAudioStream?.bitrate } ?: audioStreams.first { it.language == stream }; isAudioMenuExpanded = false }
+                                    )
+                                }
                             }
                         }
-                        DropdownMenu(expanded = isLanguageMenuExpanded, onDismissRequest = { isLanguageMenuExpanded = false }) {
-                            languages.forEach { stream ->
-                                DropdownMenuItem(
-                                    text = { Text(stream) },
-                                    onClick = { language = stream; currentAudioStream = audioStreams.find { it.language == stream && it.bitrate == currentAudioStream.bitrate } ?: audioStreams.first { it.language == stream }; isAudioMenuExpanded = false }
-                                )
-                            }
-                        }
-                    }
 
-                    Box {
-                        Surface(
-                            onClick = { isAudioMenuExpanded = true },
-                            color = Color.Black.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "${currentAudioStream.bitrate / 1000}kbps (${getAudioCodecName(currentAudioStream.codec)})", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                                Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
+                        Box {
+                            Surface(
+                                onClick = { isAudioMenuExpanded = true },
+                                color = Color.Black.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "${(currentAudioStream?.bitrate ?: 0) / 1000}kbps (${getAudioCodecName(currentAudioStream?.codec ?: "")})", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                                    Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
+                                }
                             }
-                        }
-                        DropdownMenu(expanded = isAudioMenuExpanded, onDismissRequest = { isAudioMenuExpanded = false }) {
-                            audioStreamOptions.forEach { stream ->
-                                DropdownMenuItem(
-                                    text = { Text("${stream.bitrate / 1000}kbps (${getAudioCodecName(stream.codec)})") },
-                                    onClick = { currentAudioStream = stream; isAudioMenuExpanded = false }
-                                )
+                            DropdownMenu(expanded = isAudioMenuExpanded, onDismissRequest = { isAudioMenuExpanded = false }) {
+                                audioStreamOptions.forEach { stream ->
+                                    DropdownMenuItem(
+                                        text = { Text("${stream.bitrate / 1000}kbps (${getAudioCodecName(stream.codec)})") },
+                                        onClick = { currentAudioStream = stream; isAudioMenuExpanded = false }
+                                    )
+                                }
                             }
                         }
                     }

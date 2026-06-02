@@ -114,6 +114,7 @@ fun VideoPage(
         ypvm.loadVideo(videoID, downloadedVideo)
     }
     LaunchedEffect(downloadedVideo) {
+        downloadedVideo
         downloadedVideo?.let { ypvm.applyDownloadedStreams(it) }
     }
 
@@ -170,8 +171,10 @@ fun VideoPage(
         val modifier = if(isFullscreen) Modifier.padding(top = paddingValues.calculateTopPadding(), bottom = paddingValues.calculateBottomPadding()) else Modifier.padding(paddingValues)
         Column(modifier) {
             videoData?.let { videoData ->
-                VideoPlayer(ypvm, VideoInfo(videoData.title, videoID, videoData.duration, videoData.views, videoData.uploadDate, videoData.thumbnailURL, videoData.author), videoStreams, audioStreams, segments, isFullscreen) {
-                    isFullscreen = it
+                if (videoStreams.isNotEmpty()) {
+                    VideoPlayer(ypvm, VideoInfo(videoData.title, videoID, videoData.duration, videoData.views, videoData.uploadDate, videoData.thumbnailURL, videoData.author), videoStreams, audioStreams, segments, isFullscreen) {
+                        isFullscreen = it
+                    }
                 }
                 VideoDetails(backStack, ypvm, videoData, videoID, videoStreams, audioStreams)
 

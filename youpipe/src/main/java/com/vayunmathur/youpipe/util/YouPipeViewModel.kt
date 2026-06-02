@@ -282,59 +282,85 @@ class YouPipeViewModel(
                         segments = ex.streamSegments.map {
                             VideoChapter(it.startTimeSeconds * 1000, it.title, it.previewUrl)
                         }
-                        videoStreams = ex.videoOnlyStreams.map { stream ->
-                            val codecStr = stream.codec ?: ""
-                            val codec = when {
-                                codecStr.contains("av01", ignoreCase = true) -> "av1"
-                                codecStr.contains("vp9", ignoreCase = true) || codecStr.contains("vp09", ignoreCase = true) -> "vp9"
-                                codecStr.contains("avc", ignoreCase = true) || codecStr.contains("h264", ignoreCase = true) -> "avc"
-                                else -> codecStr
-                            }
-                            VideoStream(
-                                stream.content,
-                                stream.width,
-                                stream.height,
-                                stream.bitrate,
-                                stream.fps,
-                                "${stream.height}p",
-                                codec,
-                                stream.itagItem?.contentLength ?: 0L
-                            )
-                        }.sortedWith(
-                            compareByDescending<VideoStream> { it.height }
-                                .thenByDescending {
-                                    when (it.codec) {
-                                        "av1" -> 3
-                                        "vp9" -> 2
-                                        "avc" -> 1
-                                        else -> 0
-                                    }
+                        val rawVideoOnly = ex.videoOnlyStreams
+                        val rawAudio = ex.audioStreams
+
+                        if (rawVideoOnly.isNotEmpty() && rawAudio.isNotEmpty()) {
+                            videoStreams = rawVideoOnly.map { stream ->
+                                val codecStr = stream.codec ?: ""
+                                val codec = when {
+                                    codecStr.contains("av01", ignoreCase = true) -> "av1"
+                                    codecStr.contains("vp9", ignoreCase = true) || codecStr.contains("vp09", ignoreCase = true) -> "vp9"
+                                    codecStr.contains("avc", ignoreCase = true) || codecStr.contains("h264", ignoreCase = true) -> "avc"
+                                    else -> codecStr
                                 }
-                        )
-                        audioStreams = ex.audioStreams.map { stream ->
-                            val codecStr = stream.codec ?: ""
-                            val codec = when {
-                                codecStr.contains("opus", ignoreCase = true) -> "opus"
-                                codecStr.contains("mp4a", ignoreCase = true) || codecStr.contains("aac", ignoreCase = true) -> "aac"
-                                else -> codecStr
-                            }
-                            AudioStream(
-                                stream.content,
-                                stream.bitrate,
-                                stream.audioLocale?.language ?: "Default",
-                                codec,
-                                stream.itagItem?.contentLength ?: 0L
-                            )
-                        }.sortedWith(
-                            compareByDescending<AudioStream> { it.bitrate }
-                                .thenByDescending {
-                                    when (it.codec) {
-                                        "opus" -> 2
-                                        "aac" -> 1
-                                        else -> 0
+                                VideoStream(
+                                    stream.content,
+                                    stream.width,
+                                    stream.height,
+                                    stream.bitrate,
+                                    stream.fps,
+                                    "${stream.height}p",
+                                    codec,
+                                    stream.itagItem?.contentLength ?: 0L
+                                )
+                            }.sortedWith(
+                                compareByDescending<VideoStream> { it.height }
+                                    .thenByDescending {
+                                        when (it.codec) {
+                                            "av1" -> 3
+                                            "vp9" -> 2
+                                            "avc" -> 1
+                                            else -> 0
+                                        }
                                     }
+                            )
+                            audioStreams = rawAudio.map { stream ->
+                                val codecStr = stream.codec ?: ""
+                                val codec = when {
+                                    codecStr.contains("opus", ignoreCase = true) -> "opus"
+                                    codecStr.contains("mp4a", ignoreCase = true) || codecStr.contains("aac", ignoreCase = true) -> "aac"
+                                    else -> codecStr
                                 }
-                        )
+                                AudioStream(
+                                    stream.content,
+                                    stream.bitrate,
+                                    stream.audioLocale?.language ?: "Default",
+                                    codec,
+                                    stream.itagItem?.contentLength ?: 0L
+                                )
+                            }.sortedWith(
+                                compareByDescending<AudioStream> { it.bitrate }
+                                    .thenByDescending {
+                                        when (it.codec) {
+                                            "opus" -> 2
+                                            "aac" -> 1
+                                            else -> 0
+                                        }
+                                    }
+                            )
+                        } else {
+                            videoStreams = ex.videoStreams.map { stream ->
+                                val codecStr = stream.codec ?: ""
+                                val codec = when {
+                                    codecStr.contains("av01", ignoreCase = true) -> "av1"
+                                    codecStr.contains("vp9", ignoreCase = true) || codecStr.contains("vp09", ignoreCase = true) -> "vp9"
+                                    codecStr.contains("avc", ignoreCase = true) || codecStr.contains("h264", ignoreCase = true) -> "avc"
+                                    else -> codecStr
+                                }
+                                VideoStream(
+                                    stream.content,
+                                    stream.width,
+                                    stream.height,
+                                    stream.bitrate,
+                                    stream.fps,
+                                    "${stream.height}p",
+                                    codec,
+                                    stream.itagItem?.contentLength ?: 0L
+                                )
+                            }.sortedWith(compareByDescending { it.height })
+                            audioStreams = emptyList()
+                        }
                     } else {
                         videoStreams = listOf(VideoStream(downloadedVideo.filePath, 1920, 1080, 0, 30, "Downloaded", "avc", 0L))
                         audioStreams = if (downloadedVideo.audioPath != null)
@@ -354,14 +380,15 @@ class YouPipeViewModel(
                         ex.uploaderAvatars.first().url,
                         ex.description.content.fromHTML()
                     )
-                    val related = ex.relatedItems?.items?.filterIsInstance<StreamInfoItem>()?.map {
+                    val related = ex.relatedItems?.items?.filterIsInstance<StreamInfoItem>()?.mapNotNull {
+                        val date = it.uploadDate ?: return@mapNotNull null
                         VideoInfo(
                             HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                             videoURLtoID(it.url),
                             it.duration,
                             it.viewCount,
-                            it.uploadDate!!.instant.toKotlinInstant(),
-                            it.thumbnails.first().url,
+                            date.instant.toKotlinInstant(),
+                            it.thumbnails.firstOrNull()?.url ?: "",
                             HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
                         )
                     } ?: emptyList()
