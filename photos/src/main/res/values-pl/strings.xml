@@ -28,7 +28,13 @@
     <string name="image_understanding_description">Ta funkcja wymaga zainstalowania aplikacji OpenAssistant i wykorzystuje jej lokalne modele do przetwarzania obrazów na urządzeniu.</string>
     <string name="openassistant_not_found">Aplikacja OpenAssistant nie jest zainstalowana. Zainstaluj ją, aby włączyć tę funkcję.</string>
     <string name="enable_feature">Włącz funkcję</string>
-    <string name="disable_ocr">Wyłącz indeksowanie AI</string>
+    <string name="disable_ocr">Wyłącz indeksowanie SI</string>
     <string name="indexing_progress_details">Przetworzono %1$d z %2$d zdjęć</string>
     <string name="close">Zamknij</string>
+    <string name="search_placeholder">Szukaj zdjęć…</string>
+    <string name="enable_ai_search_title">Włącz wyszukiwanie SI</string>
+    <string name="enable_ai_search_description">Pobierz model SI do wyszukiwania zdjęć według treści i tekstu</string>
+    <string name="enable_ai_search_button">Włącz</string>
+    <string name="model_downloading_title">Pobieranie modelu SI</string>
+    <string name="model_downloading_description">Trwa pobieranie modelu SI. Może to potrwać kilka minut, w zależności od połączenia.</string>
 </resources>
