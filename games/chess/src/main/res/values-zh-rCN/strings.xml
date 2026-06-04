@@ -1,3 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Chess</string>
+    <string name="start_new_game">开始新游戏</string>
+    <string name="play_as">"执棋方    "</string>
+    <string name="color_white">白方</string>
+    <string name="color_black">黑方</string>
+    <string name="difficulty_easy">简单</string>
+    <string name="difficulty_medium">中等</string>
+    <string name="difficulty_hard">困难</string>
+    <string name="difficulty_master">大师</string>
+    <string name="start_game">开始游戏</string>
+    <string name="new_game">新游戏</string>
+    <string name="two_player_local">本地双人</string>
+    <string name="human_vs_ai">人机对弈</string>
+    <string name="promote_pawn">兵升变</string>
+    <string name="check">将军！</string>
+    <string name="checkmate_wins">将死！%1$s 获胜。</string>
+    <string name="white_wins">将死！白方获胜。</string>
+    <string name="black_wins">将死！黑方获胜。</string>
+    <string name="piece_white_king">白王</string>
+    <string name="piece_white_queen">白后</string>
+    <string name="piece_white_rook">白车</string>
+    <string name="piece_white_bishop">白象</string>
+    <string name="piece_white_knight">白马</string>
+    <string name="piece_white_pawn">白兵</string>
+    <string name="piece_black_king">黑王</string>
+    <string name="piece_black_queen">黑后</string>
+    <string name="piece_black_rook">黑车</string>
+    <string name="piece_black_bishop">黑象</string>
+    <string name="piece_black_knight">黑马</string>
+    <string name="piece_black_pawn">黑兵</string>
 </resources>
