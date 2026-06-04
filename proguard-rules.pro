@@ -16,6 +16,9 @@
 # LiteRT LM / Gemma 4
 -keep class com.google.ai.edge.litertlm.** { *; }
 
+# LiteRT Core - prevent R8 from deleting LiteRT classes used via reflection
+-keep class com.google.ai.edge.litert.** { *; }
+
 -keepclasseswithmembernames class * {
     native <methods>;
 }

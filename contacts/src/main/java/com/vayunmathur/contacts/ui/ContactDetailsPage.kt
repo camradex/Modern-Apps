@@ -2,9 +2,11 @@ package com.vayunmathur.contacts.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,9 +50,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -280,21 +284,36 @@ fun ContactDetailsPage(
 
             if(details.dates.isNotEmpty()) {
                 item {
+                    val clipboardManager = LocalClipboardManager.current
                     GroupedSection(title = stringResource(R.string.about_name, contact!!.name.firstName)) {
                         contact!!.birthday?.let { birthday ->
+                            val birthdayText = birthday.startDate.formatDisplay()
                             ListItem(
-                                headlineContent = { Text(birthday.startDate.formatDisplay()) },
+                                headlineContent = { Text(birthdayText) },
                                 supportingContent = { Text(stringResource(R.string.birthday)) },
                                 leadingContent = { Icon(painterResource(R.drawable.outline_cake_24), birthday.typeString(context)) },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                modifier = Modifier.combinedClickable(
+                                    onClick = { },
+                                    onLongClick = {
+                                        clipboardManager.setText(AnnotatedString(birthdayText))
+                                    }
+                                )
                             )
                         }
                         details.dates.filter{it.type != CDKEvent.TYPE_BIRTHDAY }.forEach { event ->
+                            val eventText = event.startDate.formatDisplay()
                             ListItem(
-                                headlineContent = { Text(event.startDate.formatDisplay()) },
+                                headlineContent = { Text(eventText) },
                                 supportingContent = { Text(event.typeString(context)) },
                                 leadingContent = { Icon(painterResource(R.drawable.outline_event_24), event.typeString(context)) },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                modifier = Modifier.combinedClickable(
+                                    onClick = { },
+                                    onLongClick = {
+                                        clipboardManager.setText(AnnotatedString(eventText))
+                                    }
+                                )
                             )
                         }
                     }
@@ -303,12 +322,45 @@ fun ContactDetailsPage(
             
             if (contact?.note?.content?.isNotEmpty() == true) {
                 item {
+                    val clipboardManager = LocalClipboardManager.current
                     GroupedSection(title = stringResource(R.string.note)) {
-                        Text(
-                            text = contact!!.note.content,
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = { },
+                                    onLongClick = {
+                                        clipboardManager.setText(AnnotatedString(contact!!.note.content))
+                                    }
+                                )
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = contact!!.note.content,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (details.groups.isNotEmpty()) {
+                item {
+                    val allGroups by viewModel.groups.collectAsState()
+                    val contactGroups = allGroups.filter { group ->
+                        details.groups.any { it.groupId == group.id } && group.name.trim().isNotEmpty()
+                    }
+                    if (contactGroups.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            contactGroups.forEachIndexed { index, group ->
+                                DetailItem(
+                                    icon = painterResource(R.drawable.baseline_group_24),
+                                    data = group.name,
+                                    label = stringResource(R.string.groups),
+                                    shape = groupShape(index, contactGroups.size),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -487,6 +539,7 @@ fun ActionButton(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DetailItem(
     icon: Painter,
@@ -504,12 +557,30 @@ fun DetailItem(
      */
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
 ) {
+    val clipboardManager = LocalClipboardManager.current
+
     Surface(
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = {
+                            clipboardManager.setText(AnnotatedString(data))
+                        }
+                    )
+                } else {
+                    Modifier.combinedClickable(
+                        onClick = { },
+                        onLongClick = {
+                            clipboardManager.setText(AnnotatedString(data))
+                        }
+                    )
+                }
+            )
     ) {
         ListItem(
             headlineContent = {

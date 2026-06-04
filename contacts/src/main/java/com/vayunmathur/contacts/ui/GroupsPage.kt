@@ -33,10 +33,16 @@ fun GroupsPage(viewModel: ContactViewModel, backStack: NavBackStack<Route>, expa
     val groups by viewModel.groups.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
+    var groupToDelete by remember { mutableStateOf<com.vayunmathur.contacts.data.ContactGroup?>(null) }
     val expandedGroups = remember { 
         val list = mutableStateListOf<Long>()
         expandGroupId?.let { list.add(it) }
         list
+    }
+
+    // When on Groups page, back should navigate to Contacts page
+    androidx.activity.compose.BackHandler {
+        backStack.setLast(Route.ContactsList)
     }
 
     Scaffold(
@@ -129,7 +135,7 @@ fun GroupsPage(viewModel: ContactViewModel, backStack: NavBackStack<Route>, expa
                                     }
                                 },
                                 trailingContent = {
-                                    IconButton(onClick = { viewModel.deleteGroup(group.id) }) {
+                                    IconButton(onClick = { groupToDelete = group }) {
                                         IconDelete()
                                     }
                                 },
@@ -194,6 +200,27 @@ fun GroupsPage(viewModel: ContactViewModel, backStack: NavBackStack<Route>, expa
             },
             dismissButton = {
                 TextButton(onClick = { showAddDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (groupToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { groupToDelete = null },
+            title = { Text(stringResource(R.string.delete_group_title)) },
+            text = { Text(stringResource(R.string.delete_group_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    groupToDelete?.let { viewModel.deleteGroup(it.id) }
+                    groupToDelete = null
+                }) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { groupToDelete = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             }

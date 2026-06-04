@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <uses-permission android:name="com.vayunmathur.openassistant.permission.ACCESS_INFERENCE" />
+
+    <queries>
+        <package android:name="com.vayunmathur.openassistant" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:backupAgent=".util.AppBackupAgent"
@@ -24,10 +30,6 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.General">
-
-        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
-        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
-        <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -74,10 +76,6 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
-        <service
-            android:name="com.vayunmathur.library.downloadservice.DownloadService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

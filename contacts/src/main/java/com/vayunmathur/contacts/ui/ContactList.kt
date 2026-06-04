@@ -150,6 +150,12 @@ fun ContactList(
         viewModel.setSearchQuery("")
     }
 
+    // When contacts are selected (selection mode), intercept back to unselect
+    // instead of closing the app.
+    androidx.activity.compose.BackHandler(enabled = isSelectionMode) {
+        selectedIds.clear()
+    }
+
     Scaffold(
         topBar = {
             if (isSelectionMode) {

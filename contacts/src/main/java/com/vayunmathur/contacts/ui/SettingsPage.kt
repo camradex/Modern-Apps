@@ -68,6 +68,11 @@ fun SettingsPage(viewModel: ContactViewModel, backStack: NavBackStack<Route>) {
         }
     )
 
+    // When on Settings page, back should navigate to Contacts page
+    androidx.activity.compose.BackHandler {
+        backStack.setLast(Route.ContactsList)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

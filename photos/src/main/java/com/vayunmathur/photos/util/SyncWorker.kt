@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -359,8 +360,8 @@ suspend fun runOCR(photos: List<Photo>, database: PhotoDatabase, context: Contex
     val ocrManager = OCRManager(context)
 
     // Check if model is available before processing
-    if (!ocrManager.isModelAvailable()) {
-        Log.w("SyncWorker", "OCR model not available, skipping OCR processing")
+    if (!ocrManager.isAvailable()) {
+        Log.w("SyncWorker", "OpenAssistant not installed, skipping OCR processing")
         ocrManager.cleanup()
         return@coroutineScope
     }
@@ -369,10 +370,9 @@ suspend fun runOCR(photos: List<Photo>, database: PhotoDatabase, context: Contex
         ensureActive()
         if (!dataStore.getBoolean("image_understanding_enabled", false)) {
             ocrManager.cleanup()
-            return@forEach
+            return@coroutineScope
         }
 
-        // Double check if another thread/worker finished this photo while we were waiting
         val alreadyExists = database.query(SimpleSQLiteQuery("SELECT EXISTS(SELECT 1 FROM PhotoOCR WHERE rowid = ${photo.id})"), null).use { cursor ->
             cursor.moveToFirst() && cursor.getInt(0) == 1
         }
@@ -385,13 +385,13 @@ suspend fun runOCR(photos: List<Photo>, database: PhotoDatabase, context: Contex
                 photoDao.upsertOCR(PhotoOCR(photo.id, ocrText, description))
                 Log.i("SyncWorker", "OCR for ${photo.id} produced text: ${ocrText.take(50)}, description: ${description.take(50)}")
             } else {
-                // Insert empty entry so this photo isn't retried
-                photoDao.upsertOCR(PhotoOCR(photo.id, "", ""))
-                Log.w("SyncWorker", "OCR for ${photo.id} returned null, marking as processed")
+                Log.w("SyncWorker", "OCR for ${photo.id} returned null, will retry later")
             }
         } catch (e: Exception) {
-            Log.e("SyncWorker", "Error running OCR for photo ${photo.id}", e)
+            Log.e("SyncWorker", "Error running OCR for photo ${photo.id}, will retry later", e)
         }
+
+        delay(30000)
     }
 
     ocrManager.cleanup()

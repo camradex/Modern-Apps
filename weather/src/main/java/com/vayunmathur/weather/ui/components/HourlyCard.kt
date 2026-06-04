@@ -18,7 +18,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -29,7 +28,10 @@ import com.vayunmathur.weather.network.Hourly
 import com.vayunmathur.weather.util.TemperatureUnit
 import com.vayunmathur.weather.util.formatTemperatureCompact
 import com.vayunmathur.weather.util.weatherConditionForCode
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.UtcOffset
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -41,23 +43,21 @@ import kotlin.time.Instant
  * `primary`.
  */
 @Composable
-fun HourlyCard(hourly: Hourly, tempUnit: TemperatureUnit) {
+fun HourlyCard(hourly: Hourly, tempUnit: TemperatureUnit, utcOffsetSeconds: Int = 0) {
     val nowSec = System.currentTimeMillis() / 1000
-    val cells = remember(hourly) {
-        hourly.time.indices
-            .mapNotNull { i ->
-                val ts = parseIsoToEpochSec(hourly.time.getOrNull(i)) ?: return@mapNotNull null
-                if (ts < nowSec - 3600) return@mapNotNull null
-                HourCell(
-                    epochSec = ts,
-                    temperature = hourly.temperature.getOrNull(i) ?: 0.0,
-                    weatherCode = hourly.weatherCode.getOrNull(i) ?: 0,
-                    precip = hourly.precipitationProbability.getOrNull(i) ?: 0,
-                    isDay = (hourly.isDay.getOrNull(i) ?: 1) == 1,
-                )
-            }
-            .take(24)
-    }
+    val cells = hourly.time.indices
+        .mapNotNull { i ->
+            val ts = parseIsoToEpochSec(hourly.time.getOrNull(i), utcOffsetSeconds) ?: return@mapNotNull null
+            if (ts < nowSec - 3600) return@mapNotNull null
+            HourCell(
+                epochSec = ts,
+                temperature = hourly.temperature.getOrNull(i) ?: 0.0,
+                weatherCode = hourly.weatherCode.getOrNull(i) ?: 0,
+                precip = hourly.precipitationProbability.getOrNull(i) ?: 0,
+                isDay = (hourly.isDay.getOrNull(i) ?: 1) == 1,
+            )
+        }
+        .take(24)
     if (cells.isEmpty()) return
 
     Surface(
@@ -147,9 +147,17 @@ private data class HourCell(
     val isDay: Boolean,
 )
 
-private fun parseIsoToEpochSec(iso: String?): Long? {
+private fun parseIsoToEpochSec(iso: String?, utcOffsetSeconds: Int = 0): Long? {
     if (iso == null) return null
-    return runCatching { Instant.parse("$iso:00Z").epochSeconds }.getOrNull()
+    // Open-Meteo returns local time strings when timezone=auto
+    // We need to parse them as local time and apply the UTC offset
+    return runCatching {
+        // Parse as local datetime, then convert to instant using the offset
+        val localDateTime = kotlinx.datetime.LocalDateTime.parse(iso)
+        val offset = kotlinx.datetime.UtcOffset(seconds = utcOffsetSeconds)
+        localDateTime.toInstant(offset).epochSeconds
+    }.getOrNull()
+        ?: runCatching { Instant.parse("$iso:00Z").epochSeconds }.getOrNull()
         ?: runCatching { Instant.parse(iso).epochSeconds }.getOrNull()
 }
 

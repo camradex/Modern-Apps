@@ -24,6 +24,7 @@ import com.vayunmathur.contacts.data.ContactGroup
 import com.vayunmathur.contacts.data.ContactSearchEntity
 import com.vayunmathur.contacts.data.Email
 import com.vayunmathur.contacts.data.Event
+import com.vayunmathur.contacts.data.GroupMembership
 import com.vayunmathur.contacts.data.Name
 import com.vayunmathur.contacts.data.Nickname
 import com.vayunmathur.contacts.data.Note
@@ -449,6 +450,7 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         val emails: List<Email> = emptyList(),
         val dates: List<Event> = emptyList(),
         val addresses: List<Address> = emptyList(),
+        val groupMemberships: List<GroupMembership> = emptyList(),
     )
 
     private val _editDraft = MutableStateFlow<ContactDraft?>(null)
@@ -505,6 +507,7 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
             },
             dates = details?.dates ?: emptyList(),
             addresses = details?.addresses ?: emptyList(),
+            groupMemberships = details?.groups ?: emptyList(),
         )
     }
 
@@ -590,7 +593,7 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
                     CDKNickname.TYPE_DEFAULT
                 )
             ),
-            groups = original?.details?.groups ?: emptyList()
+            groups = draft.groupMemberships
         )
         val newContact = original?.copy(details = details) ?: Contact(
             id = 0,

@@ -9,9 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -32,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -66,7 +69,9 @@ import com.vayunmathur.contacts.data.CDKEvent
 import com.vayunmathur.contacts.data.CDKPhone
 import com.vayunmathur.contacts.data.CDKStructuredPostal
 import com.vayunmathur.contacts.data.ContactDetail
+import com.vayunmathur.contacts.data.ContactGroup
 import com.vayunmathur.contacts.data.Event
+import com.vayunmathur.contacts.data.GroupMembership
 import com.vayunmathur.contacts.data.PhoneNumber
 import com.vayunmathur.contacts.data.Photo
 import com.vayunmathur.contacts.data.formatDisplay
@@ -208,6 +213,28 @@ fun EditContactPage(backStack: NavBackStack<Route>, viewModel: ContactViewModel,
                 onValueChange = { v -> viewModel.updateEditDraft { it.copy(company = v) } },
                 label = { Text(stringResource(R.string.company)) },
                 modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // Group memberships (placed near identity fields)
+            val allGroups by viewModel.groups.collectAsState()
+            val draftGroupIds = currentDraft.groupMemberships.map { it.groupId }.toSet()
+            val memberGroups = allGroups.filter { it.id in draftGroupIds && it.name.trim().isNotEmpty() }
+            val availableGroups = allGroups.filter { it.id !in draftGroupIds && it.name.trim().isNotEmpty() }
+
+            GroupMembershipSection(
+                memberGroups = memberGroups,
+                availableGroups = availableGroups,
+                onAddGroup = { groupId ->
+                    viewModel.updateEditDraft { it.copy(
+                        groupMemberships = it.groupMemberships + GroupMembership(0, groupId)
+                    )}
+                },
+                onRemoveGroup = { groupId ->
+                    viewModel.updateEditDraft { it.copy(
+                        groupMemberships = it.groupMemberships.filter { gm -> gm.groupId != groupId }
+                    )}
+                }
             )
             Spacer(Modifier.height(16.dp))
 
@@ -485,22 +512,13 @@ private fun ColumnScope.DateDetailsSection(
         }
         Spacer(Modifier.height(8.dp))
     }
-    if (details.none { it.type != CDKEvent.TYPE_BIRTHDAY }) {
-        FilledTonalButton(
-            onClick = { onDetailsChange(details + ContactDetail.default<Event>()) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(icon, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.add_date))
-        }
-    } else {
-        TextButton(
-            onClick = { onDetailsChange(details + ContactDetail.default<Event>()) },
-            modifier = Modifier.align(Alignment.Start)
-        ) {
-            Text(stringResource(R.string.add_date))
-        }
+    FilledTonalButton(
+        onClick = { onDetailsChange(details + ContactDetail.default<Event>()) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(icon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.add_date))
     }
 }
 
@@ -568,21 +586,92 @@ private inline fun <reified T : ContactDetail<T>> ColumnScope.DetailsSection(
         )
         Spacer(Modifier.height(8.dp))
     }
-    if(details.isEmpty()) {
-        FilledTonalButton(
-            onClick = { onDetailsChange(details + ContactDetail.default<T>()) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(icon, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(addLabelRes))
+    FilledTonalButton(
+        onClick = { onDetailsChange(details + ContactDetail.default<T>()) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(icon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(addLabelRes))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ColumnScope.GroupMembershipSection(
+    memberGroups: List<ContactGroup>,
+    availableGroups: List<ContactGroup>,
+    onAddGroup: (Long) -> Unit,
+    onRemoveGroup: (Long) -> Unit
+) {
+    if (memberGroups.isEmpty() && availableGroups.isEmpty()) return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            painterResource(R.drawable.baseline_group_24),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            stringResource(R.string.groups),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        memberGroups.forEach { group ->
+            InputChip(
+                selected = false,
+                onClick = { onRemoveGroup(group.id) },
+                label = { Text(group.name) },
+                trailingIcon = {
+                    Icon(
+                        painterResource(R.drawable.baseline_remove_circle_outline_24),
+                        contentDescription = stringResource(R.string.remove_from_group),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            )
         }
-    } else {
-        TextButton(
-            onClick = { onDetailsChange(details + ContactDetail.default<T>()) },
-            modifier = Modifier.align(Alignment.Start)
-        ) {
-            Text(stringResource(addLabelRes))
+    }
+
+    if (availableGroups.isNotEmpty()) {
+        Spacer(Modifier.height(4.dp))
+        var expanded by remember { mutableStateOf(false) }
+        Box {
+            FilledTonalButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    painterResource(R.drawable.baseline_group_24),
+                    contentDescription = null
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.add_to_group))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                availableGroups.forEach { group ->
+                    DropdownMenuItem(
+                        text = { Text(group.name) },
+                        onClick = {
+                            onAddGroup(group.id)
+                            expanded = false
+                        }
+                    )
+                }
+            }
         }
     }
 }

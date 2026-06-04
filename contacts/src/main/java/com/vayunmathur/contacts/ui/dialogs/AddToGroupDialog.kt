@@ -8,6 +8,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
@@ -43,23 +45,37 @@ fun AddToGroupDialog(
                             else -> ToggleableState.Indeterminate
                         }
 
-                        ListItem(
-                            headlineContent = { Text(group.name) },
-                            trailingContent = {
-                                TriStateCheckbox(
-                                    state = state,
-                                    onClick = null // Handled by ListItem click
-                                )
-                            },
-                            modifier = Modifier.clickable {
-                                if (state == ToggleableState.Off) {
-                                    viewModel.addContactsToGroup(contactIds, group.id)
-                                } else {
-                                    // Indeterminate or On goes to Off
-                                    viewModel.removeContactsFromGroup(contactIds, group.id)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (state == ToggleableState.Off) {
+                                        viewModel.addContactsToGroup(contactIds, group.id)
+                                    } else {
+                                        // Indeterminate or On goes to Off
+                                        viewModel.removeContactsFromGroup(contactIds, group.id)
+                                    }
                                 }
-                            }
-                        )
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.baseline_group_24),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = group.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TriStateCheckbox(
+                                state = state,
+                                onClick = null // Handled by Row click
+                            )
+                        }
                     }
                 }
             }

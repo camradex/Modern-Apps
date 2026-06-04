@@ -1,63 +1,156 @@
 package com.vayunmathur.photos.util
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
-
-import kotlinx.coroutines.withContext
+import androidx.core.content.FileProvider
+import com.vayunmathur.library.util.SecureResultReceiver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
+import kotlin.coroutines.resume
 
 class OCRManager(private val context: Context) {
 
-    private val smolVLMRunner = SmolVLMRunner(context)
+    companion object {
+        private const val TAG = "OCRManager"
+        private const val OA_PACKAGE = "com.vayunmathur.openassistant"
+        private const val OA_SERVICE = "$OA_PACKAGE.util.InferenceService"
+        private const val MAX_IMAGE_DIMENSION = 512
+        private const val SCHEMA = """{"type":"object","properties":{"ocr_text":{"type":"string","description":"All visible text extracted from the image"},"description":{"type":"string","description":"A brief description of the image contents"}},"required":["ocr_text","description"]}"""
+    }
 
     suspend fun runOCR(uri: Uri): Pair<String, String>? {
-        var attempts = 0
-        Log.d("OCRManager", "Starting OCR")
+        Log.d(TAG, "Starting OCR via OpenAssistant")
 
-        // Check if model is available
-        if (!smolVLMRunner.isModelAvailable()) {
-            Log.e("OCRManager", "Model file not available")
+        if (!isAvailable()) {
+            Log.e(TAG, "OpenAssistant is not installed")
             return null
         }
 
-        while (attempts < 3) {
-            attempts++
-            val result = withTimeoutOrNull(120000) { // 2 minute timeout per photo (model inference can be slow)
-                performInference(uri)
-            }
-            if (result != null) {
-                return result
-            }
-            Log.w("OCRManager", "Inference timed out for $uri (Attempt $attempts)")
-            if (attempts < 3) {
-                delay(5000) // Wait 5 seconds before retry
-            }
-        }
-        return null
-    }
-
-    private suspend fun performInference(uri: Uri): Pair<String, String>? = withContext(Dispatchers.IO) {
-        try {
-            val result = smolVLMRunner.runInference(uri)
-            if (result != null) {
-                Pair(result.ocrText, result.description)
-            } else {
+        return withTimeoutOrNull(60000) {
+            try {
+                val resizedFile = withContext(Dispatchers.IO) { resizeImage(uri) } ?: return@withTimeoutOrNull null
+                try {
+                    dispatchInference(resizedFile)
+                } finally {
+                    resizedFile.delete()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error running OCR", e)
                 null
             }
-        } catch (e: Exception) {
-            Log.e("OCRManager", "Error running inference", e)
-            null
         }
     }
 
-    fun isModelAvailable(): Boolean {
-        return smolVLMRunner.isModelAvailable()
+    private fun resizeImage(uri: Uri): File? {
+        try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
+
+            val width = options.outWidth
+            val height = options.outHeight
+            if (width <= 0 || height <= 0) return null
+
+            var sampleSize = 1
+            while (width / sampleSize > MAX_IMAGE_DIMENSION * 2 || height / sampleSize > MAX_IMAGE_DIMENSION * 2) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bitmap = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, decodeOptions)
+            } ?: return null
+
+            val scaledBitmap = if (bitmap.width > MAX_IMAGE_DIMENSION || bitmap.height > MAX_IMAGE_DIMENSION) {
+                val scale = MAX_IMAGE_DIMENSION.toFloat() / maxOf(bitmap.width, bitmap.height)
+                val newWidth = (bitmap.width * scale).toInt()
+                val newHeight = (bitmap.height * scale).toInt()
+                Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true).also {
+                    if (it !== bitmap) bitmap.recycle()
+                }
+            } else {
+                bitmap
+            }
+
+            val file = File(context.cacheDir, "ocr_tmp_${System.nanoTime()}.jpg")
+            file.outputStream().use { out ->
+                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+            scaledBitmap.recycle()
+            return file
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resize image", e)
+            return null
+        }
     }
 
-    fun cleanup() {
-        smolVLMRunner.close()
+    private suspend fun dispatchInference(file: File): Pair<String, String>? =
+        suspendCancellableCoroutine { cont ->
+            val receiver = SecureResultReceiver(Handler(Looper.getMainLooper())) { code, data ->
+                if (code == 0) {
+                    val json = data?.getString("json_result")
+                    if (json != null) {
+                        try {
+                            val obj = Json.parseToJsonElement(json).jsonObject
+                            val ocrText = obj["ocr_text"]?.jsonPrimitive?.content ?: ""
+                            val description = obj["description"]?.jsonPrimitive?.content ?: ""
+                            cont.resume(Pair(ocrText, description))
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to parse JSON result: $json", e)
+                            cont.resume(null)
+                        }
+                    } else {
+                        cont.resume(null)
+                    }
+                } else {
+                    val error = data?.getString("error") ?: "Unknown error"
+                    Log.e(TAG, "Inference failed: $error")
+                    cont.resume(null)
+                }
+            }
+
+            val fileUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+            val intent = Intent().apply {
+                component = ComponentName(OA_PACKAGE, OA_SERVICE)
+                putExtra("user_text", "Extract all visible text from this image and describe what the image shows.")
+                putParcelableArrayListExtra("image_uris", arrayListOf(fileUri))
+                putExtra("schema", SCHEMA)
+                putExtra("RECEIVER", receiver as android.os.ResultReceiver)
+            }
+
+            try {
+                context.grantUriPermission(OA_PACKAGE, fileUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start InferenceService", e)
+                cont.resume(null)
+            }
+        }
+
+    fun isAvailable(): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(OA_PACKAGE, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
+
+    fun cleanup() {}
 }

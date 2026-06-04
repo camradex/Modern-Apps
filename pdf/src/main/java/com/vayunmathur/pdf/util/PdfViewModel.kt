@@ -163,6 +163,45 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _pdfDocument.value = null
         _passwordRequired.value = false
         _passwordError.value = null
+        _linkDestinations.value = emptyMap()
+    }
+
+    // --- Internal link resolution -------------------------------------------
+
+    private val _linkDestinations = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val linkDestinations: StateFlow<Map<String, Int>> = _linkDestinations.asStateFlow()
+
+    fun buildLinkIndex(document: EditablePdfDocument) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val map = mutableMapOf<String, Int>()
+            for (page in 0 until document.pageCount) {
+                val links = try {
+                    document.getPageLinks(page)
+                } catch (e: Exception) {
+                    continue
+                }
+                val gotos = links.gotoLinks.filter { it.bounds.isNotEmpty() }
+                val externals = links.externalLinks.filter {
+                    it.bounds.isNotEmpty() && it.uri.scheme == "file"
+                }
+                if (gotos.isEmpty() || externals.isEmpty()) continue
+
+                for (ext in externals) {
+                    val extY = ext.bounds.first().centerY()
+                    val match = gotos.minByOrNull {
+                        kotlin.math.abs(it.bounds.first().centerY() - extY)
+                    } ?: continue
+                    if (kotlin.math.abs(match.bounds.first().centerY() - extY) < 20f) {
+                        map[ext.uri.toString()] = match.destination.pageNumber
+                    }
+                }
+            }
+            Log.d(TAG, "Link index: ${map.size} entries")
+            for ((uri, dest) in map) {
+                Log.d(TAG, "  $uri -> page $dest")
+            }
+            _linkDestinations.value = map
+        }
     }
 
     companion object {

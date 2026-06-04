@@ -170,7 +170,7 @@ private fun LocationPage(
         ) {
             SummaryCard(forecast = forecast, tempUnit = tempUnit)
             if (forecast.hourly != null) {
-                HourlyCard(hourly = forecast.hourly, tempUnit = tempUnit)
+                HourlyCard(hourly = forecast.hourly, tempUnit = tempUnit, utcOffsetSeconds = forecast.utcOffsetSeconds)
             }
             if (daily != null) {
                 DailyCard(daily = daily, tempUnit = tempUnit)

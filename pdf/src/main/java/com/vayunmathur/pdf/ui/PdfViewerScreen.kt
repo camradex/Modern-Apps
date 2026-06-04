@@ -1,6 +1,8 @@
 package com.vayunmathur.pdf.ui
 
 import android.content.Intent
+import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +28,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +79,11 @@ fun PdfViewerScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
+    val linkDestinations by viewModel.linkDestinations.collectAsState()
+
+    LaunchedEffect(pdfDocument) {
+        viewModel.buildLinkIndex(pdfDocument)
+    }
 
     val pdfSavedMessage = stringResource(R.string.pdf_saved)
     val pdfSaveErrorMessage = stringResource(R.string.pdf_save_error)
@@ -127,6 +135,39 @@ fun PdfViewerScreen(
         while (true) {
             delay(2000)
             PdfStateStore.save(context, pdfDocument.uri, center, pdfState)
+        }
+    }
+
+    // Workaround for PDF viewer bug where panning gets stuck when viewbox goes past PDF edge
+    // The issue is that when the whole page is in view, panning left/right is disabled.
+    // If the user pans past the edge while zoomed in, the view gets stuck out of bounds.
+    // This workaround detects when the view is out of bounds and resets it to a valid position.
+    LaunchedEffect(pdfDocument) {
+        while (true) {
+            delay(300)
+            try {
+                // Try to get the PDF point at the center of the view
+                // If this returns null, the view is out of bounds and panning gestures are dropped
+                val pdfPoint = pdfState.visibleOffsetToPdfPoint(center)
+                if (pdfPoint == null) {
+                    // View is out of bounds - this happens when panning past the edge.
+                    // Reset by scrolling to the current page (or page 0 if we can't determine it).
+                    // This re-enables panning by bringing the view back into valid bounds.
+                    try {
+                        // Try to get current page from the state, or default to 0
+                        pdfState.scrollToPage(0)
+                    } catch (e: Exception) {
+                        // If scroll fails, try a different approach - scroll to position 0,0 on page 0
+                        try {
+                            pdfState.scrollToPosition(PdfPoint(0, 0f, 0f))
+                        } catch (e2: Exception) {
+                            // Last resort - ignore and hope the next check succeeds
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore errors - this is a best-effort workaround for a library bug
+            }
         }
     }
 
@@ -280,8 +321,42 @@ fun PdfViewerScreen(
                         }
                     },
                 ) { uri ->
-                    val intent = Intent(Intent.ACTION_VIEW, uri)
-                    context.startActivity(intent)
+                    Log.d("PdfViewer", "Link clicked: uri=$uri scheme=${uri.scheme} fragment=${uri.fragment}")
+                    // Try link destination index (resolves Calibre EPUB-to-PDF internal links)
+                    if (uri.scheme == "file") {
+                        val destPage = linkDestinations[uri.toString()]
+                        if (destPage != null) {
+                            Log.d("PdfViewer", "Resolved via index: page $destPage")
+                            coroutineScope.launch { pdfState.scrollToPage(destPage) }
+                            return@PdfViewer true
+                        }
+                        // Try matching by path only (ignoring fragment)
+                        val pathOnly = uri.buildUpon().fragment(null).build().toString()
+                        val fallback = linkDestinations.entries
+                            .firstOrNull { it.key.startsWith(pathOnly) }?.value
+                        if (fallback != null) {
+                            Log.d("PdfViewer", "Resolved via path match: page $fallback")
+                            coroutineScope.launch { pdfState.scrollToPage(fallback) }
+                            return@PdfViewer true
+                        }
+                        Log.d("PdfViewer", "Unresolved internal link: $uri")
+                        return@PdfViewer true
+                    }
+                    // Try fragment-based page navigation (e.g., #page=5)
+                    val fragment = uri.fragment
+                    if (fragment != null) {
+                        val page = Regex("page=(\\d+)").find(fragment)
+                            ?.groupValues?.get(1)?.toIntOrNull()
+                            ?: fragment.toIntOrNull()
+                        if (page != null && page in 1..pdfDocument.pageCount) {
+                            coroutineScope.launch { pdfState.scrollToPage(page - 1) }
+                            return@PdfViewer true
+                        }
+                    }
+                    if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "mailto") {
+                        val intent = Intent(Intent.ACTION_VIEW, uri)
+                        context.startActivity(intent)
+                    }
                     true
                 }
             }
