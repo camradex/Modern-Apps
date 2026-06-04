@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.R as LibraryR
 import com.vayunmathur.library.util.NavBackStack
@@ -166,7 +167,7 @@ fun LocationsScreen(
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Search location")
+                Text(stringResource(R.string.search_location))
             }
         },
     ) { paddingValues ->
@@ -243,7 +244,7 @@ fun LocationsScreen(
                         longPressedLocation = null
                     },
                     modifier = Modifier.padding(start = 16.dp),
-                ) { Text("Confirm delete") }
+                ) { Text(stringResource(R.string.confirm_delete)) }
             }
         }
     }
@@ -307,7 +308,7 @@ fun SearchLocationPage(backStack: NavBackStack<Route>, viewModel: WeatherViewMod
                 .heightIn(min = 220.dp, max = 480.dp),
         ) {
             Text(
-                "Search location",
+                stringResource(R.string.search_location),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -315,7 +316,7 @@ fun SearchLocationPage(backStack: NavBackStack<Route>, viewModel: WeatherViewMod
             androidx.compose.material3.OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("City name") },
+                placeholder = { Text(stringResource(R.string.city_name_hint)) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(LibraryR.drawable.outline_search_24),

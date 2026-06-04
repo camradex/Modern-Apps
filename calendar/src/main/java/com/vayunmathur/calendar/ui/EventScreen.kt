@@ -94,7 +94,7 @@ fun EventScreen(viewModel: CalendarViewModel, instance: Instance, backStack: Nav
                         onDismissRequest = { showDeleteMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Delete this event") },
+                            text = { Text(stringResource(R.string.delete_this_event)) },
                             onClick = {
                                 showDeleteMenu = false
                                 viewModel.deleteEventInstance(event.id!!, instance.begin)
@@ -102,7 +102,7 @@ fun EventScreen(viewModel: CalendarViewModel, instance: Instance, backStack: Nav
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete all events") },
+                            text = { Text(stringResource(R.string.delete_all_events)) },
                             onClick = {
                                 showDeleteMenu = false
                                 viewModel.deleteEventSeries(event.id!!)

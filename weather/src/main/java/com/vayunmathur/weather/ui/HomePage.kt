@@ -33,10 +33,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.R as LibraryR
 import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.weather.R
 import com.vayunmathur.weather.Route
 import com.vayunmathur.weather.data.SavedLocation
 import com.vayunmathur.weather.ui.components.CreditsBottomSection
@@ -245,7 +247,7 @@ private fun EmptyHome(viewModel: WeatherViewModel, onAddLocation: () -> Unit) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Weather") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.weather_title)) }) }) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("No locations yet", style = MaterialTheme.typography.titleMedium)
@@ -255,7 +257,7 @@ private fun EmptyHome(viewModel: WeatherViewModel, onAddLocation: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
                 )
-                Button(onClick = onAddLocation) { Text("Add a location") }
+                Button(onClick = onAddLocation) { Text(stringResource(R.string.add_location)) }
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 8.dp))
                 androidx.compose.material3.OutlinedButton(
                     onClick = { onUseCurrent() },

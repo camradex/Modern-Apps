@@ -216,8 +216,8 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                             byMonthDayStr = new
                             byMonthDay = new.split(",").mapNotNull { it.trim().toIntOrNull() }
                         },
-                        label = { Text("By month day (1-31, -1 to -31)") },
-                        placeholder = { Text("e.g., 1,15,-1") }
+                        label = { Text(stringResource(R.string.by_month_day_label)) },
+                        placeholder = { Text(stringResource(R.string.by_month_day_placeholder)) }
                     )
                 }
 
@@ -230,8 +230,8 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                             byMonthStr = new
                             byMonth = new.split(",").mapNotNull { it.trim().toIntOrNull() }
                         },
-                        label = { Text("By month (1-12)") },
-                        placeholder = { Text("e.g., 1,6,12") }
+                        label = { Text(stringResource(R.string.by_month_label)) },
+                        placeholder = { Text(stringResource(R.string.by_month_placeholder)) }
                     )
                 }
 
@@ -243,8 +243,8 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                         bySetPosStr = new
                         bySetPos = new.split(",").mapNotNull { it.trim().toIntOrNull() }
                     },
-                    label = { Text("By set position (1-366, -1 to -366)") },
-                    placeholder = { Text("e.g., 1,-1,2") }
+                    label = { Text(stringResource(R.string.by_set_pos_label)) },
+                    placeholder = { Text(stringResource(R.string.by_set_pos_placeholder)) }
                 )
 
                 // BYYEARDAY - day of year
@@ -256,8 +256,8 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                             byYearDayStr = new
                             byYearDay = new.split(",").mapNotNull { it.trim().toIntOrNull() }
                         },
-                        label = { Text("By year day (1-366, -1 to -366)") },
-                        placeholder = { Text("e.g., 1,100,-1") }
+                        label = { Text(stringResource(R.string.by_year_day_label)) },
+                        placeholder = { Text(stringResource(R.string.by_year_day_placeholder)) }
                     )
                 }
 
@@ -270,8 +270,8 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                             byWeekNoStr = new
                             byWeekNo = new.split(",").mapNotNull { it.trim().toIntOrNull() }
                         },
-                        label = { Text("By week number (1-53, -1 to -53)") },
-                        placeholder = { Text("e.g., 1,26,52") }
+                        label = { Text(stringResource(R.string.by_week_no_label)) },
+                        placeholder = { Text(stringResource(R.string.by_week_no_placeholder)) }
                     )
                 }
 
@@ -281,7 +281,7 @@ fun RecurrenceDialog(backStack: NavBackStack<Route>, resultKey: String, startDat
                     wkst?.name?.take(2) ?: "MO",
                     { },
                     readOnly = true,
-                    label = { Text("Week start") },
+                    label = { Text(stringResource(R.string.week_start_label)) },
                     trailingIcon = {
                         Text(
                             wkst?.name?.take(2) ?: "MO",

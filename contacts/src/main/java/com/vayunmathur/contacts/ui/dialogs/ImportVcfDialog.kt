@@ -60,7 +60,7 @@ fun ImportVcfDialog(
         title = { Text(stringResource(R.string.import_contacts)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
-                Text("Select account to import to:")
+                Text(stringResource(R.string.select_account_to_import))
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f, fill = false)) {
                     items(accounts, key = { "${it.type}|${it.name}" }) { account ->
@@ -77,7 +77,7 @@ fun ImportVcfDialog(
                     }
                     item {
                         TextButton(onClick = { showCreateAccount = true }) {
-                            Text("+ Create new account")
+                            Text(stringResource(R.string.create_new_account))
                         }
                     }
                 }
@@ -104,7 +104,7 @@ fun ImportVcfDialog(
                     onDismiss()
                 }
             ) {
-                Text("Import")
+                Text(stringResource(R.string.import_button))
             }
         },
         dismissButton = {

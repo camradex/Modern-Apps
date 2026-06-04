@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.health.R
@@ -49,7 +50,7 @@ fun RecipeManagementPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recipes") },
+                title = { Text(stringResource(R.string.recipes)) },
                 navigationIcon = { IconNavigation(backStack) },
                 actions = { BackupButtons() }
             )
@@ -73,8 +74,8 @@ fun RecipeManagementPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
                 selectedTabIndex = selectedTab,
                 contentColor = HealthColors.Nutrition,
             ) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, selectedContentColor = HealthColors.Nutrition, text = { Text("Recipes") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, selectedContentColor = HealthColors.Nutrition, text = { Text("Ingredients") })
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, selectedContentColor = HealthColors.Nutrition, text = { Text(stringResource(R.string.recipes)) })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, selectedContentColor = HealthColors.Nutrition, text = { Text(stringResource(R.string.ingredients)) })
             }
 
             if (isListEmpty) {
@@ -128,7 +129,7 @@ fun IngredientsList(ingredients: List<Ingredient>, viewModel: HealthViewModel) {
         var customName by remember { mutableStateOf(editingIngredient!!.customName ?: "") }
         AlertDialog(
             onDismissRequest = { editingIngredient = null },
-            title = { Text("Rename Ingredient") },
+            title = { Text(stringResource(R.string.rename_ingredient)) },
             text = {
                 Column {
                     Text("Original: ${editingIngredient!!.originalName}", style = MaterialTheme.typography.bodySmall)
@@ -136,7 +137,7 @@ fun IngredientsList(ingredients: List<Ingredient>, viewModel: HealthViewModel) {
                     OutlinedTextField(
                         value = customName,
                         onValueChange = { customName = it },
-                        label = { Text("Custom Name") }
+                        label = { Text(stringResource(R.string.custom_name)) }
                     )
                 }
             },
@@ -145,10 +146,10 @@ fun IngredientsList(ingredients: List<Ingredient>, viewModel: HealthViewModel) {
                     val newIng = editingIngredient!!.copy(customName = customName.ifBlank { null })
                     viewModel.updateIngredient(newIng)
                     editingIngredient = null
-                }) { Text("Save") }
+                }) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
-                TextButton(onClick = { editingIngredient = null }) { Text("Cancel") }
+                TextButton(onClick = { editingIngredient = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -257,16 +258,16 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel,
             OutlinedTextField(
                 value = recipeName,
                 onValueChange = { recipeName = it },
-                label = { Text("Recipe Name") },
+                label = { Text(stringResource(R.string.recipe_name)) },
                 modifier = Modifier.fillMaxWidth()
             )
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Ingredients", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.ingredients), style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = { showSearch = true }) {
                     IconAdd()
                     Spacer(Modifier.width(4.dp))
-                    Text("Add")
+                    Text(stringResource(R.string.add))
                 }
             }
 
@@ -305,7 +306,7 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = recipeName.isNotBlank() && recipeIngredients.isNotEmpty()
             ) {
-                Text("Save Recipe")
+                Text(stringResource(R.string.save_recipe))
             }
         }
     }
@@ -350,13 +351,13 @@ fun IngredientQuantityDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set Quantity for ${ingredient.displayName}") },
+        title = { Text(stringResource(R.string.set_quantity_for_format, ingredient.displayName)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = quantityStr,
                     onValueChange = { quantityStr = it },
-                    label = { Text("Quantity") },
+                    label = { Text(stringResource(R.string.quantity)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -369,7 +370,7 @@ fun IngredientQuantityDialog(
                         value = selectedUnit.name,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Unit") },
+                        label = { Text(stringResource(R.string.unit)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
@@ -397,10 +398,10 @@ fun IngredientQuantityDialog(
                     onConfirm(q, selectedUnit)
                 },
                 enabled = quantityStr.toDoubleOrNull() != null
-            ) { Text("Confirm") }
+            ) { Text(stringResource(R.string.confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -421,14 +422,14 @@ fun IngredientSearchDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Search Ingredient") },
+        title = { Text(stringResource(R.string.search_ingredient)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth().height(400.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        label = { Text("Search") },
+                        label = { Text(stringResource(R.string.search)) },
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -441,7 +442,7 @@ fun IngredientSearchDialog(
                             isSearching = false
                         }
                     }) {
-                        Text("Search")
+                        Text(stringResource(R.string.search))
                     }
                 }
                 
@@ -506,7 +507,7 @@ fun IngredientSearchDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }

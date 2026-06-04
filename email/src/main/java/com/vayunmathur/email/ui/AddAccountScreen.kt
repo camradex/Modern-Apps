@@ -14,12 +14,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.email.EmailAccount
 import com.vayunmathur.email.EmailManager
+import com.vayunmathur.email.R
 import com.vayunmathur.email.ServerConfig
 import com.vayunmathur.email.data.CredentialCrypto
 import com.vayunmathur.email.data.EmailDatabase
@@ -63,7 +65,7 @@ fun AddAccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selectedProvider == null) "Add account" else selectedProvider.displayName) },
+                title = { Text(if (selectedProvider == null) stringResource(R.string.add_account) else selectedProvider.displayName) },
                 navigationIcon = {
                     val backTarget: (() -> Unit)? = when {
                         selectedProvider != null -> ({ selectedProviderId = null })
@@ -163,7 +165,7 @@ private fun PasswordForm(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it.trim() },
-            label = { Text("Email address") },
+            label = { Text(stringResource(R.string.email_address)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
@@ -243,9 +245,9 @@ private fun PasswordForm(
             if (working) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text("Testing connection…")
+                Text(stringResource(R.string.testing_connection))
             } else {
-                Text("Test connection & save")
+                Text(stringResource(R.string.test_connection_and_save))
             }
         }
     }
@@ -263,7 +265,7 @@ private fun InstructionsCard(preset: ProviderPreset) {
             preset.appPasswordHelpUrl?.let { url ->
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = { openUrl(context, url) }) {
-                    Text("Open ${preset.displayName} app-password help")
+                    Text(stringResource(R.string.open_app_password_help, preset.displayName))
                 }
             }
         }
@@ -280,14 +282,14 @@ private fun ServerRow(
         OutlinedTextField(
             value = host,
             onValueChange = onHostChange,
-            label = { Text("Host") },
+            label = { Text(stringResource(R.string.host_label)) },
             singleLine = true,
             modifier = Modifier.weight(2f),
         )
         OutlinedTextField(
             value = port,
             onValueChange = onPortChange,
-            label = { Text("Port") },
+            label = { Text(stringResource(R.string.port_label)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f),
@@ -298,13 +300,13 @@ private fun ServerRow(
         FilterChip(
             selected = useSsl,
             onClick = { onSslChange(true) },
-            label = { Text("SSL/TLS") },
+            label = { Text(stringResource(R.string.ssl_tls)) },
         )
         Spacer(Modifier.width(8.dp))
         FilterChip(
             selected = !useSsl,
             onClick = { onSslChange(false) },
-            label = { Text("STARTTLS") },
+            label = { Text(stringResource(R.string.starttls)) },
         )
     }
 }

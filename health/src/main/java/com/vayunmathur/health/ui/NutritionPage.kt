@@ -134,17 +134,17 @@ fun NutritionPage(backStack: NavBackStack<Route>, viewModel: HealthViewModel) {
             ) {
                 FloatingActionButtonMenuItem(
                     onClick = { fabExpanded = false; showHydrationDialog = true },
-                    text = { Text("Log Hydration") },
+                    text = { Text(stringResource(R.string.log_hydration)) },
                     icon = { IconFire() }
                 )
                 FloatingActionButtonMenuItem(
                     onClick = { fabExpanded = false; showMealDialog = true },
-                    text = { Text("Log Meal") },
+                    text = { Text(stringResource(R.string.log_meal)) },
                     icon = { IconFire() }
                 )
                 FloatingActionButtonMenuItem(
                     onClick = { fabExpanded = false; backStack.add(Route.RecipeManagement) },
-                    text = { Text("Recipes") },
+                    text = { Text(stringResource(R.string.recipes)) },
                     icon = { IconAdd() }
                 )
             }

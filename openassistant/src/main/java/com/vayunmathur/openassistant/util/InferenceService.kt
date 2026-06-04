@@ -94,7 +94,7 @@ class InferenceService : Service() {
                         val now = System.currentTimeMillis()
                         if (now - intentJob.enqueuedTime > 45000) {
                             Log.w("InferenceService", "Intent job expired in queue, discarding.")
-                            intentJob.receiver.send(-1, Bundle().apply { putString("error", "Request expired in queue") })
+                            intentJob.receiver.send(-1, Bundle().apply { putString("error", getString(R.string.error_request_expired)) })
                         } else {
                             executeIntentInference(intentJob)
                         }
@@ -110,7 +110,7 @@ class InferenceService : Service() {
                             val now = System.currentTimeMillis()
                             if (now - job.enqueuedTime > 45000) {
                                 Log.w("InferenceService", "Intent job expired in queue, discarding.")
-                                job.receiver.send(-1, Bundle().apply { putString("error", "Request expired in queue") })
+                                job.receiver.send(-1, Bundle().apply { putString("error", getString(R.string.error_request_expired)) })
                             } else {
                                 executeIntentInference(job)
                             }
@@ -154,12 +154,12 @@ class InferenceService : Service() {
     private fun startForegroundTask() {
         val channelId = "inference_service"
         val manager = getSystemService(NotificationManager::class.java)
-        val channel = NotificationChannel(channelId, "Inference Service", NotificationManager.IMPORTANCE_LOW)
+        val channel = NotificationChannel(channelId, getString(R.string.inference_service), NotificationManager.IMPORTANCE_LOW)
         manager?.createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("OpenAssistant")
-            .setContentText("Processing AI inference...")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.processing_ai_inference))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .build()
@@ -183,13 +183,13 @@ class InferenceService : Service() {
             }
         } catch (e: TimeoutCancellationException) {
             Log.e("InferenceService", "Intent inference timed out after 45 seconds")
-            job.receiver.send(-1, Bundle().apply { putString("error", "Inference timed out") })
+            job.receiver.send(-1, Bundle().apply { putString("error", getString(R.string.error_inference_timeout)) })
         } catch (e: CancellationException) {
             if (e.message != "HALT") throw e
             Log.i("InferenceService", "Intent inference halted successfully via schema match.")
         } catch (e: Exception) {
             Log.e("InferenceService", "Error during intent inference", e)
-            job.receiver.send(-1, Bundle().apply { putString("error", e.localizedMessage ?: "AI engine failed") })
+            job.receiver.send(-1, Bundle().apply { putString("error", e.localizedMessage ?: getString(R.string.error_ai_engine_failed)) })
         } finally {
             currentConversation?.close()
             currentConversation = null
@@ -296,7 +296,7 @@ class InferenceService : Service() {
         }
 
         Log.e("InferenceService", "AI finished generation without providing a schema-matching JSON.")
-        receiver.send(-1, Bundle().apply { putString("error", "AI failed to return valid JSON matching the schema.") })
+        receiver.send(-1, Bundle().apply { putString("error", getString(R.string.error_ai_json_schema_mismatch)) })
     }
 
     private fun tryExtractLargestJson(text: String): String? {

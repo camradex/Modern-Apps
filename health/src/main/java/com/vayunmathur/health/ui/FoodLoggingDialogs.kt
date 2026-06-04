@@ -27,8 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.vayunmathur.health.R
 import com.vayunmathur.health.data.Ingredient
 import com.vayunmathur.health.data.Recipe
 import com.vayunmathur.health.util.HealthViewModel
@@ -53,13 +55,13 @@ fun LogHydrationDialog(viewModel: HealthViewModel, initialTime: Instant? = null,
 
     AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Log Hydration") },
+            title = { Text(stringResource(R.string.log_hydration)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                             value = quantityStr,
                             onValueChange = { quantityStr = it },
-                            label = { Text("Quantity") },
+                            label = { Text(stringResource(R.string.quantity)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                             trailingIcon = {
@@ -111,9 +113,9 @@ fun LogHydrationDialog(viewModel: HealthViewModel, initialTime: Instant? = null,
                                 onDismiss()
                             }
                         }
-                ) { Text("Save") }
+                ) { Text(stringResource(R.string.save)) }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 
@@ -153,7 +155,7 @@ fun LogMealDialog(viewModel: HealthViewModel, initialTime: Instant? = null, onDi
 
     AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Log Meal") },
+            title = { Text(stringResource(R.string.log_meal)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ExposedDropdownMenuBox(
@@ -233,8 +235,8 @@ fun LogMealDialog(viewModel: HealthViewModel, initialTime: Instant? = null, onDi
                                 onDismiss()
                             }
                         }
-                ) { Text("Save") }
+                ) { Text(stringResource(R.string.save)) }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

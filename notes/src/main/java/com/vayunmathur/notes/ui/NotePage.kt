@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,7 @@ import com.vayunmathur.library.ui.IconShare
 import com.vayunmathur.library.ui.IconVisible
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.R as LibraryR
+import com.vayunmathur.notes.R
 import com.vayunmathur.notes.Route
 import com.vayunmathur.notes.data.Note
 import com.vayunmathur.notes.util.NotesViewModel
@@ -130,7 +132,7 @@ fun NotePage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequestor),
-                    placeholder = { Text("Search") },
+                    placeholder = { Text(stringResource(R.string.search)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     colors = TextFieldDefaults.colors(
@@ -215,7 +217,7 @@ fun NotePage(
                     decorationBox = { innerTextField ->
                         Box {
                             if (note.title.isEmpty()) Text(
-                                text = "Title",
+                                text = stringResource(R.string.title),
                                 style = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                             )
                             innerTextField()
@@ -251,7 +253,7 @@ fun NotePage(
                     decorationBox = { innerTextField ->
                         Box {
                             if (note.content.isEmpty()) Text(
-                                text = "Content",
+                                text = stringResource(R.string.content),
                                 style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                             )
                             innerTextField()

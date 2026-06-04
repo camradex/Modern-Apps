@@ -53,12 +53,12 @@ fun ImportIcsDialog(
     if (showAddCalendar) {
         AlertDialog(
             onDismissRequest = { showAddCalendar = false },
-            title = { Text("New Local Calendar") },
+            title = { Text(stringResource(R.string.new_local_calendar_title)) },
             text = {
                 TextField(
                     value = newCalName,
                     onValueChange = { newCalName = it },
-                    label = { Text("Calendar Name") }
+                    label = { Text(stringResource(R.string.calendar_name_label)) }
                 )
             },
             confirmButton = {
@@ -74,10 +74,10 @@ fun ImportIcsDialog(
                         showAddCalendar = false
                         newCalName = ""
                     }
-                }) { Text("Create") }
+                }) { Text(stringResource(R.string.create)) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddCalendar = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddCalendar = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -87,16 +87,16 @@ fun ImportIcsDialog(
         AlertDialog(
             onDismissRequest = onDismiss,
             confirmButton = {},
-            title = { Text("Loading events...") },
+            title = { Text(stringResource(R.string.loading_events)) },
             text = { Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() } }
         )
     } else {
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Import Events") },
+            title = { Text(stringResource(R.string.import_events_title)) },
             text = {
                 Column(Modifier.fillMaxWidth()) {
-                    Text("Select calendar to import to:")
+                    Text(stringResource(R.string.select_calendar_to_import))
                     Spacer(Modifier.height(8.dp))
                     
                     Box {
@@ -130,7 +130,7 @@ fun ImportIcsDialog(
                             }
                             Divider()
                             DropdownMenuItem(
-                                text = { Text("+ Create new calendar") },
+                                text = { Text(stringResource(R.string.create_new_calendar)) },
                                 onClick = {
                                     showAddCalendar = true
                                     showDropdown = false
@@ -156,12 +156,12 @@ fun ImportIcsDialog(
                         viewModel.importIcsEvents(events, calId, onDone = onDismiss)
                     }
                 ) {
-                    Text("Import")
+                    Text(stringResource(R.string.import_button))
                 }
             },
             dismissButton = {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )

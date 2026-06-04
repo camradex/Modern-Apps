@@ -7,4 +7,10 @@
     <string name="new_conversation">New Conversation</string>
     <string name="perm_desc_inference">Allows other apps to access the on-device AI inference service for extracting structured data.</string>
     <string name="error_prefix">Error: %1$s</string>
+    <string name="inference_service">Inference Service</string>
+    <string name="processing_ai_inference">Processing AI inference...</string>
+    <string name="error_request_expired">Request expired in queue</string>
+    <string name="error_inference_timeout">Inference timed out</string>
+    <string name="error_ai_engine_failed">AI engine failed</string>
+    <string name="error_ai_json_schema_mismatch">AI failed to return valid JSON matching the schema.</string>
 </resources>

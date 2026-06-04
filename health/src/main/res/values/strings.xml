@@ -151,6 +151,28 @@
     <string name="label_nutrition_details">Nutrition Details</string>
     <string name="total_energy_intake">Total energy intake</string>
     <string name="nutrient_progress_format">%1$s / %2$d %3$s</string>
+    <string name="nutrition_breakdown">Nutrition breakdown</string>
+
+    <!-- RecipeManagementPage -->
+    <string name="recipes">Recipes</string>
+    <string name="ingredients">Ingredients</string>
+    <string name="rename_ingredient">Rename Ingredient</string>
+    <string name="custom_name">Custom Name</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="recipe_name">Recipe Name</string>
+    <string name="add">Add</string>
+    <string name="save_recipe">Save Recipe</string>
+    <string name="set_quantity_for_format">Set Quantity for %1$s</string>
+    <string name="quantity">Quantity</string>
+    <string name="unit">Unit</string>
+    <string name="confirm">Confirm</string>
+    <string name="search_ingredient">Search Ingredient</string>
+    <string name="search">Search</string>
+
+    <!-- FoodLoggingDialogs -->
+    <string name="log_hydration">Log Hydration</string>
+    <string name="log_meal">Log Meal</string>
 
     <!-- Bottom navigation -->
     <string name="nav_today">Today</string>

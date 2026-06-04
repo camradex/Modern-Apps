@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -176,7 +177,7 @@ fun EmailApp(viewModel: EmailViewModel) {
                     ) {
                         Text("Unified Inbox", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
                         NavigationDrawerItem(
-                            label = { Text("All Accounts") },
+                            label = { Text(stringResource(R.string.all_accounts)) },
                             selected = selectedAccountEmail == null,
                             onClick = {
                                 viewModel.selectAccount("")
@@ -214,7 +215,7 @@ fun EmailApp(viewModel: EmailViewModel) {
                             )
                         }
                         NavigationDrawerItem(
-                            label = { Text("Add Account") },
+                            label = { Text(stringResource(R.string.add_account)) },
                             selected = false,
                             onClick = {
                                 backStack.add(Route.AddAccount)
@@ -238,8 +239,8 @@ fun EmailApp(viewModel: EmailViewModel) {
                         NavigationDrawerItem(
                             label = {
                                 Text(
-                                    if (outbox.isEmpty()) "Outbox"
-                                    else "Outbox (${outbox.size})"
+                                    if (outbox.isEmpty()) stringResource(R.string.outbox)
+                                    else stringResource(R.string.outbox_with_count, outbox.size)
                                 )
                             },
                             selected = false,
@@ -257,7 +258,7 @@ fun EmailApp(viewModel: EmailViewModel) {
                     if (selectedAccountEmail != null) {
                         HorizontalDivider()
                         NavigationDrawerItem(
-                            label = { Text("Logout Current Account") },
+                            label = { Text(stringResource(R.string.logout_current_account)) },
                             selected = false,
                             onClick = {
                                 viewModel.logout(context)
@@ -412,7 +413,7 @@ fun MessageListScreen(
         topBar = {
             if (selectedUids.isNotEmpty()) {
                 TopAppBar(
-                    title = { Text("${selectedUids.size} selected") },
+                    title = { Text(stringResource(R.string.selected_count, selectedUids.size)) },
                     navigationIcon = {
                         IconButton(onClick = { viewModel.clearSelection() }) {
                             IconClose()
@@ -748,7 +749,7 @@ fun MessageItem(
             ) {
                 IconUndo(modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Reply")
+                Text(stringResource(R.string.reply))
             }
             OutlinedButton(
                 onClick = { onForward(msg.subject, msg.body) },
@@ -756,7 +757,7 @@ fun MessageItem(
             ) {
                 IconForward(modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Forward")
+                Text(stringResource(R.string.forward))
             }
         }
 
@@ -779,9 +780,9 @@ fun MessageItem(
                     modifier = Modifier.align(Alignment.End)
                 )
                 
-                DetailItem(label = "From", name = senderName, email = senderEmail, avatarColor = avatarColor)
+                DetailItem(label = stringResource(R.string.from_label), name = senderName, email = senderEmail, avatarColor = avatarColor)
                 // DetailItem(label = "Reply to", ...) // If available
-                DetailItem(label = "To", name = "me", email = msg.to ?: "", avatarColor = Color.Gray)
+                DetailItem(label = stringResource(R.string.to_label), name = "me", email = msg.to ?: "", avatarColor = Color.Gray)
                 
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -881,7 +882,7 @@ fun ComposerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Compose") },
+                title = { Text(stringResource(R.string.compose)) },
                 navigationIcon = { IconNavigation(onBack) },
                 actions = {
                     IconButton(onClick = { attachmentLauncher.launch("*/*") }) {
@@ -922,8 +923,8 @@ fun ComposerScreen(
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Account Picker
             ListItem(
-                headlineContent = { Text(fromAccount?.email ?: "Select Account") },
-                overlineContent = { Text("From") },
+                headlineContent = { Text(fromAccount?.email ?: stringResource(R.string.select_account)) },
+                overlineContent = { Text(stringResource(R.string.from_label)) },
                 trailingContent = { IconChevronRight() },
                 modifier = Modifier.clickable { showAccountPicker = true }
             )
@@ -933,7 +934,7 @@ fun ComposerScreen(
                 AlertDialog(
                     onDismissRequest = { showAccountPicker = false },
                     confirmButton = {},
-                    title = { Text("Select Sender") },
+                    title = { Text(stringResource(R.string.select_sender)) },
                     text = {
                         Column {
                             accounts.forEach { acc ->
@@ -950,9 +951,9 @@ fun ComposerScreen(
                 )
             }
 
-            OutlinedTextField(value = to, onValueChange = { to = it }, label = { Text("To") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text("Subject") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = body, onValueChange = { body = it }, label = { Text("Body") }, modifier = Modifier.fillMaxWidth().weight(1f))
+            OutlinedTextField(value = to, onValueChange = { to = it }, label = { Text(stringResource(R.string.to_label)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text(stringResource(R.string.subject_label)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = body, onValueChange = { body = it }, label = { Text(stringResource(R.string.body_label)) }, modifier = Modifier.fillMaxWidth().weight(1f))
             
             if (attachments.isNotEmpty()) {
                 Text("Attachments:", style = MaterialTheme.typography.labelLarge)
@@ -976,14 +977,14 @@ fun OutboxScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Outbox") },
+                title = { Text(stringResource(R.string.outbox)) },
                 navigationIcon = { IconNavigation(onBack) },
                 actions = {
                     if (outbox.isNotEmpty()) {
                         TextButton(onClick = {
                             viewModel.sendOutboxNow(context)
                             android.widget.Toast.makeText(context, "Retrying ${outbox.size} pending message(s)…", android.widget.Toast.LENGTH_SHORT).show()
-                        }) { Text("Send now") }
+                        }) { Text(stringResource(R.string.send_now)) }
                     }
                 },
             )

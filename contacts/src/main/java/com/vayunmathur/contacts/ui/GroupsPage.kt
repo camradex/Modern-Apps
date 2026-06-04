@@ -115,7 +115,7 @@ fun GroupsPage(viewModel: ContactViewModel, backStack: NavBackStack<Route>, expa
                                     )
                                 },
                                 supportingContent = {
-                                    Text("${contactsInGroup.size} contacts")
+                                    Text(stringResource(R.string.contacts_count, contactsInGroup.size))
                                 },
                                 leadingContent = {
                                     Box(

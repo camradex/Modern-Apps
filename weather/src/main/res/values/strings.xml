@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Weather</string>
+    <string name="search_location">Search location</string>
+    <string name="confirm_delete">Confirm delete</string>
+    <string name="city_name_hint">City name</string>
+    <string name="weather_title">Weather</string>
+    <string name="add_location">Add a location</string>
 </resources>

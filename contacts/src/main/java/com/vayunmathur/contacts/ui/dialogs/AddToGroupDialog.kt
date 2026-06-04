@@ -30,7 +30,7 @@ fun AddToGroupDialog(
         title = { Text(stringResource(R.string.add_to_group)) },
         text = {
             if (groups.isEmpty()) {
-                Text("No groups found. Create one in the Groups tab.")
+                Text(stringResource(R.string.no_groups_found))
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)

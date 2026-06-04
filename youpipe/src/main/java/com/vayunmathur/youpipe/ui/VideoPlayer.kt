@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -297,14 +298,14 @@ fun VideoPlayer(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "${currentVideoStream.quality} (${getVideoCodecName(currentVideoStream.codec)})", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                                Text(text = stringResource(R.string.video_quality_codec, currentVideoStream.quality, getVideoCodecName(currentVideoStream.codec)), color = Color.White, style = MaterialTheme.typography.labelMedium)
                                 Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
                             }
                         }
                         DropdownMenu(expanded = isVideoMenuExpanded, onDismissRequest = { isVideoMenuExpanded = false }) {
                             videoStreams.forEach { stream ->
                                 DropdownMenuItem(
-                                    text = { Text("${stream.quality} (${stream.fps}fps) ${getVideoCodecName(stream.codec)}") },
+                                    text = { Text(stringResource(R.string.video_quality_fps_codec, stream.quality, stream.fps, getVideoCodecName(stream.codec))) },
                                     onClick = { currentVideoStream = stream; isVideoMenuExpanded = false }
                                 )
                             }
@@ -340,14 +341,14 @@ fun VideoPlayer(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = "${(currentAudioStream?.bitrate ?: 0) / 1000}kbps (${getAudioCodecName(currentAudioStream?.codec ?: "")})", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                                    Text(text = stringResource(R.string.audio_bitrate_codec, (currentAudioStream?.bitrate ?: 0) / 1000, getAudioCodecName(currentAudioStream?.codec ?: "")), color = Color.White, style = MaterialTheme.typography.labelMedium)
                                     Icon(painter = painterResource(R.drawable.outline_arrow_drop_down_24), contentDescription = null, tint = Color.White)
                                 }
                             }
-                            DropdownMenu(expanded = isAudioMenuExpanded, onDismissRequest = { isAudioMenuExpanded = false }) {
+                        DropdownMenu(expanded = isAudioMenuExpanded, onDismissRequest = { isAudioMenuExpanded = false }) {
                                 audioStreamOptions.forEach { stream ->
                                     DropdownMenuItem(
-                                        text = { Text("${stream.bitrate / 1000}kbps (${getAudioCodecName(stream.codec)})") },
+                                        text = { Text(stringResource(R.string.audio_bitrate_codec, stream.bitrate / 1000, getAudioCodecName(stream.codec))) },
                                         onClick = { currentAudioStream = stream; isAudioMenuExpanded = false }
                                     )
                                 }

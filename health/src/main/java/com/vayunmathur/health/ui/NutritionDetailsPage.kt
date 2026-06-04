@@ -43,7 +43,7 @@ fun NutritionDetailsPage(backStack: NavBackStack<Route>, viewModel: HealthViewMo
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Nutrition breakdown") },
+                title = { Text(stringResource(R.string.nutrition_breakdown)) },
                 navigationIcon = { IconNavigation(backStack) },
             )
         }
