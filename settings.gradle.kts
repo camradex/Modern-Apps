@@ -20,6 +20,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://jitpack.io")
+        maven("https://maven.mozilla.org/maven2")
     }
 }
 
@@ -50,3 +51,4 @@ include(":games:alchemist")
 include(":email")
 include(":weather")
 include(":messages")
+include(":web")

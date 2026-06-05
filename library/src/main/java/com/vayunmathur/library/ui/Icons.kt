@@ -232,3 +232,13 @@ fun IconDownload(modifier: Modifier = Modifier, tint: Color = LocalContentColor.
 fun IconNavigationArrow(modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
     Icon(painterResource(R.drawable.navigation_24px), "Navigation arrow", modifier = modifier, tint = tint)
 }
+
+@Composable
+fun IconBack(modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
+    Icon(painterResource(R.drawable.arrow_back_24px), "Back", modifier = modifier, tint = tint)
+}
+
+@Composable
+fun IconRefresh(modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
+    Icon(painterResource(R.drawable.refresh_24px), "Refresh", modifier = modifier, tint = tint)
+}
