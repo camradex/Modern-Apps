@@ -4,9 +4,9 @@
     <string name="nav_home">Dom</string>
     <string name="nav_albums">Albumy</string>
     <string name="nav_artists">Wykonawcy</string>
-    <string name="nav_playlists">Lista odtwarzania</string>
+    <string name="nav_playlists">Listy odtwarzania</string>
     <string name="page_title_music">Muzyka</string>
-    <string name="page_title_playlists">Lista odtwarzania</string>
+    <string name="page_title_playlists">Listy odtwarzania</string>
     <string name="now_playing">Teraz odtwarzane</string>
     <string name="unknown_title">Nieznany tytuł</string>
     <string name="unknown_artist">Nieznany wykonawca</string>
