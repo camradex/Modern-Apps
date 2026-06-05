@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -164,7 +165,7 @@ fun VideoItem(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-            }, trailingContent = trailingContent?.let { { it() } })
+            }, trailingContent = trailingContent?.let { { it() } }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
         }
     }
 }

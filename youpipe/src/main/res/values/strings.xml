@@ -44,4 +44,5 @@
     <string name="video_quality_codec">%1$s (%2$s)</string>
     <string name="video_quality_fps_codec">%1$s (%2$dfps) %3$s</string>
     <string name="audio_bitrate_codec">%1$dkbps (%2$s)</string>
+    <string name="empty_recommendations">Watch some videos to get personalized recommendations</string>
 </resources>

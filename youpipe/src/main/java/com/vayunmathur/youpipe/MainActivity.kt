@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
             db.subscriptionVideoDao(),
             db.historyVideoDao(),
             db.downloadedVideoDao(),
+            db.cachedRelatedVideoDao(),
         )
     }
 
@@ -123,7 +124,7 @@ fun getRoute(uri: Uri?): Route {
             return Route.VideoPage(videoURLtoID(uri.toString()))
         }
     }
-    return Route.SubscriptionsPage
+    return Route.SearchPage
 }
 
 @Serializable
@@ -191,7 +192,7 @@ fun Navigation(initialRoute: Route, ypvm: YouPipeViewModel) {
 }
 
 val MAIN_BOTTOM_BAR_ITEMS = listOf(
-    BottomBarItem("Search", Route.SearchPage, R.drawable.outline_search_24),
+    BottomBarItem("Home", Route.SearchPage, R.drawable.outline_home_24),
     BottomBarItem("Subscriptions", Route.SubscriptionsPage, R.drawable.outline_subscriptions_24),
     BottomBarItem("History", Route.History, R.drawable.baseline_history_24),
     BottomBarItem("Downloads", Route.Downloads, R.drawable.outline_list_24),

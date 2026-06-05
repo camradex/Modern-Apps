@@ -33,6 +33,25 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `CachedRelatedVideo` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `sourceVideoID` INTEGER NOT NULL,
+                `name` TEXT NOT NULL,
+                `videoID` INTEGER NOT NULL,
+                `duration` INTEGER NOT NULL,
+                `views` INTEGER NOT NULL,
+                `uploadDate` INTEGER NOT NULL,
+                `thumbnailURL` TEXT NOT NULL,
+                `author` TEXT NOT NULL,
+                `cachedAt` INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 @Dao
 interface HistoryVideoDao {
     @Query("SELECT * FROM HistoryVideo")
@@ -94,15 +113,16 @@ interface SubscriptionVideoDao {
 }
 
 @TypeConverters(DefaultConverters::class)
-@Database(entities = [Subscription::class, SubscriptionVideo::class, HistoryVideo::class, SubscriptionCategory::class, DownloadedVideo::class], version = 2)
+@Database(entities = [Subscription::class, SubscriptionVideo::class, HistoryVideo::class, SubscriptionCategory::class, DownloadedVideo::class, CachedRelatedVideo::class], version = 3)
 abstract class SubscriptionDatabase : RoomDatabase() {
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun subscriptionVideoDao(): SubscriptionVideoDao
     abstract fun historyVideoDao(): HistoryVideoDao
     abstract fun subscriptionCategoryDao(): SubscriptionCategoryDao
     abstract fun downloadedVideoDao(): DownloadedVideoDao
+    abstract fun cachedRelatedVideoDao(): CachedRelatedVideoDao
 
     companion object : com.vayunmathur.library.util.DatabaseMigrations {
-        override val migrations: List<Migration> = listOf(MIGRATION_1_2)
+        override val migrations: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
     }
 }

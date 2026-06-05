@@ -11,6 +11,8 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.core.text.HtmlCompat
 import com.vayunmathur.library.util.DataStoreUtils
+import com.vayunmathur.youpipe.data.CachedRelatedVideo
+import com.vayunmathur.youpipe.data.CachedRelatedVideoDao
 import com.vayunmathur.youpipe.data.DownloadedVideo
 import com.vayunmathur.youpipe.data.DownloadedVideoDao
 import com.vayunmathur.youpipe.data.HistoryVideo
@@ -54,6 +56,7 @@ import org.schabi.newpipe.extractor.stream.Description
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.zip.ZipInputStream
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
 import kotlin.time.toKotlinInstant
 
@@ -77,6 +80,7 @@ class YouPipeViewModel(
     private val subscriptionVideoDao: SubscriptionVideoDao,
     private val historyVideoDao: HistoryVideoDao,
     private val downloadedVideoDao: DownloadedVideoDao,
+    private val cachedRelatedVideoDao: CachedRelatedVideoDao,
 ) : AndroidViewModel(application) {
 
     // ===================== Data StateFlows =====================
@@ -130,6 +134,84 @@ class YouPipeViewModel(
     suspend fun replaceCategory(originalCategoryName: String?, categoryName: String, ids: List<Long>) {
         withContext(Dispatchers.IO) {
             subscriptionCategoryDao.replaceCategory(originalCategoryName, categoryName, ids)
+        }
+    }
+
+    // ===================== Recommendations =====================
+
+    private val _recommendations = MutableStateFlow<List<VideoInfo>>(emptyList())
+    val recommendations: StateFlow<List<VideoInfo>> = _recommendations.asStateFlow()
+
+    private val _recommendationsLoading = MutableStateFlow(false)
+    val recommendationsLoading: StateFlow<Boolean> = _recommendationsLoading.asStateFlow()
+
+    fun loadRecommendations() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _recommendationsLoading.value = true
+            try {
+                val cached = cachedRelatedVideoDao.getAllFlow().stateIn(viewModelScope).value
+                val history = historyVideos.value
+                val subs = subscriptions.value
+                val subNames = subs.map { it.name.lowercase() }.toSet()
+
+                val historyMap = history.associateBy { it.id }
+                val authorFreq = mutableMapOf<String, Int>()
+                history.forEach { h ->
+                    val key = h.videoItem.author.lowercase()
+                    authorFreq[key] = (authorFreq[key] ?: 0) + 1
+                }
+
+                val sourceTimestamps = history.associate { it.id to it.timestamp }
+                val now = Clock.System.now()
+
+                data class ScoredVideo(val video: VideoInfo, val score: Double)
+
+                val scored = mutableMapOf<Long, ScoredVideo>()
+
+                for (item in cached) {
+                    val v = item.videoItem
+                    if (v.author.lowercase() in subNames) continue
+                    val h = historyMap[v.videoID]
+                    if (h != null && v.duration > 0 && h.progress.toDouble() / (v.duration * 1000) >= 0.9) continue
+
+                    val wc = minOf((authorFreq[v.author.lowercase()] ?: 0) * 2, 10).toDouble()
+                    val sourceTs = sourceTimestamps[item.sourceVideoID]
+                    val wr = if (sourceTs != null) {
+                        val hoursAgo = (now - sourceTs).inWholeHours.toDouble()
+                        maxOf(5.0 - hoursAgo / 24.0, 0.0)
+                    } else 0.0
+                    val uploadAgeDays = (now - v.uploadDate).inWholeDays.toDouble()
+                    val d = kotlin.math.exp(-0.03 * uploadAgeDays)
+                    val score = (wc + wr) * d
+
+                    val existing = scored[v.videoID]
+                    if (existing == null || score > existing.score) {
+                        scored[v.videoID] = ScoredVideo(v, score)
+                    }
+                }
+
+                val sorted = scored.values.sortedByDescending { it.score }
+
+                val diverse = mutableListOf<VideoInfo>()
+                var consecutiveAuthor = ""
+                var consecutiveCount = 0
+                for (sv in sorted) {
+                    val author = sv.video.author.lowercase()
+                    if (author == consecutiveAuthor) {
+                        consecutiveCount++
+                        if (consecutiveCount > 3) continue
+                    } else {
+                        consecutiveAuthor = author
+                        consecutiveCount = 1
+                    }
+                    diverse.add(sv.video)
+                }
+
+                _recommendations.value = diverse
+            } catch (e: Exception) {
+                Log.e(TAG, "Recommendation error", e)
+            }
+            _recommendationsLoading.value = false
         }
     }
 
@@ -401,6 +483,16 @@ class YouPipeViewModel(
                             segments = segments,
                             relatedVideos = related,
                         )
+                    }
+
+                    if (related.isNotEmpty()) {
+                        cachedRelatedVideoDao.upsertAll(related.map {
+                            CachedRelatedVideo(
+                                sourceVideoID = videoID,
+                                videoItem = it,
+                                cachedAt = Clock.System.now()
+                            )
+                        })
                     }
                 }
                 withContext(Dispatchers.IO) {
@@ -717,6 +809,10 @@ class YouPipeViewModel(
 
     init {
         setupHourlyTask(application)
+        viewModelScope.launch(Dispatchers.IO) {
+            val cutoff = Clock.System.now() - 30.days
+            cachedRelatedVideoDao.deleteOlderThan(cutoff)
+        }
     }
 
     companion object {
@@ -752,6 +848,7 @@ class YouPipeViewModelFactory(
     private val subscriptionVideoDao: SubscriptionVideoDao,
     private val historyVideoDao: HistoryVideoDao,
     private val downloadedVideoDao: DownloadedVideoDao,
+    private val cachedRelatedVideoDao: CachedRelatedVideoDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -765,6 +862,7 @@ class YouPipeViewModelFactory(
             subscriptionVideoDao,
             historyVideoDao,
             downloadedVideoDao,
+            cachedRelatedVideoDao,
         ) as T
     }
 }
