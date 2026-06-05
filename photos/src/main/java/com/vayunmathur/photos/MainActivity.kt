@@ -1,34 +1,52 @@
 package com.vayunmathur.photos
 
 import android.Manifest
-import android.os.Build
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
+import android.provider.Settings
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.PermissionsChecker
 import com.vayunmathur.library.util.MainNavigation
@@ -89,7 +107,11 @@ class MainActivity : FragmentActivity() {
 
     @Composable
     private fun PermissionsWrapper() {
-        if (Build.VERSION.SDK_INT >= 33) {
+        val context = LocalContext.current
+        
+        // minSdk is 31. API 31-32 need READ_EXTERNAL_STORAGE, API 33+ need READ_MEDIA_*
+        // MANAGE_MEDIA is needed on API 31+ (checked after storage permissions)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
             PermissionsChecker(
                 arrayOf(
                     Manifest.permission.READ_MEDIA_IMAGES,
@@ -97,7 +119,7 @@ class MainActivity : FragmentActivity() {
                     Manifest.permission.ACCESS_MEDIA_LOCATION
                 ), getString(R.string.grant_image_video_permissions)
             ) {
-                Navigation(galleryViewModel, photoMapViewModel, secureFolderViewModel)
+                CheckManageMediaPermission(context)
             }
         } else {
             PermissionsChecker(
@@ -105,8 +127,70 @@ class MainActivity : FragmentActivity() {
                     Manifest.permission.READ_EXTERNAL_STORAGE
                 ), getString(R.string.grant_storage_permission)
             ) {
-                Navigation(galleryViewModel, photoMapViewModel, secureFolderViewModel)
+                CheckManageMediaPermission(context)
             }
+        }
+    }
+    
+    @Composable
+    private fun CheckManageMediaPermission(context: Context) {
+        // Use state to track permission status, updated when activity resumes
+        var hasManageMedia by remember { 
+            mutableStateOf(MediaStore.canManageMedia(context)) 
+        }
+        
+        // Re-check permission when the composable is resumed (user returns from Settings)
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    hasManageMedia = MediaStore.canManageMedia(context)
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+        
+        if (!hasManageMedia) {
+            // Show a screen demanding MANAGE_MEDIA permission using Scaffold
+            Scaffold { paddingValues ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Text(
+                            text = "Media Management Permission Required",
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Spacer(modifier = Modifier.padding(16.dp))
+                        Text(
+                            text = "This app needs permission to manage media files to function properly. Please grant 'Allow media management' permission in Settings.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.padding(16.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Text("Open Settings")
+                        }
+                    }
+                }
+            }
+        } else {
+            Navigation(galleryViewModel, photoMapViewModel, secureFolderViewModel)
         }
     }
 }

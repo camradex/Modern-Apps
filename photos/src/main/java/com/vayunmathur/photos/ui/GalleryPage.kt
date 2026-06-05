@@ -1,7 +1,10 @@
 package com.vayunmathur.photos.ui
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.provider.MediaStore
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,17 +13,15 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.size
-import com.vayunmathur.library.ui.IconClose
-import com.vayunmathur.library.ui.IconSearch
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,14 +45,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
-import androidx.compose.ui.platform.LocalContext
+import com.vayunmathur.library.ui.IconClose
 import com.vayunmathur.library.ui.IconDelete
+import com.vayunmathur.library.ui.IconSearch
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.photos.LocalColumnCount
 import com.vayunmathur.photos.NavigationBar
@@ -110,9 +113,27 @@ fun GalleryPage(
         }
     }
 
+    // Helper to request MANAGE_MEDIA permission
+    val manageMediaLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        // User returned from Settings - permission may or may not be granted
+        // The next delete attempt will check again
+    }
+    
+    fun requestManageMediaPermission() {
+        if (!MediaStore.canManageMedia(context)) {
+            val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            manageMediaLauncher.launch(intent)
+        }
+    }
+    
     val onMoveToSecureClick: () -> Unit = onMoveToSecureClick@{
         val activity = context as FragmentActivity
         val selectedPhotos = photos.filter { it.id in selectedIds }
+        
         secureFolderViewModel.unlock(
             activity,
             onSuccess = { _, _ ->
@@ -120,8 +141,23 @@ fun GalleryPage(
                     photos = selectedPhotos,
                     sourcePhotoDao = galleryViewModel.photoDao,
                 ) { urisToDelete ->
-                    val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, urisToDelete)
-                    moveLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+                    // Use MediaStore operations to delete files
+                    // MANAGE_MEDIA permission is required to run the app (checked in PermissionsWrapper)
+                    try {
+                        val pendingIntent = MediaStore.createDeleteRequest(
+                            context.contentResolver,
+                            urisToDelete
+                        )
+                        // With MANAGE_MEDIA permission granted, this will delete without popup
+                        moveLauncher.launch(
+                            IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.e("GalleryPage", "MediaStore delete request failed", e)
+                        // Fallback: clear selection and refresh anyway
+                        galleryViewModel.clearSelection()
+                        galleryViewModel.runSync()
+                    }
                 }
             },
             onFailure = {},
