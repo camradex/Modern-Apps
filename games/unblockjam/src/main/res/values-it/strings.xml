@@ -1,3 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="level">Rompicapo</string>
+    <string name="level_selector">Selezione rompicapo</string>
+    <string name="pack_selector">Selezione pacchetto</string>
+    <string name="undo">Annulla</string>
+    <string name="restart">Riavvia</string>
+    <string name="previous_level">Rompicapo precedente</string>
+    <string name="next_level">Rompicapo successivo</string>
+    <string name="completed">Completato</string>
+    <string name="moves">Mosse</string>
+    <string name="app_name">Unblock Jam</string>
 </resources>
