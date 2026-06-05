@@ -71,6 +71,13 @@ interface MatchingDao {
 
 val databases: MutableMap<KClass<*>, RoomDatabase> = mutableMapOf()
 
+inline fun <reified T : RoomDatabase> closeCachedDatabase() {
+    synchronized(databases) {
+        val db = databases.remove(T::class)
+        try { db?.close() } catch (_: Exception) {}
+    }
+}
+
 /**
  * Implemented by a [RoomDatabase] companion object to declare the migrations
  * for that database in one place — alongside the schema definition itself

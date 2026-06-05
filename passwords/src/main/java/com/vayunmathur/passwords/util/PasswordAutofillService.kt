@@ -23,6 +23,7 @@ import android.widget.inline.InlinePresentationSpec
 import androidx.autofill.inline.UiVersions
 import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.core.net.toUri
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.passwords.R
 import com.vayunmathur.passwords.data.PasswordDatabase
@@ -34,11 +35,18 @@ class PasswordAutofillService : AutofillService() {
 
     private val TAG = "AutofillService"
 
+    private val isDatabaseAvailable by lazy {
+        DatabaseHelper(applicationContext).isKeyGenerated()
+    }
     private val passwordDao by lazy {
         applicationContext.buildDatabase<PasswordDatabase>().passwordDao()
     }
 
     override fun onFillRequest(request: FillRequest, cancellationSignal: CancellationSignal, callback: FillCallback) {
+        if (!isDatabaseAvailable) {
+            callback.onSuccess(null)
+            return
+        }
         val parser = StructureParser(request.fillContexts)
 
         val usernameId = parser.usernameId

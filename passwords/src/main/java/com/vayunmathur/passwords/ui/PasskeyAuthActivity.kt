@@ -1,5 +1,6 @@
 package com.vayunmathur.passwords.ui
 
+import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
 import android.util.Base64
@@ -7,8 +8,15 @@ import android.util.Log
 import androidx.credentials.CreatePublicKeyCredentialRequest
 import androidx.credentials.GetPublicKeyCredentialOption
 import androidx.credentials.PublicKeyCredential
+import androidx.credentials.provider.BeginGetCredentialResponse
+import androidx.credentials.provider.BeginGetPasswordOption
+import androidx.credentials.provider.BeginGetPublicKeyCredentialOption
+import androidx.credentials.provider.PasswordCredentialEntry
 import androidx.credentials.provider.PendingIntentHandler
+import androidx.credentials.provider.PublicKeyCredentialEntry
 import androidx.fragment.app.FragmentActivity
+import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.passwords.data.Passkey
 import com.vayunmathur.passwords.data.PasswordDatabase
@@ -29,20 +37,40 @@ import java.util.UUID
 
 class PasskeyAuthActivity : FragmentActivity() {
 
-    private val db by lazy {
-        applicationContext.buildDatabase<PasswordDatabase>()
-    }
+    private lateinit var db: PasswordDatabase
     private val passkeyDao by lazy { db.passkeyDao() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val helper = DatabaseHelper(applicationContext)
+        if (helper.isKeyGenerated()) {
+            db = applicationContext.buildDatabase<PasswordDatabase>()
+            proceedWithFlow()
+        } else {
+            unlockDatabaseWithBiometrics(
+                activity = this,
+                onSuccess = { passphrase ->
+                    helper.storePassphrase(passphrase)
+                    db = applicationContext.buildDatabase<PasswordDatabase>(encryptionPassword = passphrase)
+                    proceedWithFlow()
+                },
+                onFailure = {
+                    setResult(RESULT_CANCELED)
+                    finish()
+                }
+            )
+        }
+    }
+
+    private fun proceedWithFlow() {
         val flow = intent.getStringExtra(EXTRA_FLOW)
         try {
             when (flow) {
                 FLOW_CREATE -> handleCreate()
                 FLOW_GET -> handleGet()
                 FLOW_PASSWORD -> handlePassword()
+                FLOW_UNLOCK -> handleUnlock()
                 else -> {
                     Log.e(TAG, "Unknown flow: $flow")
                     setResult(RESULT_CANCELED)
@@ -327,12 +355,83 @@ class PasskeyAuthActivity : FragmentActivity() {
         setResult(RESULT_OK, result)
     }
 
+    private fun handleUnlock() {
+        val request = PendingIntentHandler.retrieveBeginGetCredentialRequest(intent)
+        if (request == null) {
+            Log.e(TAG, "No BeginGetCredentialRequest in unlock intent")
+            setResult(RESULT_CANCELED)
+            return
+        }
+
+        val responseBuilder = BeginGetCredentialResponse.Builder()
+        runBlocking {
+            for (option in request.beginGetCredentialOptions) {
+                when (option) {
+                    is BeginGetPublicKeyCredentialOption -> {
+                        val json = org.json.JSONObject(option.requestJson)
+                        val rpId = json.optString("rpId", "")
+                        if (rpId.isBlank()) continue
+
+                        val passkeys = passkeyDao.getByRpId(rpId)
+                        for (passkey in passkeys) {
+                            val intent = Intent(applicationContext, PasskeyAuthActivity::class.java).apply {
+                                putExtra(EXTRA_FLOW, FLOW_GET)
+                                putExtra(EXTRA_CREDENTIAL_ID, passkey.credentialId)
+                            }
+                            val pendingIntent = PendingIntent.getActivity(
+                                applicationContext,
+                                passkey.id.toInt(),
+                                intent,
+                                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                            )
+                            val entry = PublicKeyCredentialEntry.Builder(
+                                applicationContext,
+                                passkey.userName,
+                                pendingIntent,
+                                option,
+                            ).build()
+                            responseBuilder.addCredentialEntry(entry)
+                        }
+                    }
+                    is BeginGetPasswordOption -> {
+                        val allPasswords = db.passwordDao().getAll()
+                        for (pass in allPasswords) {
+                            val intent = Intent(applicationContext, PasskeyAuthActivity::class.java).apply {
+                                putExtra(EXTRA_FLOW, FLOW_PASSWORD)
+                                putExtra(PasskeyCredentialService.EXTRA_PASSWORD_ID, pass.id)
+                            }
+                            val pendingIntent = PendingIntent.getActivity(
+                                applicationContext,
+                                (pass.id + 100000).toInt(),
+                                intent,
+                                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                            )
+                            val entry = PasswordCredentialEntry.Builder(
+                                applicationContext,
+                                pass.userId,
+                                pendingIntent,
+                                option,
+                            ).setDisplayName(pass.name.ifBlank { null })
+                                .build()
+                            responseBuilder.addCredentialEntry(entry)
+                        }
+                    }
+                }
+            }
+        }
+
+        val result = Intent()
+        PendingIntentHandler.setBeginGetCredentialResponse(result, responseBuilder.build())
+        setResult(RESULT_OK, result)
+    }
+
     companion object {
         const val EXTRA_FLOW = "flow"
         const val EXTRA_CREDENTIAL_ID = "credential_id"
         const val FLOW_CREATE = "create"
         const val FLOW_GET = "get"
         const val FLOW_PASSWORD = "password"
+        const val FLOW_UNLOCK = "unlock"
         private const val TAG = "PasskeyAuthActivity"
         private val AAGUID = uuidToBytes(UUID.fromString("a1b2c3d4-e5f6-7890-abcd-ef1234567890"))
 

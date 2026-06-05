@@ -119,6 +119,18 @@ open class DatabaseHelper(val context: Context) {
         return cipher
     }
 
+    fun storePassphrase(passphrase: String) {
+        if (!isKeyGenerated()) generateKey()
+        val cipher = getCipherForEncryption()
+        val encryptedBytes = cipher.doFinal(passphrase.toByteArray(StandardCharsets.UTF_8))
+        val iv = cipher.iv
+        val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
+        prefs.edit {
+            putString(passphraseKey, Base64.encodeToString(encryptedBytes, Base64.NO_WRAP))
+            putString(ivKey, Base64.encodeToString(iv, Base64.NO_WRAP))
+        }
+    }
+
     fun getPassphrase(): String {
         return try {
             decryptPassphrase(getCipherForDecryption())

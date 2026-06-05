@@ -10,6 +10,7 @@ import androidx.credentials.exceptions.CreateCredentialException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.CreateCredentialUnknownException
 import androidx.credentials.exceptions.GetCredentialUnknownException
+import androidx.credentials.provider.AuthenticationAction
 import androidx.credentials.provider.BeginCreateCredentialRequest
 import androidx.credentials.provider.BeginCreateCredentialResponse
 import androidx.credentials.provider.BeginCreatePublicKeyCredentialRequest
@@ -18,12 +19,13 @@ import androidx.credentials.provider.BeginGetCredentialResponse
 import androidx.credentials.provider.BeginGetPasswordOption
 import androidx.credentials.provider.BeginGetPublicKeyCredentialOption
 import androidx.credentials.provider.CreateEntry
-import androidx.credentials.provider.CredentialEntry
 import androidx.credentials.provider.CredentialProviderService
 import androidx.credentials.provider.PasswordCredentialEntry
 import androidx.credentials.provider.ProviderClearCredentialStateRequest
 import androidx.credentials.provider.PublicKeyCredentialEntry
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.buildDatabase
+import com.vayunmathur.library.util.closeCachedDatabase
 import com.vayunmathur.passwords.R
 import com.vayunmathur.passwords.data.PasswordDatabase
 import com.vayunmathur.passwords.ui.PasskeyAuthActivity
@@ -38,11 +40,34 @@ class PasskeyCredentialService : CredentialProviderService() {
     private val passkeyDao by lazy { db.passkeyDao() }
     private val passwordDao by lazy { db.passwordDao() }
 
+    private fun buildUnlockResponse(): BeginGetCredentialResponse {
+        val intent = Intent(applicationContext, PasskeyAuthActivity::class.java).apply {
+            putExtra(PasskeyAuthActivity.EXTRA_FLOW, PasskeyAuthActivity.FLOW_UNLOCK)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            REQUEST_CODE_UNLOCK,
+            intent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val action = AuthenticationAction(
+            applicationContext.getString(R.string.unlock_database),
+            pendingIntent,
+        )
+        return BeginGetCredentialResponse.Builder()
+            .addAuthenticationAction(action)
+            .build()
+    }
+
     override fun onBeginGetCredentialRequest(
         request: BeginGetCredentialRequest,
         cancellationSignal: CancellationSignal,
         callback: OutcomeReceiver<BeginGetCredentialResponse, GetCredentialException>,
     ) {
+        if (!DatabaseHelper(applicationContext).isKeyGenerated()) {
+            callback.onResult(buildUnlockResponse())
+            return
+        }
         runBlocking {
             try {
                 val responseBuilder = BeginGetCredentialResponse.Builder()
@@ -102,8 +127,10 @@ class PasskeyCredentialService : CredentialProviderService() {
                 }
                 callback.onResult(responseBuilder.build())
             } catch (e: Exception) {
-                Log.e(TAG, "onBeginGetCredentialRequest failed", e)
-                callback.onError(GetCredentialUnknownException())
+                Log.e(TAG, "onBeginGetCredentialRequest failed, falling back to unlock", e)
+                closeCachedDatabase<PasswordDatabase>()
+                DatabaseHelper(applicationContext).deleteKey()
+                callback.onResult(buildUnlockResponse())
             }
         }
     }
@@ -153,6 +180,7 @@ class PasskeyCredentialService : CredentialProviderService() {
 
     companion object {
         private const val TAG = "PasskeyCredService"
+        private const val REQUEST_CODE_UNLOCK = 999999
         const val EXTRA_PASSWORD_ID = "password_id"
     }
 }

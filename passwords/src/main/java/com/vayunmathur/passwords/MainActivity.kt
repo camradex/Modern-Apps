@@ -12,6 +12,7 @@ import com.vayunmathur.library.util.ListDetailPage
 import com.vayunmathur.library.util.ListPage
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.buildDatabase
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.rememberNavBackStack
 import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
 import com.vayunmathur.passwords.data.PasswordDao
@@ -40,6 +41,9 @@ class MainActivity : FragmentActivity() {
         unlockDatabaseWithBiometrics(
             activity = this,
             onSuccess = { passphrase ->
+                // Sync passphrase to non-auth key so services can access the database
+                DatabaseHelper(this).storePassphrase(passphrase)
+
                 val db = buildDatabase<PasswordDatabase>(encryptionPassword = passphrase)
                 passwordDao = db.passwordDao()
                 passkeyDao = db.passkeyDao()

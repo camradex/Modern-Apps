@@ -24,4 +24,5 @@
     <string name="passkey_credential_id">Credential ID</string>
     <string name="passkey_created">Created</string>
     <string name="passkey_last_used">Last Used</string>
+    <string name="unlock_database">Unlock Passwords</string>
 </resources>
