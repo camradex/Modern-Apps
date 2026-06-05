@@ -132,6 +132,10 @@ class BrowserViewModel(
                     search(query)
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
+                if (SearchEngine.isSearchEngineUrl(request.uri)) {
+                    session.loadUri(HOME_URL)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 

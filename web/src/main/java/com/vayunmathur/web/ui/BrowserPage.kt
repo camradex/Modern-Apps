@@ -86,8 +86,15 @@ fun BrowserPage(
         val query = SearchEngine.extractSearchQuery(trimmed)
         when {
             query != null -> viewModel.search(query)
-            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> viewModel.loadUrl(trimmed)
-            trimmed.contains(".") && !trimmed.contains(" ") -> viewModel.loadUrl("https://$trimmed")
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
+                if (SearchEngine.isSearchEngineUrl(trimmed)) viewModel.createTab()
+                else viewModel.loadUrl(trimmed)
+            }
+            trimmed.contains(".") && !trimmed.contains(" ") -> {
+                val url = "https://$trimmed"
+                if (SearchEngine.isSearchEngineUrl(url)) viewModel.createTab()
+                else viewModel.loadUrl(url)
+            }
             else -> viewModel.search(trimmed)
         }
     }

@@ -17,6 +17,22 @@ object SearchEngine {
         Regex("""^https?://html\.duckduckgo\.com/html/""") to "q",
     )
 
+    private val SEARCH_ENGINE_HOMES = listOf(
+        Regex("""^https?://(www\.)?duckduckgo\.com(/.*)?$"""),
+        Regex("""^https?://html\.duckduckgo\.com(/.*)?$"""),
+        Regex("""^https?://(www\.)?google\.[a-z.]+(/.*)?$"""),
+        Regex("""^https?://(www\.)?bing\.com(/.*)?$"""),
+        Regex("""^https?://(search\.)?yahoo\.com(/.*)?$"""),
+        Regex("""^https?://(www\.)?ecosia\.org(/.*)?$"""),
+        Regex("""^https?://(www\.)?startpage\.com(/.*)?$"""),
+        Regex("""^https?://(www\.)?baidu\.com(/.*)?$"""),
+        Regex("""^https?://(www\.)?yandex\.(com|ru)(/.*)?$"""),
+    )
+
+    fun isSearchEngineUrl(url: String): Boolean {
+        return SEARCH_ENGINE_HOMES.any { it.containsMatchIn(url) }
+    }
+
     fun extractSearchQuery(url: String): String? {
         for ((pattern, param) in SEARCH_PATTERNS) {
             if (pattern.containsMatchIn(url)) {
