@@ -26,6 +26,7 @@ import com.vayunmathur.passwords.R
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.ui.IconNavigation
+import com.vayunmathur.passwords.util.KdbxBackupFormat
 import com.vayunmathur.passwords.util.PasswordsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,8 +49,7 @@ fun SettingsPage(
             navigationIcon = { IconNavigation(backStack) },
             actions = {
                 BackupButtons(
-                    dbConfigs = listOf("passwords-db" to passphrase),
-                    extraFiles = emptyList(),
+                    format = KdbxBackupFormat(passwordsViewModel.passwordDao, passwordsViewModel.passkeyDao),
                 )
             },
         )

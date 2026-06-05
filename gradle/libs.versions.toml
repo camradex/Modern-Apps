@@ -61,6 +61,7 @@ foundation = "1.11.2"
 materialkolor = "4.1.1"
 protobuf = "4.28.3"
 protobufPlugin = "0.9.4"
+keepassJava2 = "2.2.4"
 zxing = "3.5.3"
 
 [libraries]
@@ -165,6 +166,7 @@ materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "ma
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
 protobuf-protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+keepassjava2-dom = { module = "org.linguafranca.pwdb:KeePassJava2-dom", version.ref = "keepassJava2" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

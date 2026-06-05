@@ -57,8 +57,8 @@ import kotlinx.coroutines.withContext
  */
 class PasswordsViewModel(
     application: Application,
-    private val passwordDao: PasswordDao,
-    private val passkeyDao: PasskeyDao,
+    val passwordDao: PasswordDao,
+    val passkeyDao: PasskeyDao,
 ) : AndroidViewModel(application) {
 
     // -- Data -------------------------------------------------------------

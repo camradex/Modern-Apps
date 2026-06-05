@@ -16,4 +16,5 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.credentials.lib)
     implementation(libs.androidx.autofill)
+    implementation(libs.keepassjava2.dom)
 }
