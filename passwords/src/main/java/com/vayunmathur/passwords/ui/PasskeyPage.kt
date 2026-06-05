@@ -1,0 +1,94 @@
+package com.vayunmathur.passwords.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.ui.IconDelete
+import com.vayunmathur.library.ui.IconNavigation
+import com.vayunmathur.passwords.R
+import com.vayunmathur.passwords.Route
+import com.vayunmathur.passwords.util.PasswordsViewModel
+import java.text.DateFormat
+import java.util.Date
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PasskeyPage(
+    backStack: NavBackStack<Route>,
+    id: Long,
+    viewModel: PasswordsViewModel,
+) {
+    val passkeys by viewModel.passkeys.collectAsState()
+    val passkey = passkeys.firstOrNull { it.id == id }
+
+    if (passkey == null) {
+        return
+    }
+
+    val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(passkey.rpName.ifBlank { stringResource(R.string.passkey_detail_title) }) },
+                actions = {
+                    IconButton(onClick = { viewModel.deletePasskey(passkey); backStack.pop() }) {
+                        IconDelete()
+                    }
+                },
+                navigationIcon = {
+                    IconNavigation(backStack)
+                }
+            )
+        },
+    ) { paddingValues ->
+        Column(
+            Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            DetailCard(stringResource(R.string.passkey_rp_name), passkey.rpName)
+            DetailCard(stringResource(R.string.passkey_rp_id), passkey.rpId)
+            DetailCard(stringResource(R.string.passkey_user_name), passkey.userName)
+            DetailCard(stringResource(R.string.passkey_user_display_name), passkey.userDisplayName)
+            DetailCard(
+                stringResource(R.string.passkey_credential_id),
+                passkey.credentialId.take(20) + if (passkey.credentialId.length > 20) "…" else ""
+            )
+            DetailCard(stringResource(R.string.passkey_created), dateFormat.format(Date(passkey.creationTime)))
+            DetailCard(stringResource(R.string.passkey_last_used), dateFormat.format(Date(passkey.lastUsedTime)))
+        }
+    }
+}
+
+@Composable
+private fun DetailCard(label: String, value: String) {
+    Card(shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            Text(value.ifBlank { "—" }, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}

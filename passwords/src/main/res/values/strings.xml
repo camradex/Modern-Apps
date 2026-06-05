@@ -15,4 +15,13 @@
     <string name="totp_refreshes_in">Refreshes in %1$d s</string>
     <string name="section_websites">Websites</string>
     <string name="websites_none">(none)</string>
+    <string name="section_passkeys">Passkeys</string>
+    <string name="passkey_detail_title">Passkey</string>
+    <string name="passkey_rp_id">Relying Party ID</string>
+    <string name="passkey_rp_name">Relying Party</string>
+    <string name="passkey_user_name">User Name</string>
+    <string name="passkey_user_display_name">Display Name</string>
+    <string name="passkey_credential_id">Credential ID</string>
+    <string name="passkey_created">Created</string>
+    <string name="passkey_last_used">Last Used</string>
 </resources>

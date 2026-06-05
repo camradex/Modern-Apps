@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,15 +20,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.ui.ListPage
+import com.vayunmathur.library.util.DatabaseItem
 import com.vayunmathur.library.util.tryOrDefault
+import com.vayunmathur.passwords.data.Passkey
 import com.vayunmathur.passwords.data.Password
 import com.vayunmathur.passwords.R
 import com.vayunmathur.passwords.Route
 import com.vayunmathur.passwords.util.PasswordsViewModel
 import com.vayunmathur.passwords.util.TOTP
+
+sealed class CredentialItem(override val id: Long) : DatabaseItem {
+    class PasswordItem(val password: Password) : CredentialItem(password.id)
+    class PasskeyItem(val passkey: Passkey) : CredentialItem(Long.MAX_VALUE - passkey.id)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,27 +46,58 @@ fun MenuPage(
 ) {
     val now by viewModel.tickerFlow.collectAsState()
     val passwords by viewModel.passwords.collectAsState()
-    ListPage<Password, Route, Route.PasswordEditPage>(backStack, passwords, "Passwords", {
-        Text(it.name.ifBlank {"(no name)"})
-    }, {
-        Text(it.userId)
-    }, { Route.PasswordPage(it) }, { Route.PasswordEditPage(0) }, Route.Settings, trailingContent = {
-        if(it.totpSecret.isNullOrBlank()) return@ListPage
-        val secret = it.totpSecret
-        val timeBucket = now / 1000 / 30
-        val currentCode = remember(secret, timeBucket) {
-            tryOrDefault("----") { TOTP.generate(secret, timeBucket * 30) }
-        }
-        val progress = 1f - (now / 30000f) % 1f
-        Row(Modifier.clickable {
-            viewModel.copyToClipboard("totp", currentCode)
-        }.wrapContentHeight(), verticalAlignment = Alignment.CenterVertically) {
-            Text(currentCode, style = MaterialTheme.typography.bodyLarge)
-            Spacer(Modifier.width(8.dp))
-            Box(contentAlignment = Alignment.Center) {
-                CircularProgressIndicator({progress}, Modifier.size(40.dp))
-                Icon(painterResource(R.drawable.content_copy_24px), contentDescription = "Copy TOTP", Modifier.size(16.dp))
+    val passkeys by viewModel.passkeys.collectAsState()
+
+    val items: List<CredentialItem> = remember(passwords, passkeys) {
+        passwords.map { CredentialItem.PasswordItem(it) } +
+            passkeys.map { CredentialItem.PasskeyItem(it) }
+    }
+
+    ListPage<CredentialItem, Route, Route.PasswordEditPage>(backStack, items, "Passwords", {
+        when (it) {
+            is CredentialItem.PasswordItem -> Text(it.password.name.ifBlank { "(no name)" })
+            is CredentialItem.PasskeyItem -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.key_24px), contentDescription = null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(it.passkey.rpName.ifBlank { it.passkey.rpId })
             }
         }
-    }, searchEnabled = true)
+    }, {
+        when (it) {
+            is CredentialItem.PasswordItem -> Text(it.password.userId)
+            is CredentialItem.PasskeyItem -> Text(it.passkey.userName)
+        }
+    }, {
+        when (val item = items.firstOrNull { i -> i.id == it }) {
+            is CredentialItem.PasswordItem -> Route.PasswordPage(item.password.id)
+            is CredentialItem.PasskeyItem -> Route.PasskeyPage(item.passkey.id)
+            null -> Route.Menu
+        }
+    }, { Route.PasswordEditPage(0) }, Route.Settings, trailingContent = {
+        if (it is CredentialItem.PasswordItem) {
+            val password = it.password
+            if (password.totpSecret.isNullOrBlank()) return@ListPage
+            val secret = password.totpSecret
+            val timeBucket = now / 1000 / 30
+            val currentCode = remember(secret, timeBucket) {
+                tryOrDefault("----") { TOTP.generate(secret, timeBucket * 30) }
+            }
+            val progress = 1f - (now / 30000f) % 1f
+            Row(Modifier.clickable {
+                viewModel.copyToClipboard("totp", currentCode)
+            }.wrapContentHeight(), verticalAlignment = Alignment.CenterVertically) {
+                Text(currentCode, style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.width(8.dp))
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator({progress}, Modifier.size(40.dp))
+                    Icon(painterResource(R.drawable.content_copy_24px), contentDescription = "Copy TOTP", Modifier.size(16.dp))
+                }
+            }
+        }
+    }, searchEnabled = true, searchString = {
+        when (it) {
+            is CredentialItem.PasswordItem -> "${it.password.name} ${it.password.userId} ${it.password.websites.joinToString(" ")}"
+            is CredentialItem.PasskeyItem -> "${it.passkey.rpName} ${it.passkey.rpId} ${it.passkey.userName}"
+        }
+    })
 }

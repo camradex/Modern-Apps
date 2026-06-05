@@ -1,5 +1,6 @@
 package com.vayunmathur.passwords.data
 
+import android.util.Base64
 import androidx.room.TypeConverter
 
 object Converters {

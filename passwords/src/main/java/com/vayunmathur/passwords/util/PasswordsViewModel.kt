@@ -23,6 +23,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.vayunmathur.passwords.data.Passkey
+import com.vayunmathur.passwords.data.PasskeyDao
 import com.vayunmathur.passwords.data.Password
 import com.vayunmathur.passwords.data.PasswordDao
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +58,7 @@ import kotlinx.coroutines.withContext
 class PasswordsViewModel(
     application: Application,
     private val passwordDao: PasswordDao,
+    private val passkeyDao: PasskeyDao,
 ) : AndroidViewModel(application) {
 
     // -- Data -------------------------------------------------------------
@@ -65,6 +68,18 @@ class PasswordsViewModel(
         SharingStarted.WhileSubscribed(5_000),
         emptyList(),
     )
+
+    val passkeys: StateFlow<List<Passkey>> = passkeyDao.getAllFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList(),
+    )
+
+    fun deletePasskey(passkey: Passkey) {
+        viewModelScope.launch(Dispatchers.IO) {
+            passkeyDao.delete(passkey)
+        }
+    }
 
     fun upsert(password: Password, onSaved: ((Long) -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -351,12 +366,13 @@ class PasswordsViewModel(
 class PasswordsViewModelFactory(
     private val application: Application,
     private val passwordDao: PasswordDao,
+    private val passkeyDao: PasskeyDao,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(PasswordsViewModel::class.java)) {
             "Unexpected ViewModel class: $modelClass"
         }
-        return PasswordsViewModel(application, passwordDao) as T
+        return PasswordsViewModel(application, passwordDao, passkeyDao) as T
     }
 }

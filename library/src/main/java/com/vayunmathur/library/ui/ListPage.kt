@@ -99,7 +99,7 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
         floatingActionButton = {
             Column {
                 fab?.invoke()
-                if (editPage != null && backStack.last() !is EditPage) {
+                if (editPage != null && backStack.backStack.lastOrNull() !is EditPage) {
                     FloatingActionButton(onClick = { backStack.add(editPage()) }) {
                         IconAdd()
                     }

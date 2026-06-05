@@ -15,8 +15,10 @@ import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.library.util.rememberNavBackStack
 import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
 import com.vayunmathur.passwords.data.PasswordDao
+import com.vayunmathur.passwords.data.PasskeyDao
 import com.vayunmathur.passwords.data.PasswordDatabase
 import com.vayunmathur.passwords.ui.MenuPage
+import com.vayunmathur.passwords.ui.PasskeyPage
 import com.vayunmathur.passwords.ui.PasswordEditPage
 import com.vayunmathur.passwords.ui.PasswordPage
 import com.vayunmathur.passwords.ui.SettingsPage
@@ -26,8 +28,9 @@ import kotlinx.serialization.Serializable
 
 class MainActivity : FragmentActivity() {
     private lateinit var passwordDao: PasswordDao
+    private lateinit var passkeyDao: PasskeyDao
     private val passwordsViewModel: PasswordsViewModel by viewModels {
-        PasswordsViewModelFactory(application, passwordDao)
+        PasswordsViewModelFactory(application, passwordDao, passkeyDao)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,6 +42,7 @@ class MainActivity : FragmentActivity() {
             onSuccess = { passphrase ->
                 val db = buildDatabase<PasswordDatabase>(encryptionPassword = passphrase)
                 passwordDao = db.passwordDao()
+                passkeyDao = db.passkeyDao()
                 setContent {
                     DynamicTheme {
                         Navigation(passwordsViewModel, passphrase)
@@ -64,6 +68,9 @@ sealed interface Route: NavKey {
     data class PasswordEditPage(val id: Long): Route
 
     @Serializable
+    data class PasskeyPage(val id: Long): Route
+
+    @Serializable
     data object Settings: Route
 }
 
@@ -83,6 +90,9 @@ fun Navigation(
         }
         entry<Route.PasswordEditPage>(metadata = ListDetailPage()) {
             PasswordEditPage(backStack, it.id, passwordsViewModel)
+        }
+        entry<Route.PasskeyPage>(metadata = ListDetailPage()) {
+            PasskeyPage(backStack, it.id, passwordsViewModel)
         }
         entry<Route.Settings>(metadata = ListDetailPage()) {
             SettingsPage(backStack, passwordsViewModel, passphrase)

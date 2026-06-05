@@ -1,0 +1,130 @@
+{
+  "apps": [
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.android.chrome",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.chrome.beta",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.chrome.dev",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.chrome.canary",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "org.chromium.chrome",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.google.android.apps.chrome",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "org.mozilla.firefox",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "A7:8B:62:A5:16:51:45:66:26:BE:C4:EB:3F:4A:AE:56:25:B4:35:4F:5D:5C:E6:C2:12:C2:D3:20:A6:28:C2:C7" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "org.mozilla.firefox_beta",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "A7:8B:62:A5:16:51:45:66:26:BE:C4:EB:3F:4A:AE:56:25:B4:35:4F:5D:5C:E6:C2:12:C2:D3:20:A6:28:C2:C7" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "org.mozilla.fenix",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "A7:8B:62:A5:16:51:45:66:26:BE:C4:EB:3F:4A:AE:56:25:B4:35:4F:5D:5C:E6:C2:12:C2:D3:20:A6:28:C2:C7" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.brave.browser",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "9C:2D:B7:05:47:AB:BA:EC:5E:F1:3A:A6:55:1E:F2:A1:2C:3A:B7:B5:88:DE:2D:47:35:D0:53:68:28:EB:2E:98" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.microsoft.emmx",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "B5:A0:1F:71:2E:C8:F7:0C:9C:2C:0B:6B:17:5C:DE:25:7F:3F:53:20:F4:37:86:F9:48:44:0D:C1:06:35:B0:F6" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.opera.browser",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "3A:2A:7B:A0:27:0F:28:91:C7:04:10:A3:3D:4A:D5:C0:49:98:E8:03:BF:66:E0:C8:0F:C0:4A:8A:DD:67:C5:0F" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "com.sec.android.app.sbrowser",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "34:DF:0E:7A:9F:1C:F1:89:2E:45:C0:56:AD:7A:40:FF:E0:3A:DD:4A:20:31:B3:1E:18:C3:F4:8F:C3:92:7F:B4" }
+        ]
+      }
+    },
+    {
+      "type": "android",
+      "info": {
+        "package_name": "app.vanadium.browser",
+        "signatures": [
+          { "build": "release", "cert_fingerprint_sha256": "C6:AD:B8:B8:3C:6D:4C:17:D2:92:AF:DE:56:FD:48:8A:51:D3:16:FF:8F:2C:11:C5:41:02:23:BF:F8:A7:DB:B3" }
+        ]
+      }
+    }
+  ]
+}
