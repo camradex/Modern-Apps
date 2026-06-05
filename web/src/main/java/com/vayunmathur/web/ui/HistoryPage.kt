@@ -75,7 +75,7 @@ fun HistoryPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                viewModel.navigate(entry.url)
+                                viewModel.loadUrl(entry.url)
                                 backStack.pop()
                             }
                             .padding(horizontal = 16.dp, vertical = 12.dp)

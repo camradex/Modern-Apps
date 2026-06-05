@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.web.MainActivity
 import com.vayunmathur.web.Route
 import com.vayunmathur.web.util.BrowserViewModel
+import com.vayunmathur.web.util.SearchEngine
 import org.mozilla.geckoview.GeckoView
 
 @Composable
@@ -56,6 +58,12 @@ fun BrowserPage(
 ) {
     BackHandler(enabled = viewModel.canGoBack) {
         viewModel.goBack()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.searchRedirect.collect { query ->
+            backStack.add(Route.Search(query))
+        }
     }
 
     val context = LocalContext.current
@@ -69,7 +77,16 @@ fun BrowserPage(
             tabCount = viewModel.tabs.size,
             isIncognito = viewModel.isIncognito,
             canGoForward = viewModel.canGoForward,
-            onNavigate = { viewModel.navigate(it) },
+            onNavigate = { input ->
+                val trimmed = input.trim()
+                val query = SearchEngine.extractSearchQuery(trimmed)
+                when {
+                    query != null -> backStack.add(Route.Search(query))
+                    trimmed.startsWith("http://") || trimmed.startsWith("https://") -> viewModel.loadUrl(trimmed)
+                    trimmed.contains(".") && !trimmed.contains(" ") -> viewModel.loadUrl("https://$trimmed")
+                    else -> backStack.add(Route.Search(trimmed))
+                }
+            },
             onForward = { viewModel.goForward() },
             onOpenTabs = { backStack.add(Route.Tabs) },
             onNewTab = { viewModel.createTab() },
@@ -88,7 +105,7 @@ fun BrowserPage(
         if (isNewTab) {
             NewTabContent(
                 isIncognito = viewModel.isIncognito,
-                onSearch = { viewModel.navigate(it) }
+                onSearch = { backStack.add(Route.Search(it)) }
             )
         } else {
             val activeSession = viewModel.getActiveSession()

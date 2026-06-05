@@ -11,5 +11,6 @@ android {
 
 dependencies {
     implementation(libs.geckoview)
+    implementation(libs.jsoup)
     implementRoom(libs)
 }

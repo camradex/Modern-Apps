@@ -17,6 +17,7 @@ import com.vayunmathur.library.util.rememberNavBackStack
 import com.vayunmathur.web.data.BrowserDatabase
 import com.vayunmathur.web.ui.BrowserPage
 import com.vayunmathur.web.ui.HistoryPage
+import com.vayunmathur.web.ui.SearchPage
 import com.vayunmathur.web.ui.TabsPage
 import com.vayunmathur.web.util.BrowserViewModel
 import com.vayunmathur.web.util.BrowserViewModelFactory
@@ -82,6 +83,9 @@ sealed interface Route : NavKey {
 
     @Serializable
     data object History : Route
+
+    @Serializable
+    data class Search(val query: String) : Route
 }
 
 @Composable
@@ -96,6 +100,9 @@ fun Navigation(viewModel: BrowserViewModel) {
         }
         entry<Route.History> {
             HistoryPage(viewModel, backStack)
+        }
+        entry<Route.Search> {
+            SearchPage(it.query, viewModel, backStack)
         }
     }
 }

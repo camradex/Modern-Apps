@@ -8,6 +8,9 @@ android {
         minSdk = 35
         applicationId = "com.vayunmathur.passwords"
     }
+    packaging {
+        resources.excludes += "META-INF/INDEX.LIST"
+    }
 }
 
 dependencies {

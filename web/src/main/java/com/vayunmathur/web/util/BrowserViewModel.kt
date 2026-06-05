@@ -2,7 +2,6 @@ package com.vayunmathur.web.util
 
 import android.app.Application
 import android.content.Context
-import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -17,7 +16,11 @@ import com.vayunmathur.web.data.BrowserDatabase
 import com.vayunmathur.web.data.HistoryDao
 import com.vayunmathur.web.data.HistoryEntry
 import com.vayunmathur.web.data.Tab
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -60,6 +63,9 @@ class BrowserViewModel(
     var progress by mutableFloatStateOf(0f)
         private set
 
+    private val _searchRedirect = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val searchRedirect = _searchRedirect.asSharedFlow()
+
     init {
         createTab(url = HOME_URL)
     }
@@ -98,6 +104,18 @@ class BrowserViewModel(
                     }
                     updateTab(tabId) { copy(url = it) }
                 }
+            }
+
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny>? {
+                val query = SearchEngine.extractSearchQuery(request.uri)
+                if (query != null) {
+                    _searchRedirect.tryEmit(query)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
@@ -197,15 +215,7 @@ class BrowserViewModel(
         }
     }
 
-    fun navigate(input: String) {
-        val trimmed = input.trim()
-        if (trimmed.isBlank()) return
-
-        val url = when {
-            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
-            trimmed.contains(".") && !trimmed.contains(" ") -> "https://$trimmed"
-            else -> "$SEARCH_URL${Uri.encode(trimmed)}"
-        }
+    fun loadUrl(url: String) {
         getActiveSession()?.loadUri(url)
     }
 
@@ -239,7 +249,6 @@ class BrowserViewModel(
 
     companion object {
         const val HOME_URL = "about:blank"
-        const val SEARCH_URL = "https://duckduckgo.com/?q="
     }
 }
 
