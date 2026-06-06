@@ -42,4 +42,8 @@
     <string name="label_import_newpipe">Impordi NewPipe\'i tellimused</string>
     <string name="label_import_youtube">Impordi YouTube\'ist (Takeout-liidestus)</string>
     <string name="label_export_youpipe">Ekspordi tellimused</string>
+    <string name="video_quality_codec">%1$s (%2$s)</string>
+    <string name="video_quality_fps_codec">%1$s (%2$d kaadrit sekundis) %3$s</string>
+    <string name="audio_bitrate_codec">%1$d kbps (%2$s)</string>
+    <string name="empty_recommendations">Kui tahad näha sulle mõeldud soovitusi, siis vaata natuke videoid</string>
 </resources>
