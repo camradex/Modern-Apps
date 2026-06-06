@@ -42,4 +42,8 @@
     <string name="label_import_newpipe">Importuj subskrypcje NewPipe</string>
     <string name="label_import_youtube">Importuj z YouTube (Takeout)</string>
     <string name="label_export_youpipe">Eksportuj subskrypcje</string>
+    <string name="video_quality_codec">%1$s (%2$s)</string>
+    <string name="video_quality_fps_codec">%1$s (%2$dfps) %3$s</string>
+    <string name="audio_bitrate_codec">%1$dkbps (%2$s)</string>
+    <string name="empty_recommendations">Obejrzyj kilka filmów, aby otrzymać spersonalizowane rekomendacje</string>
 </resources>
