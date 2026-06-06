@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Weather</string>
+    <string name="search_location">搜索位置</string>
+    <string name="confirm_delete">确认删除</string>
+    <string name="city_name_hint">城市名称</string>
+    <string name="weather_title">天气</string>
+    <string name="add_location">添加位置</string>
 </resources>
