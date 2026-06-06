@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.StorageController
@@ -502,7 +503,10 @@ object GeckoRuntimeHolder {
 
     @Synchronized
     fun get(context: Context): GeckoRuntime {
-        return instance ?: GeckoRuntime.create(context.applicationContext).also { runtime ->
+        val settings = GeckoRuntimeSettings.Builder()
+            .configFilePath("resource://android/assets/geckoview-config.yaml")
+            .build()
+        return instance ?: GeckoRuntime.create(context.applicationContext, settings).also { runtime ->
             instance = runtime
             runtime.webExtensionController.installBuiltIn(
                 "resource://android/assets/extensions/content_blocker/"

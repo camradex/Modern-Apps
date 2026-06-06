@@ -1,0 +1,5 @@
+prefs:
+  javascript.options.ion: false
+  javascript.options.baselinejit: false
+  javascript.options.native_regexp: false
+  javascript.options.wasm: false
