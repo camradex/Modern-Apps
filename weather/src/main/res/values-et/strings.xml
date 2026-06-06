@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ilmaennustus</string>
+    <string name="search_location">Otsi asukohta</string>
+    <string name="confirm_delete">Kinnita kustutamine</string>
+    <string name="city_name_hint">Linna või koha nimi</string>
+    <string name="weather_title">Ilmaennustus</string>
+    <string name="add_location">Lisa asukoht</string>
 </resources>
