@@ -1,0 +1,69 @@
+package com.vayunmathur.games.solitaire.ui
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.vayunmathur.games.solitaire.data.SpiderState
+import com.vayunmathur.games.solitaire.util.SolitaireViewModel
+
+@Composable
+fun SpiderBoard(state: SpiderState, viewModel: SolitaireViewModel, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier) {
+        val cardWidth = (maxWidth - 54.dp) / 10
+        val cardHeight = cardWidth * 1.4f
+
+        Column {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Completed: ${state.completedSuits}/8",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                if (state.stockGroups.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        state.stockGroups.forEachIndexed { _, _ ->
+                            CardBack(
+                                modifier = Modifier.clickable { viewModel.dealSpiderStock() },
+                                cardWidth = cardWidth,
+                                cardHeight = cardHeight
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                for (i in 0 until 10) {
+                    TableauColumn(
+                        pile = state.tableauPiles[i],
+                        columnIndex = i,
+                        viewModel = viewModel,
+                        modifier = Modifier.weight(1f),
+                        cardWidth = cardWidth,
+                        cardHeight = cardHeight
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "first_win",
+    "name": "First Victory",
+    "description": "Win your first game!"
+  },
+  {
+    "id": "klondike_first",
+    "name": "Klondike King",
+    "description": "Win a Klondike game."
+  },
+  {
+    "id": "spider_first",
+    "name": "Spider Slayer",
+    "description": "Win a Spider game."
+  },
+  {
+    "id": "freecell_first",
+    "name": "Free at Last",
+    "description": "Win a FreeCell game."
+  },
+  {
+    "id": "wins_10",
+    "name": "Getting Started",
+    "description": "Win 10 games.",
+    "targetProgress": 10
+  },
+  {
+    "id": "wins_50",
+    "name": "Card Shark",
+    "description": "Win 50 games.",
+    "targetProgress": 50
+  },
+  {
+    "id": "win_streak_5",
+    "name": "On a Roll",
+    "description": "Win 5 games in a row.",
+    "targetProgress": 5
+  },
+  {
+    "id": "speed_demon",
+    "name": "Speed Demon",
+    "description": "Win Klondike in under 3 minutes."
+  },
+  {
+    "id": "no_undo",
+    "name": "No Take-Backs",
+    "description": "Win a game without using undo."
+  }
+]

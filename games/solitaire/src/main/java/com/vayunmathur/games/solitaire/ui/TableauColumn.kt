@@ -1,0 +1,96 @@
+package com.vayunmathur.games.solitaire.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.vayunmathur.games.solitaire.data.Card
+import com.vayunmathur.games.solitaire.data.TableauPile
+import com.vayunmathur.games.solitaire.util.SolitaireViewModel
+
+private val FACE_DOWN_OVERLAP = 8.dp
+private val FACE_UP_OVERLAP = 22.dp
+
+@Composable
+fun TableauColumn(
+    pile: TableauPile,
+    columnIndex: Int,
+    viewModel: SolitaireViewModel,
+    modifier: Modifier = Modifier,
+    cardWidth: Dp = CARD_WIDTH,
+    cardHeight: Dp = CARD_HEIGHT
+) {
+    DropTarget("tableau_$columnIndex", viewModel, modifier) {
+        Box {
+            if (pile.faceDown.isEmpty() && pile.faceUp.isEmpty()) {
+                EmptySlot(cardWidth = cardWidth, cardHeight = cardHeight)
+            }
+            var yOffset = 0.dp
+            pile.faceDown.forEachIndexed { _, _ ->
+                CardBack(
+                    modifier = Modifier.offset(y = yOffset),
+                    cardWidth = cardWidth,
+                    cardHeight = cardHeight
+                )
+                yOffset += FACE_DOWN_OVERLAP
+            }
+            pile.faceUp.forEachIndexed { index, card ->
+                val cardsFromHere = pile.faceUp.subList(index, pile.faceUp.size)
+                DraggableCard(
+                    card = card,
+                    cards = cardsFromHere,
+                    sourceId = "tableau_${columnIndex}_$index",
+                    viewModel = viewModel,
+                    cardWidth = cardWidth,
+                    cardHeight = cardHeight
+                ) {
+                    CardFace(
+                        card = card,
+                        modifier = Modifier.offset(y = yOffset),
+                        cardWidth = cardWidth,
+                        cardHeight = cardHeight
+                    )
+                }
+                yOffset += FACE_UP_OVERLAP
+            }
+        }
+    }
+}
+
+@Composable
+fun FreeCellTableauColumn(
+    pile: List<Card>,
+    columnIndex: Int,
+    viewModel: SolitaireViewModel,
+    modifier: Modifier = Modifier,
+    cardWidth: Dp = CARD_WIDTH,
+    cardHeight: Dp = CARD_HEIGHT
+) {
+    DropTarget("tableau_$columnIndex", viewModel, modifier) {
+        Box {
+            if (pile.isEmpty()) {
+                EmptySlot(cardWidth = cardWidth, cardHeight = cardHeight)
+            }
+            pile.forEachIndexed { index, card ->
+                val cardsFromHere = pile.subList(index, pile.size)
+                DraggableCard(
+                    card = card,
+                    cards = cardsFromHere,
+                    sourceId = "tableau_${columnIndex}_$index",
+                    viewModel = viewModel,
+                    cardWidth = cardWidth,
+                    cardHeight = cardHeight
+                ) {
+                    CardFace(
+                        card = card,
+                        modifier = Modifier.offset(y = FACE_UP_OVERLAP * index),
+                        cardWidth = cardWidth,
+                        cardHeight = cardHeight
+                    )
+                }
+            }
+        }
+    }
+}
