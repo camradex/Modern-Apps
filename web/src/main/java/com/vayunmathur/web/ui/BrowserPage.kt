@@ -3,6 +3,7 @@ package com.vayunmathur.web.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +26,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import android.net.Uri
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -54,6 +58,7 @@ import com.vayunmathur.web.MainActivity
 import com.vayunmathur.web.Route
 import com.vayunmathur.web.data.SearchResult
 import com.vayunmathur.web.util.BrowserViewModel
+import com.vayunmathur.web.util.NavEntry
 import com.vayunmathur.web.util.SearchEngine
 import org.mozilla.geckoview.GeckoView
 
@@ -62,24 +67,20 @@ fun BrowserPage(
     viewModel: BrowserViewModel,
     backStack: NavBackStack<Route>
 ) {
-    val isSearching = viewModel.activeSearchQuery != null
-    val hasSearchHistory = viewModel.hasSearchHistory
+    val entry = viewModel.currentEntry
 
-    BackHandler(enabled = isSearching || hasSearchHistory || viewModel.canGoBack) {
-        when {
-            isSearching -> viewModel.goBackFromSearch()
-            !viewModel.canGoBack && hasSearchHistory -> viewModel.goBackToSearch()
-            viewModel.canGoBack -> viewModel.goBack()
-        }
+    BackHandler(enabled = viewModel.canGoBack) {
+        viewModel.goBack()
     }
 
     val context = LocalContext.current
-    val isNewTab = !isSearching && (viewModel.currentUrl == "about:blank" || viewModel.currentUrl.isBlank())
-    val displayUrl = when {
-        isSearching -> viewModel.activeSearchQuery.orEmpty()
-        isNewTab -> ""
-        else -> viewModel.currentUrl
+    val displayUrl = when (entry) {
+        is NavEntry.Search -> entry.query
+        is NavEntry.NewTab -> ""
+        is NavEntry.Blocked -> entry.url
+        is NavEntry.WebPage -> viewModel.currentUrl
     }
+    val isNewTab = entry is NavEntry.NewTab
 
     fun handleInput(input: String) {
         val trimmed = input.trim()
@@ -105,12 +106,9 @@ fun BrowserPage(
             isNewTab = isNewTab,
             tabCount = viewModel.tabs.size,
             isIncognito = viewModel.isIncognito,
-            canGoForward = if (isSearching) viewModel.canGoForwardFromSearch else viewModel.canGoForward,
+            canGoForward = viewModel.canGoForward,
             onNavigate = ::handleInput,
-            onForward = {
-                if (isSearching && viewModel.canGoForwardFromSearch) viewModel.goForwardFromSearch()
-                else viewModel.goForward()
-            },
+            onForward = { viewModel.goForward() },
             onOpenTabs = { backStack.add(Route.Tabs) },
             onNewTab = { viewModel.createTab() },
             onNewWindow = { MainActivity.launchNewWindow(context) },
@@ -118,24 +116,29 @@ fun BrowserPage(
             onOpenHistory = { backStack.add(Route.History) }
         )
 
-        AnimatedVisibility(visible = viewModel.isLoading && !isSearching) {
+        AnimatedVisibility(visible = viewModel.isLoading && entry is NavEntry.WebPage) {
             LinearProgressIndicator(
                 progress = { viewModel.progress },
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
-        AnimatedVisibility(visible = viewModel.isSearchLoading) {
+        AnimatedVisibility(visible = entry is NavEntry.Search && (entry as NavEntry.Search).loading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        when {
-            isSearching -> SearchResultsContent(viewModel)
-            isNewTab -> NewTabContent(
+        when (entry) {
+            is NavEntry.Search -> SearchResultsContent(entry, viewModel)
+            is NavEntry.Blocked -> BlockedContent(
+                url = entry.url,
+                onGoBack = { viewModel.goBack() },
+                onNewTab = { viewModel.createTab() }
+            )
+            is NavEntry.NewTab -> NewTabContent(
                 isIncognito = viewModel.isIncognito,
                 onSearch = { viewModel.search(it) }
             )
-            else -> {
+            is NavEntry.WebPage -> {
                 val activeSession = viewModel.getActiveSession()
                 if (activeSession != null) {
                     AndroidView(
@@ -158,21 +161,21 @@ fun BrowserPage(
 }
 
 @Composable
-private fun SearchResultsContent(viewModel: BrowserViewModel) {
+private fun SearchResultsContent(entry: NavEntry.Search, viewModel: BrowserViewModel) {
     when {
-        viewModel.searchError != null -> {
+        entry.error != null -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(viewModel.searchError!!, color = MaterialTheme.colorScheme.error)
+                Text(entry.error!!, color = MaterialTheme.colorScheme.error)
             }
         }
-        viewModel.searchResults.isEmpty() && !viewModel.isSearchLoading -> {
+        entry.results.isEmpty() && !entry.loading -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No results found")
             }
         }
         else -> {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(viewModel.searchResults) { result ->
+                items(entry.results) { result ->
                     SearchResultItem(result) {
                         viewModel.loadSearchResult(result.url)
                     }
@@ -213,6 +216,44 @@ private fun SearchResultItem(result: SearchResult, onClick: () -> Unit) {
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun BlockedContent(url: String, onGoBack: () -> Unit, onNewTab: () -> Unit) {
+    val host = Uri.parse(url).host ?: url
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Text(
+                text = "Site blocked",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Text(
+                text = host,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "This site has been blocked by content filtering.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onNewTab) {
+                Text("New tab")
+            }
+            OutlinedButton(onClick = onGoBack) {
+                Text("Go back")
+            }
         }
     }
 }

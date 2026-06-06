@@ -2,6 +2,8 @@ package com.vayunmathur.web.util
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,7 +27,21 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.StorageController
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.util.UUID
+
+sealed interface NavEntry {
+    data object NewTab : NavEntry
+    data class Search(
+        val query: String,
+        val results: List<SearchResult> = emptyList(),
+        val error: String? = null,
+        val loading: Boolean = false
+    ) : NavEntry
+    data class WebPage(val url: String) : NavEntry
+    data class Blocked(val url: String) : NavEntry
+}
 
 class BrowserViewModel(
     application: Application,
@@ -34,6 +50,8 @@ class BrowserViewModel(
 ) : AndroidViewModel(application) {
 
     val runtime: GeckoRuntime get() = GeckoRuntimeHolder.get(getApplication())
+
+    private val blockedDomains: Set<String> = loadBlockedDomains(application)
 
     private val _tabs = mutableStateListOf<Tab>()
     val tabs: List<Tab> = _tabs
@@ -44,6 +62,13 @@ class BrowserViewModel(
     val activeTab: Tab? get() = _tabs.getOrNull(activeTabIndex)
 
     private val sessions = mutableMapOf<String, GeckoSession>()
+
+    // Per-tab navigation history
+    private val tabHistory = mutableMapOf<String, MutableList<NavEntry>>()
+    private val tabCursor = mutableMapOf<String, Int>()
+
+    var currentEntry by mutableStateOf<NavEntry>(NavEntry.NewTab)
+        private set
 
     var currentUrl by mutableStateOf("")
         private set
@@ -63,28 +88,119 @@ class BrowserViewModel(
     var progress by mutableFloatStateOf(0f)
         private set
 
-    var activeSearchQuery by mutableStateOf<String?>(null)
-        private set
-
-    var searchResults by mutableStateOf<List<SearchResult>>(emptyList())
-        private set
-
-    var isSearchLoading by mutableStateOf(false)
-        private set
-
-    var searchError by mutableStateOf<String?>(null)
-        private set
-
-    private val searchStack = mutableListOf<String>()
     private var searchJob: Job? = null
-
-    val hasSearchHistory: Boolean get() = searchStack.isNotEmpty()
-
-    var canGoForwardFromSearch by mutableStateOf(false)
-        private set
 
     init {
         createTab(url = HOME_URL)
+    }
+
+    private fun currentTabId(): String? = activeTab?.id
+
+    private fun getHistory(tabId: String): MutableList<NavEntry> =
+        tabHistory.getOrPut(tabId) { mutableListOf() }
+
+    private fun getCursor(tabId: String): Int = tabCursor[tabId] ?: -1
+
+    private fun setCursor(tabId: String, value: Int) {
+        tabCursor[tabId] = value
+    }
+
+    private fun navigate(entry: NavEntry) {
+        val tabId = currentTabId() ?: return
+        val history = getHistory(tabId)
+        val cursor = getCursor(tabId)
+
+        // Truncate forward history
+        if (cursor < history.lastIndex) {
+            history.subList(cursor + 1, history.size).clear()
+        }
+
+        history.add(entry)
+        setCursor(tabId, history.lastIndex)
+        applyEntry(tabId, entry)
+        updateNavState(tabId)
+    }
+
+    private fun applyEntry(tabId: String, entry: NavEntry) {
+        currentEntry = entry
+        when (entry) {
+            is NavEntry.NewTab -> {
+                currentUrl = ""
+                currentTitle = "New Tab"
+            }
+            is NavEntry.Search -> {
+                currentUrl = ""
+                currentTitle = entry.query
+                performSearch(tabId, entry)
+            }
+            is NavEntry.WebPage -> {
+                currentUrl = entry.url
+                sessions[tabId]?.close()
+                val session = createSession(tabId)
+                session.loadUri(entry.url)
+            }
+            is NavEntry.Blocked -> {
+                currentUrl = entry.url
+                currentTitle = "Blocked"
+            }
+        }
+    }
+
+    private fun restoreEntry(tabId: String, entry: NavEntry) {
+        currentEntry = entry
+        when (entry) {
+            is NavEntry.NewTab -> {
+                currentUrl = ""
+                currentTitle = "New Tab"
+            }
+            is NavEntry.Search -> {
+                currentUrl = ""
+                currentTitle = entry.query
+                if (entry.results.isEmpty() && entry.error == null && !entry.loading) {
+                    performSearch(tabId, entry)
+                }
+            }
+            is NavEntry.WebPage -> {
+                currentUrl = entry.url
+                sessions[tabId]?.close()
+                val session = createSession(tabId)
+                session.loadUri(entry.url)
+            }
+            is NavEntry.Blocked -> {
+                currentUrl = entry.url
+                currentTitle = "Blocked"
+            }
+        }
+    }
+
+    private fun replaceCurrentEntry(tabId: String, entry: NavEntry) {
+        val history = getHistory(tabId)
+        val cursor = getCursor(tabId)
+        if (cursor in history.indices) {
+            history[cursor] = entry
+        }
+        if (currentTabId() == tabId) {
+            currentEntry = entry
+        }
+    }
+
+    private fun performSearch(tabId: String, entry: NavEntry.Search) {
+        searchJob?.cancel()
+        replaceCurrentEntry(tabId, entry.copy(loading = true, error = null, results = emptyList()))
+        searchJob = viewModelScope.launch {
+            val result = try {
+                entry.copy(results = SearchEngine.fetchSearchResults(entry.query), loading = false)
+            } catch (e: Exception) {
+                entry.copy(error = e.message ?: "Failed to fetch results", loading = false)
+            }
+            replaceCurrentEntry(tabId, result)
+        }
+    }
+
+    private fun updateNavState(tabId: String) {
+        val cursor = getCursor(tabId)
+        canGoBack = cursor > 0
+        canGoForward = cursor < getHistory(tabId).lastIndex
     }
 
     fun createTab(url: String = HOME_URL) {
@@ -92,12 +208,22 @@ class BrowserViewModel(
         _tabs.add(tab)
         activeTabIndex = _tabs.lastIndex
 
-        val session = createSession(tab.id)
-        session.loadUri(url)
-        currentUrl = url
-        currentTitle = "New Tab"
-        canGoBack = false
-        canGoForward = false
+        val isNewTab = url == HOME_URL
+        if (isNewTab) {
+            val history = getHistory(tab.id)
+            history.add(NavEntry.NewTab)
+            setCursor(tab.id, 0)
+            currentEntry = NavEntry.NewTab
+            currentUrl = ""
+            currentTitle = "New Tab"
+            canGoBack = false
+            canGoForward = false
+            // Still create a session for future use
+            createSession(tab.id)
+        } else {
+            createSession(tab.id)
+            navigate(NavEntry.WebPage(url))
+        }
     }
 
     private fun createSession(tabId: String): GeckoSession {
@@ -116,7 +242,7 @@ class BrowserViewModel(
                 hasUserGesture: Boolean
             ) {
                 url?.let {
-                    if (_tabs.getOrNull(activeTabIndex)?.id == tabId) {
+                    if (it != "about:blank" && _tabs.getOrNull(activeTabIndex)?.id == tabId) {
                         currentUrl = it
                     }
                     updateTab(tabId) { copy(url = it) }
@@ -127,6 +253,7 @@ class BrowserViewModel(
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
+                Log.d("ContentBlocker", "onLoadRequest: ${request.uri}")
                 val query = SearchEngine.extractSearchQuery(request.uri)
                 if (query != null) {
                     search(query)
@@ -136,19 +263,34 @@ class BrowserViewModel(
                     session.loadUri(HOME_URL)
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
+                if (isDomainBlocked(request.uri)) {
+                    Log.d("ContentBlocker", "Blocked: ${request.uri}")
+                    // Replace the current WebPage entry with Blocked
+                    val tabIdNow = currentTabId()
+                    if (tabIdNow != null) {
+                        val history = getHistory(tabIdNow)
+                        val cursor = getCursor(tabIdNow)
+                        if (cursor >= 0 && cursor < history.size && history[cursor] is NavEntry.WebPage) {
+                            history[cursor] = NavEntry.Blocked(request.uri)
+                            currentEntry = history[cursor]
+                            currentUrl = request.uri
+                            currentTitle = "Blocked"
+                        } else {
+                            navigate(NavEntry.Blocked(request.uri))
+                        }
+                    }
+                    session.loadUri(HOME_URL)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
-                if (_tabs.getOrNull(activeTabIndex)?.id == tabId) {
-                    this@BrowserViewModel.canGoBack = canGoBack
-                }
+                // Ignored — we derive canGoBack from our own stack
             }
 
             override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
-                if (_tabs.getOrNull(activeTabIndex)?.id == tabId) {
-                    this@BrowserViewModel.canGoForward = canGoForward
-                }
+                // Ignored — we derive canGoForward from our own stack
             }
         }
 
@@ -213,8 +355,10 @@ class BrowserViewModel(
             val tab = _tabs[index]
             currentUrl = tab.url
             currentTitle = tab.title
-            canGoBack = false
-            canGoForward = false
+            val history = getHistory(tab.id)
+            val cursor = getCursor(tab.id)
+            currentEntry = history.getOrNull(cursor) ?: NavEntry.NewTab
+            updateNavState(tab.id)
         }
     }
 
@@ -224,6 +368,8 @@ class BrowserViewModel(
 
         sessions[tabId]?.close()
         sessions.remove(tabId)
+        tabHistory.remove(tabId)
+        tabCursor.remove(tabId)
         _tabs.removeAt(index)
 
         if (_tabs.isEmpty()) {
@@ -233,70 +379,46 @@ class BrowserViewModel(
             val tab = _tabs[activeTabIndex]
             currentUrl = tab.url
             currentTitle = tab.title
+            val history = getHistory(tab.id)
+            val cursor = getCursor(tab.id)
+            currentEntry = history.getOrNull(cursor) ?: NavEntry.NewTab
+            updateNavState(tab.id)
         }
     }
 
     fun loadUrl(url: String) {
-        getActiveSession()?.loadUri(url)
+        navigate(NavEntry.WebPage(url))
     }
 
     fun search(query: String) {
-        searchStack.add(query)
-        activeSearchQuery = query
-        searchResults = emptyList()
-        searchError = null
-        searchJob?.cancel()
-        searchJob = viewModelScope.launch {
-            isSearchLoading = true
-            try {
-                searchResults = SearchEngine.fetchSearchResults(query)
-            } catch (e: Exception) {
-                searchError = e.message ?: "Failed to fetch results"
-            }
-            isSearchLoading = false
-        }
+        navigate(NavEntry.Search(query))
     }
 
     fun loadSearchResult(url: String) {
-        activeSearchQuery = null
-        canGoForwardFromSearch = false
-        currentUrl = url
-        val tabId = activeTab?.id ?: return
-        sessions[tabId]?.close()
-        val session = createSession(tabId)
-        canGoBack = false
-        canGoForward = false
-        session.loadUri(url)
+        navigate(NavEntry.WebPage(url))
     }
 
-    fun goBackFromSearch(): Boolean {
-        searchStack.removeLastOrNull()
-        val prev = searchStack.lastOrNull()
-        if (prev != null) {
-            search(prev)
-            searchStack.removeLastOrNull() // search() re-adds it
-            return true
-        }
-        activeSearchQuery = null
-        searchResults = emptyList()
-        return false
+    fun goBack() {
+        val tabId = currentTabId() ?: return
+        val cursor = getCursor(tabId)
+        if (cursor <= 0) return
+        setCursor(tabId, cursor - 1)
+        val entry = getHistory(tabId)[cursor - 1]
+        restoreEntry(tabId, entry)
+        updateNavState(tabId)
     }
 
-    fun goBackToSearch(): Boolean {
-        val prev = searchStack.lastOrNull() ?: return false
-        search(prev)
-        searchStack.removeLastOrNull() // search() re-adds it
-        canGoForwardFromSearch = true
-        return true
+    fun goForward() {
+        val tabId = currentTabId() ?: return
+        val history = getHistory(tabId)
+        val cursor = getCursor(tabId)
+        if (cursor >= history.lastIndex) return
+        setCursor(tabId, cursor + 1)
+        val entry = history[cursor + 1]
+        restoreEntry(tabId, entry)
+        updateNavState(tabId)
     }
 
-    fun goForwardFromSearch() {
-        activeSearchQuery = null
-        canGoForwardFromSearch = false
-    }
-
-    fun goBack() { getActiveSession()?.goBack() }
-    fun goForward() { getActiveSession()?.goForward() }
     fun reload() { getActiveSession()?.reload() }
     fun stop() { getActiveSession()?.stop() }
 
@@ -323,8 +445,43 @@ class BrowserViewModel(
         sessions.clear()
     }
 
+    private fun isDomainBlocked(url: String): Boolean {
+        val host = Uri.parse(url).host?.lowercase() ?: return false
+        Log.d("ContentBlocker", "Checking host: $host, blocklist size: ${blockedDomains.size}")
+        var domain = host
+        while (domain.contains('.')) {
+            if (domain in blockedDomains) return true
+            domain = domain.substringAfter('.')
+        }
+        return false
+    }
+
     companion object {
         const val HOME_URL = "about:blank"
+
+        private fun loadBlockedDomains(application: Application): Set<String> {
+            return try {
+                application.assets.open("extensions/content_blocker/domains.js").use { stream ->
+                    val domains = mutableSetOf<String>()
+                    BufferedReader(InputStreamReader(stream)).useLines { lines ->
+                        lines.forEach { line ->
+                            val trimmed = line.trim()
+                            if (trimmed.startsWith("\"") && trimmed.contains("\",")) {
+                                val domain = trimmed.removePrefix("\"").substringBefore("\"")
+                                if (domain.isNotEmpty()) {
+                                    domains.add(domain.lowercase())
+                                }
+                            }
+                        }
+                    }
+                    Log.d("ContentBlocker", "Loaded ${domains.size} blocked domains")
+                    domains
+                }
+            } catch (e: Exception) {
+                Log.e("ContentBlocker", "Failed to load blocked domains", e)
+                emptySet()
+            }
+        }
     }
 }
 
@@ -340,12 +497,22 @@ class BrowserViewModelFactory(
 }
 
 object GeckoRuntimeHolder {
+    private const val TAG = "ContentBlocker"
     private var instance: GeckoRuntime? = null
 
     @Synchronized
     fun get(context: Context): GeckoRuntime {
-        return instance ?: GeckoRuntime.create(context.applicationContext).also {
-            instance = it
+        return instance ?: GeckoRuntime.create(context.applicationContext).also { runtime ->
+            instance = runtime
+            runtime.webExtensionController.installBuiltIn(
+                "resource://android/assets/extensions/content_blocker/"
+            ).then({ ext ->
+                Log.i(TAG, "Extension installed: ${ext?.id}")
+                GeckoResult.fromValue(ext)
+            }, { e ->
+                Log.e(TAG, "Extension install failed", e)
+                GeckoResult.fromValue(null)
+            })
         }
     }
 }
