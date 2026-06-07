@@ -2,17 +2,20 @@ package com.vayunmathur.games.solitaire.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.vayunmathur.games.solitaire.data.DrawMode
 import com.vayunmathur.games.solitaire.data.KlondikeState
 import com.vayunmathur.games.solitaire.util.SolitaireViewModel
 
@@ -44,16 +47,33 @@ fun KlondikeBoard(state: KlondikeState, viewModel: SolitaireViewModel, modifier:
 
                 // Waste
                 if (state.waste.isNotEmpty()) {
-                    val wasteCard = state.waste.last()
-                    DraggableCard(
-                        card = wasteCard,
-                        cards = listOf(wasteCard),
-                        sourceId = "waste",
-                        viewModel = viewModel,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight
-                    ) {
-                        CardFace(wasteCard, cardWidth = cardWidth, cardHeight = cardHeight)
+                    val visibleCount = if (state.drawMode == DrawMode.DRAW_THREE) minOf(3, state.waste.size) else 1
+                    val visibleCards = state.waste.takeLast(visibleCount)
+                    val fanOffset = cardWidth * 0.3f
+                    Box(modifier = Modifier.width(cardWidth + fanOffset * (visibleCount - 1))) {
+                        visibleCards.forEachIndexed { index, card ->
+                            val isTop = index == visibleCards.lastIndex
+                            if (isTop) {
+                                DraggableCard(
+                                    card = card,
+                                    cards = listOf(card),
+                                    sourceId = "waste",
+                                    viewModel = viewModel,
+                                    modifier = Modifier.offset(x = fanOffset * index),
+                                    cardWidth = cardWidth,
+                                    cardHeight = cardHeight
+                                ) {
+                                    CardFace(card, cardWidth = cardWidth, cardHeight = cardHeight)
+                                }
+                            } else {
+                                CardFace(
+                                    card,
+                                    modifier = Modifier.offset(x = fanOffset * index),
+                                    cardWidth = cardWidth,
+                                    cardHeight = cardHeight
+                                )
+                            }
+                        }
                     }
                 } else {
                     EmptySlot(cardWidth = cardWidth, cardHeight = cardHeight)
