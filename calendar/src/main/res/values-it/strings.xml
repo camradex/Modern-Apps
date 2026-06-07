@@ -56,4 +56,6 @@
     <string name="monthly_type">Tipo mensile</string>
     <string name="count">Volte</string>
     <string name="open_location_in_navigation">Apri posizione</string>
+    <string name="delete_this_event">Elimina questo evento</string>
+    <string name="delete_all_events">Elimina tutti gli eventi</string>
 </resources>
