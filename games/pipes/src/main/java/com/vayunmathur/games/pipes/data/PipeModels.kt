@@ -23,6 +23,7 @@ data class LevelData(
     val adjacency: Map<CellPos, List<CellPos>>,
     val renderPositions: Map<CellPos, RenderPos>?,
     val endpoints: List<EndpointPair>,
+    val bridges: Set<CellPos>,
     val optimalMoves: Int
 )
 
@@ -35,9 +36,7 @@ data class LevelPack(
         private val PACK_FILES = listOf(
             "packs/5x5.json",
             "packs/6x6.json",
-            "packs/7x7.json",
-            "packs/octagon.json",
-            "packs/spiral.json"
+            "packs/7x7.json"
         )
 
         var PACKS: List<LevelPack> = listOf()
@@ -113,7 +112,12 @@ private fun levelFromJson(json: kotlinx.serialization.json.JsonObject, shape: St
         EndpointPair(colorIndex, epCells)
     }
 
+    val bridges = json["bridges"]?.jsonArray?.map {
+        val arr = it.jsonArray
+        CellPos(arr[0].jsonPrimitive.int, arr[1].jsonPrimitive.int)
+    }?.toSet() ?: emptySet()
+
     val optimalMoves = json["optimalMoves"]!!.jsonPrimitive.int
 
-    return LevelData(id, rows, cols, cells, adjacency, renderPositions, endpoints, optimalMoves)
+    return LevelData(id, rows, cols, cells, adjacency, renderPositions, endpoints, bridges, optimalMoves)
 }

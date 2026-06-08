@@ -155,8 +155,12 @@ class PipesViewModel(application: Application) : AndroidViewModel(application) {
 
         val existingOwner = s.gameState.cellOwner[cell]
         if (existingOwner != null && existingOwner != activeColor) {
-            val newGameState = breakPipe(s.gameState, existingOwner, cell, levelData)
-            _uiState.update { it.copy(activePath = currentPath + cell, gameState = newGameState) }
+            if (cell in levelData.bridges) {
+                _uiState.update { it.copy(activePath = currentPath + cell) }
+            } else {
+                val newGameState = breakPipe(s.gameState, existingOwner, cell, levelData)
+                _uiState.update { it.copy(activePath = currentPath + cell, gameState = newGameState) }
+            }
         } else {
             _uiState.update { it.copy(activePath = currentPath + cell) }
         }
@@ -181,7 +185,7 @@ class PipesViewModel(application: Application) : AndroidViewModel(application) {
 
         val newPaths = state.paths.toMutableMap()
         val newCellOwner = state.cellOwner.toMutableMap()
-        path.forEach { newCellOwner.remove(it) }
+        path.forEach { c -> if (newCellOwner[c] == color) newCellOwner.remove(c) }
         if (kept.isNotEmpty()) {
             newPaths[color] = kept
             kept.forEach { newCellOwner[it] = color }
@@ -207,12 +211,18 @@ class PipesViewModel(application: Application) : AndroidViewModel(application) {
         val currentState = s.gameState
         val newCellOwner = currentState.cellOwner.toMutableMap()
 
-        currentState.paths[activeColor]?.forEach { c -> newCellOwner.remove(c) }
+        currentState.paths[activeColor]?.forEach { c ->
+            if (newCellOwner[c] == activeColor) newCellOwner.remove(c)
+        }
 
         val newPaths = currentState.paths.toMutableMap()
         newPaths[activeColor] = newPath
         for (cell in newPath) {
-            newCellOwner[cell] = activeColor
+            if (cell in (s.levelData?.bridges ?: emptySet()) && cell in newCellOwner && newCellOwner[cell] != activeColor) {
+                // Bridge cell owned by another pipe - don't overwrite
+            } else {
+                newCellOwner[cell] = activeColor
+            }
         }
 
         val newGameState = PipesGameState(newPaths, newCellOwner)

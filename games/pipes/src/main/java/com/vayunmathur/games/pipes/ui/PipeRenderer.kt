@@ -24,6 +24,17 @@ fun DrawScope.drawEmptyCell(cellRect: Rect) {
     )
 }
 
+fun DrawScope.drawBridgeCell(cellRect: Rect) {
+    drawEmptyCell(cellRect)
+    val cx = cellRect.center.x
+    val cy = cellRect.center.y
+    val arm = cellRect.size.width * 0.18f
+    val strokeW = cellRect.size.width * 0.06f
+    val markerColor = Color(0xFF5A5A5A)
+    drawLine(markerColor, Offset(cx - arm, cy - arm), Offset(cx + arm, cy + arm), strokeW)
+    drawLine(markerColor, Offset(cx + arm, cy - arm), Offset(cx - arm, cy + arm), strokeW)
+}
+
 fun DrawScope.drawPipeSegment(
     cellRect: Rect,
     connections: Set<Direction>,

@@ -1,322 +1,461 @@
 #!/usr/bin/env python3
-"""Generate solvable Flow/Pipes levels using Hamiltonian path partitioning.
+"""Generate Flow/Pipes levels.
 
-Every level guarantees:
-- Non-crossing solution paths that fill the entire grid
-- No shortcut: verified by exhaustive backtracking solver that proves
-  no combination of non-crossing paths can connect all pairs without
-  filling every cell.
+Rectangular grids: Numberlink algorithm (Thomas Ahle) — paths fill the grid
+by construction. Levels validated with NumberLink solver (unique solution).
 """
-import json
-import random
-import sys
-from collections import deque
+import sys, json, random, subprocess, os
+from collections import defaultdict
 
 
-def rectangular_cells(rows, cols):
-    return {(r, c) for r in range(rows) for c in range(cols)}
+# ===================== Numberlink Generator =====================
+
+T, L, R = range(3)
 
 
-def octagon_cells(size, cut=None):
-    if cut is None:
-        cut = size // 4 + 1
-    return {(r, c) for r in range(size) for c in range(size)
-            if not ((r < cut and c < cut - r) or
-                    (r < cut and c >= size - cut + r) or
-                    (r >= size - cut and c < cut - (size - 1 - r)) or
-                    (r >= size - cut and c >= size - cut + (size - 1 - r)))}
+def sign(x):
+    if x == 0:
+        return x
+    return -1 if x < 0 else 1
 
 
-def spiral_cells(rows, cols):
-    result = []
-    top, bottom, left, right = 0, rows - 1, 0, cols - 1
-    target = int(rows * cols * 0.7)
-    seen = set()
-    while len(result) < target and top <= bottom and left <= right:
-        for c in range(left, right + 1):
-            if (top, c) not in seen:
-                result.append((top, c)); seen.add((top, c))
-        top += 1
-        for r in range(top, bottom + 1):
-            if (r, right) not in seen:
-                result.append((r, right)); seen.add((r, right))
-        right -= 1
-        if top <= bottom:
-            for c in range(right, left - 1, -1):
-                if (bottom, c) not in seen:
-                    result.append((bottom, c)); seen.add((bottom, c))
-            bottom -= 1
-        if left <= right:
-            for r in range(bottom, top - 1, -1):
-                if (r, left) not in seen:
-                    result.append((r, left)); seen.add((r, left))
-            left += 1
-    return set(result[:target])
+def unrotate(x, y, dx, dy):
+    while (dx, dy) != (0, 1):
+        x, y, dx, dy = -y, x, -dy, dx
+    return x, y
 
 
-def compute_adjacency(cells):
-    dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    adj = {}
-    for (r, c) in cells:
-        adj[(r, c)] = [(r + dr, c + dc) for dr, dc in dirs if (r + dr, c + dc) in cells]
-    return adj
+class Path:
+    def __init__(self, steps):
+        self.steps = steps
+
+    def xys(self, dx=0, dy=1):
+        x, y = 0, 0
+        yield (x, y)
+        for step in self.steps:
+            x, y = x + dx, y + dy
+            yield (x, y)
+            if step == L:
+                dx, dy = -dy, dx
+            if step == R:
+                dx, dy = dy, -dx
+            elif step == T:
+                x, y = x + dx, y + dy
+                yield (x, y)
+
+    def test(self):
+        ps = list(self.xys())
+        return len(set(ps)) == len(ps)
+
+    def test_loop(self):
+        ps = list(self.xys())
+        seen = set(ps)
+        return len(ps) == len(seen) or (len(ps) == len(seen) + 1 and ps[0] == ps[-1])
+
+    def winding(self):
+        return self.steps.count(R) - self.steps.count(L)
 
 
-# --------------- Hamiltonian path ---------------
+class UnionFind:
+    def __init__(self):
+        self.uf = {}
 
-def find_hamiltonian_path(cells, adj, rng):
-    n = len(cells)
-    cells_list = list(cells)
-    deg1 = [c for c in cells if len(adj[c]) == 1]
-    if len(deg1) > 2:
-        return None
-    for _ in range(200):
-        rng.shuffle(cells_list)
-        starts = deg1 + [c for c in cells_list if c not in deg1]
-        for start in starts[:15]:
-            path = [start]
-            visited = {start}
-            while len(path) < n:
-                cur = path[-1]
-                nbs = [nb for nb in adj[cur] if nb not in visited]
-                if not nbs:
+    def union(self, a, b):
+        self.uf[self.find(a)] = self.find(b)
+
+    def find(self, a):
+        if self.uf.get(a, a) == a:
+            return a
+        par = self.find(self.uf.get(a, a))
+        self.uf[a] = par
+        return par
+
+
+class Mitm:
+    def __init__(self, lr_price=2, t_price=1):
+        self.lr_price = lr_price
+        self.t_price = t_price
+        self.inv = defaultdict(list)
+        self.list = []
+
+    def prepare(self, budget):
+        for path, (x, y, dx, dy) in self._good_paths(0, 0, 0, 1, budget):
+            self.list.append((path, x, y, dx, dy))
+            self.inv[x, y, dx, dy].append(path)
+
+    def rand_path2(self, xn, yn, dxn, dyn):
+        seen = set()
+        path = []
+        for _attempt in range(10000):
+            seen.clear()
+            del path[:]
+            x, y, dx, dy = 0, 0, 0, 1
+            seen.add((x, y))
+            for _ in range(2 * (abs(xn) + abs(yn))):
+                step, = random.choices(
+                    [L, R, T],
+                    [1 / self.lr_price, 1 / self.lr_price, 2 / self.t_price])
+                path.append(step)
+                x, y = x + dx, y + dy
+                if (x, y) in seen:
                     break
-                nbs.sort(key=lambda nb: (
-                    sum(1 for nn in adj[nb] if nn not in visited),
-                    rng.random()
-                ))
-                path.append(nbs[0])
-                visited.add(nbs[0])
-            if len(path) == n:
-                return path
-    return None
+                seen.add((x, y))
+                if step == L:
+                    dx, dy = -dy, dx
+                if step == R:
+                    dx, dy = dy, -dx
+                elif step == T:
+                    x, y = x + dx, y + dy
+                    if (x, y) in seen:
+                        break
+                    seen.add((x, y))
+                if (x, y) == (xn, yn):
+                    return Path(path)
+                ends = self._lookup(dx, dy, xn - x, yn - y, dxn, dyn)
+                if ends:
+                    return Path(tuple(path) + random.choice(ends))
+        return None
 
+    def rand_loop(self, clock=0):
+        for _attempt in range(10000):
+            path, x, y, dx, dy = random.choice(self.list)
+            path2s = self._lookup(dx, dy, -x, -y, 0, 1)
+            if path2s:
+                path2 = random.choice(path2s)
+                joined = Path(path + path2)
+                if clock and joined.winding() != clock * 4:
+                    continue
+                if joined.test_loop():
+                    return joined
+        return None
 
-# --------------- BFS utilities ---------------
-
-def bfs_dist(adj, start, end):
-    if start == end:
-        return 1
-    visited = {start}
-    queue = deque([(start, 1)])
-    while queue:
-        cur, d = queue.popleft()
-        for nb in adj[cur]:
-            if nb == end:
-                return d + 1
-            if nb not in visited:
-                visited.add(nb)
-                queue.append((nb, d + 1))
-    return 10**9
-
-
-def find_short_paths(adj, start, end, blocked, max_extra=2, max_paths=8):
-    """Find multiple short paths from start to end, avoiding blocked cells.
-    Returns paths sorted by length. Uses BFS-from-end for pruning."""
-    if start in blocked or end in blocked:
-        return []
-
-    # BFS from end for distance pruning
-    dist_to_end = {end: 0}
-    queue = deque([end])
-    while queue:
-        cur = queue.popleft()
-        for nb in adj[cur]:
-            if nb not in dist_to_end and nb not in blocked:
-                dist_to_end[nb] = dist_to_end[cur] + 1
-                queue.append(nb)
-
-    if start not in dist_to_end:
-        return []
-
-    shortest = dist_to_end[start]
-    max_depth = shortest + max_extra
-
-    paths = []
-    path_set = set()  # track path[0] visited to avoid revisiting
-
-    def dfs(cur, path, visited):
-        if len(paths) >= max_paths:
-            return
-        if cur == end:
-            paths.append(tuple(path))
-            return
-        budget = max_depth - len(path)
+    def _good_paths(self, x, y, dx, dy, budget, seen=None):
+        if seen is None:
+            seen = set()
+        if budget >= 0:
+            yield (), (x, y, dx, dy)
         if budget <= 0:
             return
-        for nb in adj[cur]:
-            if nb not in visited and nb not in blocked:
-                d = dist_to_end.get(nb)
-                if d is not None and d <= budget:
-                    visited.add(nb)
-                    path.append(nb)
-                    dfs(nb, path, visited)
-                    path.pop()
-                    visited.discard(nb)
-                    if len(paths) >= max_paths:
-                        return
+        seen.add((x, y))
+        x1, y1 = x + dx, y + dy
+        if (x1, y1) not in seen:
+            for path, end in self._good_paths(
+                    x1, y1, -dy, dx, budget - self.lr_price, seen):
+                yield (L,) + path, end
+            for path, end in self._good_paths(
+                    x1, y1, dy, -dx, budget - self.lr_price, seen):
+                yield (R,) + path, end
+            seen.add((x1, y1))
+            x2, y2 = x1 + dx, y1 + dy
+            if (x2, y2) not in seen:
+                for path, end in self._good_paths(
+                        x2, y2, dx, dy, budget - self.t_price, seen):
+                    yield (T,) + path, end
+            seen.remove((x1, y1))
+        seen.remove((x, y))
 
-    dfs(start, [start], {start})
-    return paths
+    def _lookup(self, dx, dy, xn, yn, dxn, dyn):
+        xt, yt = unrotate(xn, yn, dx, dy)
+        dxt, dyt = unrotate(dxn, dyn, dx, dy)
+        return self.inv[xt, yt, dxt, dyt]
 
 
-# --------------- Shortcut solver ---------------
+class Grid:
+    def __init__(self, w, h):
+        self.w, self.h = w, h
+        self.grid = {}
 
-def has_shortcut(cells, adj, endpoints):
-    """Exhaustive backtracking: can all pairs be connected without filling every cell?
+    def __setitem__(self, key, val):
+        self.grid[key] = val
 
-    Tries multiple short paths per pair, different pair orderings.
-    If ANY combination leaves cells unfilled, returns True (shortcut exists).
-    """
-    n = len(cells)
-    pairs = [(tuple(ep['cells'][0]), tuple(ep['cells'][1])) for ep in endpoints]
+    def __getitem__(self, key):
+        return self.grid.get(key, ' ')
 
-    # Try 3 orderings: shortest-first, longest-first, original
-    orderings = [
-        sorted(range(len(pairs)), key=lambda i: bfs_dist(adj, pairs[i][0], pairs[i][1])),
-        sorted(range(len(pairs)), key=lambda i: -bfs_dist(adj, pairs[i][0], pairs[i][1])),
-        list(range(len(pairs))),
-    ]
+    def __contains__(self, key):
+        return key in self.grid
 
-    for ordering in orderings:
-        ordered = [pairs[i] for i in ordering]
-        if _solve_shortcut(n, adj, ordered):
-            return True
+    def __iter__(self):
+        return iter(self.grid.items())
+
+    def clear(self):
+        self.grid.clear()
+
+    def values(self):
+        return self.grid.values()
+
+    def shrink(self):
+        small = Grid(self.w // 2, self.h // 2)
+        for y in range(self.h // 2):
+            for x in range(self.w // 2):
+                small[x, y] = self[2 * x + 1, 2 * y + 1]
+        return small
+
+    def test_path(self, path, x0, y0, dx0=0, dy0=1):
+        return all(
+            0 <= x0 - x + y < self.w and 0 <= y0 + x + y < self.h
+            and (x0 - x + y, y0 + x + y) not in self
+            for x, y in path.xys(dx0, dy0))
+
+    def draw_path(self, path, x0, y0, dx0=0, dy0=1, loop=False):
+        ps = list(path.xys(dx0, dy0))
+        if loop:
+            assert ps[0] == ps[-1]
+            ps.append(ps[1])
+        for i in range(1, len(ps) - 1):
+            xp, yp = ps[i - 1]
+            x, y = ps[i]
+            xn, yn = ps[i + 1]
+            self[x0 - x + y, y0 + x + y] = {
+                (1, 1, 1): '<', (-1, -1, -1): '<',
+                (1, 1, -1): '>', (-1, -1, 1): '>',
+                (-1, 1, 1): 'v', (1, -1, -1): 'v',
+                (-1, 1, -1): '^', (1, -1, 1): '^',
+                (0, 2, 0): '\\', (0, -2, 0): '\\',
+                (2, 0, 0): '/', (-2, 0, 0): '/'
+            }[xn - xp, yn - yp, sign((x - xp) * (yn - y) - (xn - x) * (y - yp))]
+
+    def make_tubes(self):
+        uf = UnionFind()
+        tube_grid = Grid(self.w, self.h)
+        for x in range(self.w):
+            d = '-'
+            for y in range(self.h):
+                for dx, dy in {
+                    '/-': [(0, 1)], '\\-': [(1, 0), (0, 1)],
+                    '/|': [(1, 0)],
+                    ' -': [(1, 0)], ' |': [(0, 1)],
+                    'v|': [(0, 1)], '>|': [(1, 0)],
+                    'v-': [(0, 1)], '>-': [(1, 0)],
+                }.get(self[x, y] + d, []):
+                    uf.union((x, y), (x + dx, y + dy))
+                tube_grid[x, y] = {
+                    '/-': '┐', '\\-': '┌',
+                    '/|': '└', '\\|': '┘',
+                    ' -': '-', ' |': '|',
+                }.get(self[x, y] + d, 'x')
+                if self[x, y] in '\\/v^':
+                    d = '|' if d == '-' else '-'
+        return tube_grid, uf
+
+    def clear_path(self, path, x, y):
+        path_grid = Grid(self.w, self.h)
+        path_grid.draw_path(path, x, y, loop=True)
+        for key, val in path_grid.make_tubes()[0]:
+            if val == '|':
+                self.grid.pop(key, None)
+
+
+LOOP_TRIES = 1000
+
+
+def has_loops(grid, uf):
+    groups = len({uf.find((x, y)) for y in range(grid.h) for x in range(grid.w)})
+    ends = sum(bool(grid[x, y] in 'v^<>') for y in range(grid.h) for x in range(grid.w))
+    return ends != 2 * groups
+
+
+def has_pair(tg, uf):
+    for y in range(tg.h):
+        for x in range(tg.w):
+            for dx, dy in ((1, 0), (0, 1)):
+                x1, y1 = x + dx, y + dy
+                if x1 < tg.w and y1 < tg.h:
+                    if tg[x, y] == tg[x1, y1] == 'x' \
+                            and uf.find((x, y)) == uf.find((x1, y1)):
+                        return True
     return False
 
 
-def _solve_shortcut(n, adj, pairs):
-    """Backtracking solver: can pairs be connected using < n cells total?"""
-    found = [False]
-    calls = [0]
-    LIMIT = 200000
-
-    def solve(idx, used):
-        if found[0] or calls[0] >= LIMIT:
-            return
-        if idx == len(pairs):
-            if len(used) < n:
-                found[0] = True
-            return
-
-        start, end = pairs[idx]
-        paths = find_short_paths(adj, start, end, used, max_extra=2, max_paths=8)
-        for path in paths:
-            calls[0] += 1
-            if calls[0] >= LIMIT:
-                return
-            solve(idx + 1, used | set(path))
-            if found[0]:
-                return
-
-    solve(0, set())
-    return found[0]
+def has_tripple(tg, uf):
+    for y in range(tg.h):
+        for x in range(tg.w):
+            r = uf.find((x, y))
+            nbs = 0
+            for dx, dy in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+                x1, y1 = x + dx, y + dy
+                if 0 <= x1 < tg.w and 0 <= y1 < tg.h and uf.find((x1, y1)) == r:
+                    nbs += 1
+            if nbs >= 3:
+                return True
+    return False
 
 
-# --------------- Splitting ---------------
+def make(w, h, mitm, min_numbers=0, max_numbers=1000):
+    def test_ready(grid):
+        sg = grid.shrink()
+        stg, uf = sg.make_tubes()
+        numbers = list(stg.values()).count('x') // 2
+        return (min_numbers <= numbers <= max_numbers
+                and not has_loops(sg, uf)
+                and not has_pair(stg, uf)
+                and not has_tripple(stg, uf))
 
-def split_path(path_len, num_flows, rng):
-    min_seg = 3
-    if path_len < num_flows * min_seg:
-        return None
-    remaining = path_len - num_flows * min_seg
-    sizes = [min_seg] * num_flows
-    for _ in range(remaining):
-        sizes[rng.randint(0, num_flows - 1)] += 1
-    rng.shuffle(sizes)
-    return sizes
+    grid = Grid(2 * w + 1, 2 * h + 1)
 
+    for _ in range(2000):
+        grid.clear()
 
-# --------------- Level generation ---------------
-
-def generate_level(cells, adj, num_flows, seed, level_id):
-    rng = random.Random(seed)
-    path = find_hamiltonian_path(cells, adj, rng)
-    if path is None:
-        return None
-
-    rows = max(r for r, c in cells) + 1
-    cols = max(c for r, c in cells) + 1
-
-    # Try several random splits of this Hamiltonian path
-    for attempt in range(10):
-        r = random.Random(seed + attempt * 37)
-        sizes = split_path(len(path), num_flows, r)
-        if sizes is None:
+        path = mitm.rand_path2(h, h, 0, -1)
+        if path is None or not grid.test_path(path, 0, 0):
             continue
+        grid.draw_path(path, 0, 0)
+        grid[0, 0], grid[0, 2 * h] = '\\', '/'
 
-        endpoints = []
-        idx = 0
-        for color, size in enumerate(sizes):
-            seg = path[idx:idx + size]
-            endpoints.append({
-                "color": color,
-                "cells": [[seg[0][0], seg[0][1]], [seg[-1][0], seg[-1][1]]]
-            })
-            idx += size
+        path2 = mitm.rand_path2(h, h, 0, -1)
+        if path2 is None or not grid.test_path(path2, 2 * w, 2 * h, 0, -1):
+            continue
+        grid.draw_path(path2, 2 * w, 2 * h, 0, -1)
+        grid[2 * w, 0], grid[2 * w, 2 * h] = '/', '\\'
 
-        if not has_shortcut(cells, adj, endpoints):
-            return {
-                "id": level_id,
-                "rows": rows,
-                "cols": cols,
-                "endpoints": endpoints,
-                "optimalMoves": num_flows
-            }
+        if test_ready(grid):
+            return grid.shrink()
+
+        tg, _ = grid.make_tubes()
+        for tries in range(LOOP_TRIES):
+            x, y = 2 * random.randrange(w), 2 * random.randrange(h)
+            if tg[x, y] not in '-|':
+                continue
+            loop = mitm.rand_loop(clock=1 if tg[x, y] == '-' else -1)
+            if loop is None:
+                continue
+            if grid.test_path(loop, x, y):
+                grid.clear_path(loop, x, y)
+                grid.draw_path(loop, x, y, loop=True)
+                tg, _ = grid.make_tubes()
+
+                sg = grid.shrink()
+                stg, uf = sg.make_tubes()
+                numbers = list(stg.values()).count('x') // 2
+                if numbers > max_numbers:
+                    break
+                if test_ready(grid):
+                    return sg
 
     return None
 
 
-def generate_pack(name, shape, cells, num_levels, flow_range, base_seed):
-    adj = compute_adjacency(cells)
+def too_many_short_paths(path_lengths, num_pairs):
+    """At most 1 path with ≤ 4 cells (≤ 3 edges), or 2 if ≥ 6 pairs."""
+    short = sum(1 for l in path_lengths if l <= 4)
+    max_short = 2 if num_pairs >= 6 else 1
+    return short > max_short
+
+
+def grid_to_level(grid, level_id, w, h):
+    tube_grid, uf = grid.make_tubes()
+
+    group_sizes = {}
+    for y in range(grid.h):
+        for x in range(grid.w):
+            g = uf.find((x, y))
+            group_sizes[g] = group_sizes.get(g, 0) + 1
+
+    groups = defaultdict(list)
+    for y in range(grid.h):
+        for x in range(grid.w):
+            if tube_grid[x, y] == 'x':
+                groups[uf.find((x, y))].append([y, x])
+
+    endpoints = []
+    path_lengths = []
+    color = 0
+    for group_id, cells in groups.items():
+        if len(cells) == 2:
+            endpoints.append({"color": color, "cells": cells})
+            path_lengths.append(group_sizes[group_id])
+            color += 1
+
+    if not endpoints:
+        return None
+
+    if too_many_short_paths(path_lengths, len(endpoints)):
+        return None
+
+    return {
+        "id": level_id,
+        "rows": h,
+        "cols": w,
+        "endpoints": endpoints,
+        "optimalMoves": len(endpoints)
+    }
+
+
+# ===================== Solver Validation =====================
+
+SOLVER_DIR = os.path.dirname(os.path.abspath(__file__))
+SOLVER_SRC = os.path.join(SOLVER_DIR, "numberlink_solver.cpp")
+SOLVER_BIN = os.path.join(SOLVER_DIR, "numberlink_solver")
+
+
+def compile_solver():
+    if os.path.exists(SOLVER_BIN) and os.path.getmtime(SOLVER_BIN) >= os.path.getmtime(SOLVER_SRC):
+        return True
+    print("Compiling NumberLink solver...")
+    result = subprocess.run(
+        ["g++", "-O2", "-o", SOLVER_BIN, SOLVER_SRC],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"Failed to compile solver: {result.stderr}", file=sys.stderr)
+        return False
+    return True
+
+
+def validate_unique_solution(level):
+    rows, cols = level["rows"], level["cols"]
+    grid = [[0] * cols for _ in range(rows)]
+    for ep in level["endpoints"]:
+        color_num = ep["color"] + 1
+        for r, c in ep["cells"]:
+            grid[r][c] = color_num
+
+    input_str = f"{cols} {rows}\n"
+    for row in grid:
+        input_str += " ".join(str(v) for v in row) + "\n"
+
+    try:
+        result = subprocess.run(
+            [SOLVER_BIN],
+            input=input_str, capture_output=True, text=True, timeout=60
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    if result.returncode != 0:
+        return False
+
+    for line in result.stdout.strip().split("\n"):
+        if "# of solutions:" in line:
+            count_str = line.split(":")[-1].strip()
+            try:
+                count = int(float(count_str))
+                return count == 1
+            except ValueError:
+                return False
+    return False
+
+
+# ===================== Pack Generation =====================
+
+def generate_rect_pack(name, w, h, num_levels, flow_range, base_seed):
+    budget = min(20, max(h, 6))
+    mitm = Mitm(lr_price=2, t_price=1)
+    mitm.prepare(budget)
+
     levels = []
     seed = base_seed
+    max_attempts = num_levels * 500
     attempts = 0
-    max_attempts = num_levels * 300
     while len(levels) < num_levels and attempts < max_attempts:
-        num_flows = random.Random(seed).randint(flow_range[0], flow_range[1])
-        lid = f"{name.replace(' ', '_')}_{len(levels)+1:03d}"
-        level = generate_level(cells, adj, num_flows, seed, lid)
-        if level is not None:
-            if shape not in ("rectangular",):
-                level["cells"] = [[r, c] for r, c in sorted(cells)]
-                adj_json = {}
-                for (r, c), neighbors in adj.items():
-                    adj_json[f"{r},{c}"] = [[nr, nc] for nr, nc in neighbors]
-                level["adjacency"] = adj_json
-            levels.append(level)
-            sys.stdout.write(f"\r  {len(levels)}/{num_levels}")
-            sys.stdout.flush()
-        seed += 1
-        attempts += 1
-    print()
-    return levels
-
-
-def generate_special_pack(name, shape, cells, num_levels, flow_range, base_seed):
-    adj = compute_adjacency(cells)
-    render_positions = {}
-    for r, c in sorted(cells):
-        render_positions[f"{r},{c}"] = {"x": float(c), "y": float(r)}
-
-    levels = []
-    seed = base_seed
-    attempts = 0
-    max_attempts = num_levels * 300
-    while len(levels) < num_levels and attempts < max_attempts:
-        num_flows = random.Random(seed).randint(flow_range[0], flow_range[1])
-        lid = f"{name.replace(' ', '_')}_{len(levels)+1:03d}"
-        level = generate_level(cells, adj, num_flows, seed, lid)
-        if level is not None:
-            level["cells"] = [[r, c] for r, c in sorted(cells)]
-            adj_json = {}
-            for (r, c), neighbors in adj.items():
-                adj_json[f"{r},{c}"] = [[nr, nc] for nr, nc in neighbors]
-            level["adjacency"] = adj_json
-            level["renderPositions"] = render_positions
-            levels.append(level)
-            sys.stdout.write(f"\r  {len(levels)}/{num_levels}")
-            sys.stdout.flush()
+        random.seed(seed)
+        min_n, max_n = flow_range
+        grid = make(w, h, mitm, min_n, max_n)
+        if grid is not None:
+            lid = f"{name.replace(' ', '_')}_{len(levels)+1:03d}"
+            level = grid_to_level(grid, lid, w, h)
+            if level is not None and validate_unique_solution(level):
+                levels.append(level)
+                sys.stdout.write(f"\r  {len(levels)}/{num_levels}")
+                sys.stdout.flush()
         seed += 1
         attempts += 1
     print()
@@ -326,38 +465,28 @@ def generate_special_pack(name, shape, cells, num_levels, flow_range, base_seed)
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
+    if not compile_solver():
+        print("Error: Could not compile NumberLink solver", file=sys.stderr)
+        sys.exit(1)
+
     packs = [
-        {"name": "5×5", "shape": "rectangular",
-         "cells": rectangular_cells(5, 5), "levels_count": 30,
-         "flow_range": (4, 5), "seed": 1000},
-        {"name": "6×6", "shape": "rectangular",
-         "cells": rectangular_cells(6, 6), "levels_count": 30,
-         "flow_range": (5, 6), "seed": 2000},
-        {"name": "7×7", "shape": "rectangular",
-         "cells": rectangular_cells(7, 7), "levels_count": 30,
-         "flow_range": (6, 7), "seed": 3000},
-        {"name": "Octagon", "shape": "octagon",
-         "cells": octagon_cells(6, 2), "levels_count": 20,
-         "flow_range": (4, 5), "seed": 4000},
-        {"name": "Spiral", "shape": "spiral",
-         "cells": spiral_cells(7, 7), "levels_count": 20,
-         "flow_range": (4, 5), "seed": 5000},
+        {"name": "5×5", "type": "rect", "w": 5, "h": 5,
+         "levels": 30, "flow_range": (3, 7), "seed": 10000},
+        {"name": "6×6", "type": "rect", "w": 6, "h": 6,
+         "levels": 30, "flow_range": (4, 9), "seed": 20000},
+        {"name": "7×7", "type": "rect", "w": 7, "h": 7,
+         "levels": 30, "flow_range": (4, 10), "seed": 30000},
     ]
 
-    filenames = ["5x5.json", "6x6.json", "7x7.json", "octagon.json", "spiral.json"]
+    filenames = ["5x5.json", "6x6.json", "7x7.json"]
 
     for pack_info, filename in zip(packs, filenames):
         print(f"Generating {pack_info['name']}...")
-        if pack_info["shape"] in ("octagon", "spiral"):
-            levels = generate_special_pack(
-                pack_info["name"], pack_info["shape"], pack_info["cells"],
-                pack_info["levels_count"], pack_info["flow_range"], pack_info["seed"])
-        else:
-            levels = generate_pack(
-                pack_info["name"], pack_info["shape"], pack_info["cells"],
-                pack_info["levels_count"], pack_info["flow_range"], pack_info["seed"])
+        levels = generate_rect_pack(
+            pack_info["name"], pack_info["w"], pack_info["h"],
+            pack_info["levels"], pack_info["flow_range"], pack_info["seed"])
+        pack_data = {"name": pack_info["name"], "shape": "rectangular", "levels": levels}
 
-        pack_data = {"name": pack_info["name"], "shape": pack_info["shape"], "levels": levels}
         path = f"{out_dir}/{filename}"
         with open(path, "w") as f:
             json.dump(pack_data, f, indent=2)

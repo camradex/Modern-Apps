@@ -106,7 +106,11 @@ fun GameBoard(
 
         for (cell in levelData.cells) {
             val rect = cellRects[cell] ?: continue
-            drawEmptyCell(rect)
+            if (cell in levelData.bridges) {
+                drawBridgeCell(rect)
+            } else {
+                drawEmptyCell(rect)
+            }
         }
 
         val displayPaths = if (activeColor != null) {

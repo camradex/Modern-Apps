@@ -10,42 +10,6 @@ object LevelGenerator {
         }
     }
 
-    fun octagonCells(size: Int, cut: Int = size / 4 + 1): Set<CellPos> {
-        return buildSet {
-            for (r in 0 until size) for (c in 0 until size) {
-                val topLeft = r < cut && c < cut - r
-                val topRight = r < cut && c >= size - cut + r
-                val botLeft = r >= size - cut && c < cut - (size - 1 - r)
-                val botRight = r >= size - cut && c >= size - cut + (size - 1 - r)
-                if (!(topLeft || topRight || botLeft || botRight)) {
-                    add(CellPos(r, c))
-                }
-            }
-        }
-    }
-
-    fun spiralCells(rows: Int, cols: Int): Set<CellPos> {
-        val result = mutableSetOf<CellPos>()
-        var top = 0; var bottom = rows - 1; var left = 0; var right = cols - 1
-        val total = rows * cols
-        val target = (total * 0.7).toInt()
-        while (result.size < target && top <= bottom && left <= right) {
-            for (c in left..right) result.add(CellPos(top, c))
-            top++
-            for (r in top..bottom) result.add(CellPos(r, right))
-            right--
-            if (top <= bottom) {
-                for (c in right downTo left) result.add(CellPos(bottom, c))
-                bottom--
-            }
-            if (left <= right) {
-                for (r in bottom downTo top) result.add(CellPos(r, left))
-                left++
-            }
-        }
-        return result
-    }
-
     private fun computeAdjacency(cells: Set<CellPos>): Map<CellPos, List<CellPos>> {
         val dirs = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
         return cells.associateWith { cell ->
@@ -79,6 +43,7 @@ object LevelGenerator {
                     adjacency = adjacency,
                     renderPositions = null,
                     endpoints = endpoints,
+                    bridges = emptySet(),
                     optimalMoves = cells.size
                 )
             }

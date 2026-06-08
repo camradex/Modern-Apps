@@ -189,7 +189,10 @@ fun LevelScreen(backStack: NavBackStack<Route>, viewModel: PipesViewModel, packI
     val pack = LevelPack.PACKS[packIndex]
     val levelStats by viewModel.levelStats.collectAsState()
     Scaffold(topBar = {
-        TopAppBar({ Text(stringResource(R.string.level_selector)) })
+        TopAppBar(
+            { Text(stringResource(R.string.level_selector)) },
+            navigationIcon = { IconNavigation(backStack) }
+        )
     }) { paddingValues ->
         LazyVerticalGrid(
             GridCells.Adaptive(88.dp),
@@ -316,7 +319,7 @@ fun GameScreen(backStack: NavBackStack<Route>, viewModel: PipesViewModel, packIn
                     }
                 }
 
-                
+
             }
         }
     }
