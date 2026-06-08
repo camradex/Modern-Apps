@@ -477,7 +477,9 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         prefillNotes: String? = null,
     ) {
         if (editingInitialized && editingContactId == contactId && _editDraft.value != null) return
-        val contact = contactId?.let { getContact(it) }
+        val contact = contactId?.let {
+            getContact(it) ?: Contact.getContact(getApplication(), it)
+        }
         val details = contact?.details
         editingOriginal = contact
         editingContactId = contactId
