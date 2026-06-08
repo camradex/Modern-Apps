@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
@@ -37,7 +36,6 @@ fun SettingsPage(
     backStack: NavBackStack<Route>,
     ypvm: YouPipeViewModel,
 ) {
-    val sponsorBlockEnabled by ypvm.sponsorBlockEnabled.collectAsState()
     val sponsorBlockCategories by ypvm.sponsorBlockCategories.collectAsState()
     val deArrowEnabled by ypvm.deArrowEnabled.collectAsState()
     val isLoading by ypvm.isImporting.collectAsState()
@@ -67,32 +65,23 @@ fun SettingsPage(
             LazyColumn(Modifier.padding(paddingValues)) {
                 item {
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.label_sponsorblock)) },
-                        supportingContent = { Text(stringResource(R.string.label_sponsorblock_description)) },
-                        trailingContent = {
-                            Switch(
-                                checked = sponsorBlockEnabled,
-                                onCheckedChange = { ypvm.setSponsorBlockEnabled(it) }
-                            )
-                        }
+                        headlineContent = { Text(stringResource(R.string.label_sponsorblock)) }
                     )
                 }
-                if (sponsorBlockEnabled) {
-                    ALL_SPONSOR_CATEGORIES.forEach { category ->
-                        item(key = "sb_$category") {
-                            val label = SPONSOR_CATEGORY_LABELS[category] ?: category
-                            val checked = category in sponsorBlockCategories
-                            ListItem(
-                                headlineContent = { Text(label) },
-                                trailingContent = {
-                                    Checkbox(
-                                        checked = checked,
-                                        onCheckedChange = { ypvm.toggleSponsorBlockCategory(category) }
-                                    )
-                                },
-                                modifier = Modifier.padding(start = 16.dp)
-                            )
-                        }
+                ALL_SPONSOR_CATEGORIES.forEach { category ->
+                    item(key = "sb_$category") {
+                        val label = SPONSOR_CATEGORY_LABELS[category] ?: category
+                        val checked = category in sponsorBlockCategories
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            trailingContent = {
+                                Switch(
+                                    checked = checked,
+                                    onCheckedChange = { ypvm.toggleSponsorBlockCategory(category) }
+                                )
+                            },
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
                     }
                 }
                 item {

@@ -620,11 +620,11 @@ class YouPipeViewModel(
     private val _importProgress = MutableStateFlow(0f)
     val importProgress: StateFlow<Float> = _importProgress.asStateFlow()
 
-    private val _sponsorBlockEnabled: StateFlow<Boolean> = DataStoreUtils
+    val sponsorBlockEnabled: StateFlow<Boolean> = DataStoreUtils
         .getInstance(application)
-        .booleanFlow("sponsorblock_enabled")
+        .stringSetFlow("sponsorblock_categories")
+        .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-    val sponsorBlockEnabled: StateFlow<Boolean> = _sponsorBlockEnabled
 
     private val _deArrowEnabled: StateFlow<Boolean> = DataStoreUtils
         .getInstance(application)
@@ -641,16 +641,6 @@ class YouPipeViewModel(
     fun setDeArrowEnabled(enabled: Boolean) {
         viewModelScope.launch {
             DataStoreUtils.getInstance(getApplication()).setBoolean("dearrow_enabled", enabled)
-        }
-    }
-
-    fun setSponsorBlockEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            val ds = DataStoreUtils.getInstance(getApplication())
-            ds.setBoolean("sponsorblock_enabled", enabled)
-            if (enabled && _sponsorBlockCategories.value.isEmpty()) {
-                setSponsorBlockCategories(DEFAULT_SPONSOR_CATEGORIES)
-            }
         }
     }
 
@@ -878,14 +868,14 @@ class YouPipeViewModel(
         )
 
         val SPONSOR_CATEGORY_LABELS = mapOf(
-            "sponsor" to "Sponsor",
-            "selfpromo" to "Self Promotion",
-            "interaction" to "Interaction Reminder",
-            "intro" to "Intro",
-            "outro" to "Outro/Endcards",
-            "preview" to "Preview/Recap",
-            "music_offtopic" to "Non-Music in Music Videos",
-            "filler" to "Filler",
+            "sponsor" to "Block Sponsors",
+            "selfpromo" to "Block Self Promotion",
+            "interaction" to "Block Interaction Reminders",
+            "intro" to "Block Intros",
+            "outro" to "Block Outros",
+            "preview" to "Block Previews",
+            "music_offtopic" to "Block Non-Music",
+            "filler" to "Block Filler",
         )
     }
 }
