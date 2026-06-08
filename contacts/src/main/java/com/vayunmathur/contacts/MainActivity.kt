@@ -3,6 +3,7 @@ package com.vayunmathur.contacts
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.ContentUris
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
@@ -94,8 +95,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (it.action == Intent.ACTION_VIEW || it.action == Intent.ACTION_EDIT || it.action == Intent.ACTION_INSERT) {
-                externalRoute.value = when (it.action) {
+            val action = it.action
+            if (action == Intent.ACTION_VIEW || action == Intent.ACTION_EDIT || action == Intent.ACTION_INSERT
+                || action == ContactsContract.QuickContact.ACTION_QUICK_CONTACT
+                || action == "com.android.contacts.action.QUICK_CONTACT") {
+                externalRoute.value = when (action) {
                     Intent.ACTION_INSERT -> {
                         Route.EditContact(
                             contactId = null,
@@ -108,7 +112,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     Intent.ACTION_EDIT -> {
-                        val contactId = it.data?.lastPathSegment?.toLongOrNull()
+                        val contactId = resolveContactId(it.data)
                         Route.EditContact(
                             contactId = contactId,
                             name = it.getStringExtra(ContactsContract.Intents.Insert.NAME),
@@ -116,23 +120,56 @@ class MainActivity : ComponentActivity() {
                             email = it.getStringExtra(ContactsContract.Intents.Insert.EMAIL)
                         )
                     }
-                    Intent.ACTION_VIEW -> {
-                        val lastSegment = it.data?.lastPathSegment
+                    else -> {
                         val path = it.data?.path ?: ""
-                        val type = it.type
+                        val mimeType = it.type
                         when {
-                            path.contains("/groups") || type?.contains("group") == true -> {
-                                lastSegment?.toLongOrNull()?.let { Route.GroupsList(it) }
+                            path.contains("/groups") || mimeType?.contains("group") == true -> {
+                                val groupId = it.data?.lastPathSegment?.toLongOrNull()
+                                Route.GroupsList(groupId)
                             }
                             else -> {
-                                lastSegment?.toLongOrNull()?.let { Route.ContactDetail(it) }
+                                resolveContactId(it.data)?.let { id -> Route.ContactDetail(id) }
                             }
                         }
                     }
-                    else -> null
                 }
             }
         }
+    }
+
+    private fun resolveContactId(uri: Uri?): Long? {
+        if (uri == null) return null
+        val path = uri.path ?: return null
+
+        // For raw_contacts URIs, the last segment is already a raw contact ID
+        if (path.startsWith("/raw_contacts/")) {
+            return uri.lastPathSegment?.toLongOrNull()
+        }
+
+        // For contacts/lookup or contacts/<id> URIs, extract the aggregated contact ID
+        val aggregatedId: Long? = uri.lastPathSegment?.toLongOrNull()
+            ?: if (path.contains("/lookup/")) {
+                ContactsContract.Contacts.lookupContact(contentResolver, uri)?.let {
+                    ContentUris.parseId(it)
+                }
+            } else null
+
+        if (aggregatedId == null) return null
+
+        // Convert aggregated contact ID to raw contact ID
+        contentResolver.query(
+            ContactsContract.RawContacts.CONTENT_URI,
+            arrayOf(ContactsContract.RawContacts._ID),
+            "${ContactsContract.RawContacts.CONTACT_ID} = ?",
+            arrayOf(aggregatedId.toString()),
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0)
+            }
+        }
+        return null
     }
 }
 
