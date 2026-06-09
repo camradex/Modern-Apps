@@ -29,7 +29,7 @@ object MtProtoCipher {
         buf.putRawBytes(payload)
 
         val plaintext = buf.raw
-        val paddingLen = 12 + (16 - ((plaintext.size + 12) % 16)) % 16
+        val paddingLen = 16 + (16 - (plaintext.size % 16))
         val padding = ByteArray(paddingLen)
         random.nextBytes(padding)
         val paddedPlaintext = plaintext + padding

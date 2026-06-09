@@ -118,11 +118,16 @@ class KeyExchange(private val transport: TcpTransport, private val dc: Int = 2) 
         val g = BigInteger.valueOf(gValue.toLong())
         val gA = BigInteger(1, gABytes)
 
+        // Validate DH parameters
+        checkDhPrime(gValue, dhPrime)
+        checkDhParams(dhPrime, g, gA)
+
         // Step 7: Generate b, compute g_b
         val bBytes = ByteArray(256)
         random.nextBytes(bBytes)
         val b = BigInteger(1, bBytes)
         val gB = g.modPow(b, dhPrime)
+        checkDhParams(dhPrime, g, gA, gB)
 
         // Build client_DH_inner_data
         val clientInner = TlBuffer()
@@ -149,6 +154,11 @@ class KeyExchange(private val transport: TcpTransport, private val dc: Int = 2) 
         val dhGenBuf = TlBuffer(dhGenData)
         val dhGenId = dhGenBuf.int32()
         check(dhGenId == 0x3bcbf734.toInt()) { "Expected dh_gen_ok, got 0x${dhGenId.toUInt().toString(16)}" }
+        val dhGenNonce = dhGenBuf.int128()
+        check(dhGenNonce.data.contentEquals(nonce.data)) { "DhGenOk nonce mismatch" }
+        val dhGenSrvNonce = dhGenBuf.int128()
+        check(dhGenSrvNonce.data.contentEquals(resSrvNonce.data)) { "DhGenOk server_nonce mismatch" }
+        val newNonceHash1 = dhGenBuf.int128()
 
         // Compute auth_key = g_a ^ b mod dhPrime
         val authKeyBig = gA.modPow(b, dhPrime)
@@ -159,6 +169,10 @@ class KeyExchange(private val transport: TcpTransport, private val dc: Int = 2) 
         System.arraycopy(akBytes, srcPos, authKey, dstPos, minOf(akBytes.size, 256))
 
         val authKeyId = MtProtoCipher.authKeyId(authKey)
+
+        // Verify nonce_hash_1
+        val expectedHash1 = computeNonceHash1(newNonce, authKey)
+        check(newNonceHash1.data.contentEquals(expectedHash1.data)) { "DhGenOk nonce_hash_1 verification failed" }
 
         // Compute server salt = new_nonce[0:8] XOR server_nonce[0:8]
         val saltBytes = ByteArray(8)
@@ -243,5 +257,41 @@ class KeyExchange(private val transport: TcpTransport, private val dc: Int = 2) 
             System.arraycopy(padding, 0, dataWithHash, totalLen, padding.size)
         }
         return AesIge.encrypt(dataWithHash, key, iv)
+    }
+
+    private fun computeNonceHash1(newNonce: Int256, authKey: ByteArray): Int128 {
+        val authKeySha1 = MessageDigest.getInstance("SHA-1").digest(authKey)
+        val auxHash = authKeySha1.copyOfRange(0, 8)
+        val buf = newNonce.data + byteArrayOf(1) + auxHash
+        val hash = MessageDigest.getInstance("SHA-1").digest(buf)
+        return Int128(hash.copyOfRange(4, 20))
+    }
+
+    private fun checkDhPrime(g: Int, p: BigInteger) {
+        check(p.bitLength() == 2048) { "DH prime must be 2048 bits" }
+        check(p.isProbablePrime(20)) { "p is not prime" }
+        val pMinus1Over2 = p.subtract(BigInteger.ONE).shiftRight(1)
+        check(pMinus1Over2.isProbablePrime(20)) { "(p-1)/2 is not prime" }
+        val pMod = when (g) {
+            2 -> p.mod(BigInteger.valueOf(8)) == BigInteger.valueOf(7)
+            3 -> p.mod(BigInteger.valueOf(3)) == BigInteger.valueOf(2)
+            4 -> true
+            5 -> p.mod(BigInteger.valueOf(5)).let { it == BigInteger.ONE || it == BigInteger.valueOf(4) }
+            6 -> p.mod(BigInteger.valueOf(24)).let { it == BigInteger.valueOf(19) || it == BigInteger.valueOf(23) }
+            7 -> p.mod(BigInteger.valueOf(7)).let { it == BigInteger.valueOf(3) || it == BigInteger.valueOf(5) || it == BigInteger.valueOf(6) }
+            else -> false
+        }
+        check(pMod) { "g=$g is not a valid generator for p" }
+    }
+
+    private fun checkDhParams(dhPrime: BigInteger, g: BigInteger, vararg values: BigInteger) {
+        val one = BigInteger.ONE
+        val dhPrimeMinusOne = dhPrime.subtract(one)
+        val safeMin = BigInteger.TWO.pow(2048 - 64)
+        val safeMax = dhPrime.subtract(safeMin)
+        for (v in values) {
+            check(v > one && v < dhPrimeMinusOne) { "DH param out of range (1, p-1)" }
+            check(v > safeMin && v < safeMax) { "DH param out of safe range" }
+        }
     }
 }

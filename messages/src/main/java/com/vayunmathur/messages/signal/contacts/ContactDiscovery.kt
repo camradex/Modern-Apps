@@ -36,6 +36,9 @@ class ContactDiscovery(
     private val selfPassword: String,
     private val context: android.content.Context,
 ) {
+    private var cachedCdsiUsername: String? = null
+    private var cachedCdsiPassword: String? = null
+    private var cdsiAuthExpiry: Long = 0L
     suspend fun resolveE164(e164: String): String? {
         val cached = recipientStore.getByE164(e164)
         if (cached != null) {
@@ -72,21 +75,35 @@ class ContactDiscovery(
 
     private data class CdsResult(val aci: String?, val pni: String?)
 
+    private suspend fun getCdsiAuth(): Pair<String, String>? {
+        val now = System.currentTimeMillis()
+        val username = cachedCdsiUsername
+        val password = cachedCdsiPassword
+        if (username != null && password != null && now < cdsiAuthExpiry) {
+            return username to password
+        }
+        val authResponse = SignalHttpClient.request(
+            method = "GET",
+            path = "/v2/directory/auth",
+            username = "$selfAci.$selfDeviceId",
+            password = selfPassword,
+        )
+        if (!authResponse.isSuccessful) {
+            Log.e(TAG, "Directory auth failed: ${authResponse.code}")
+            return null
+        }
+        val authJson = JSONObject(authResponse.body?.string() ?: return null)
+        val newUsername = authJson.getString("username")
+        val newPassword = authJson.getString("password")
+        cachedCdsiUsername = newUsername
+        cachedCdsiPassword = newPassword
+        cdsiAuthExpiry = now + CDSI_AUTH_TTL_MS
+        return newUsername to newPassword
+    }
+
     private suspend fun lookupViaCdsi(e164: String): CdsResult? {
         return try {
-            val authResponse = SignalHttpClient.request(
-                method = "GET",
-                path = "/v2/directory/auth",
-                username = "$selfAci.$selfDeviceId",
-                password = selfPassword,
-            )
-            if (!authResponse.isSuccessful) {
-                Log.e(TAG, "Directory auth failed: ${authResponse.code}")
-                return null
-            }
-            val authJson = JSONObject(authResponse.body?.string() ?: return null)
-            val cdsiUsername = authJson.getString("username")
-            val cdsiPassword = authJson.getString("password")
+            val (cdsiUsername, cdsiPassword) = getCdsiAuth() ?: return null
             Log.d(TAG, "Got CDSI auth credentials")
             performCdsiLookup(e164, cdsiUsername, cdsiPassword)
         } catch (e: Exception) {
@@ -130,7 +147,7 @@ class ContactDiscovery(
         })
 
         return try {
-            withTimeout(15000) {
+            withTimeout(20000) {
                 connected.await()
                 val attestationMsg = messages.poll(10, TimeUnit.SECONDS)
                     ?: throw IllegalStateException("No attestation")
@@ -146,7 +163,6 @@ class ContactDiscovery(
                 val e164Bytes = ByteBuffer.allocate(8).putLong(e164Num).array()
                 val cdsiRequest = CDSClientRequest.newBuilder()
                     .setNewE164S(com.google.protobuf.ByteString.copyFrom(e164Bytes))
-                    .setReturnAcisWithoutUaks(true)
                     .build()
                 val encryptedRequest = cds2Client.establishedSend(cdsiRequest.toByteArray())
                 socket.send(encryptedRequest.toByteString())
@@ -162,24 +178,42 @@ class ContactDiscovery(
                     socket.send(encryptedAck.toByteString())
                 }
 
-                val triples = cdsiResponse.e164PniAciTriples.toByteArray()
-                if (triples.size < 40) return@withTimeout null
+                var responseData = cdsiResponse
+                if (responseData.hasToken() && responseData.e164PniAciTriples.isEmpty) {
+                    val nextMsg = messages.poll(10, TimeUnit.SECONDS)
+                    if (nextMsg != null) {
+                        responseData = CDSClientResponse.parseFrom(cds2Client.establishedRecv(nextMsg))
+                    }
+                }
 
-                val pniBytes = triples.copyOfRange(8, 24)
-                val aciBytes = triples.copyOfRange(24, 40)
-                val pni = if (pniBytes.any { it != 0.toByte() }) {
-                    val buf = ByteBuffer.wrap(pniBytes)
-                    UUID(buf.long, buf.long).toString()
-                } else null
-                val aci = if (aciBytes.any { it != 0.toByte() }) {
-                    val buf = ByteBuffer.wrap(aciBytes)
-                    UUID(buf.long, buf.long).toString()
-                } else null
+                val triples = responseData.e164PniAciTriples.toByteArray()
+                if (triples.size < 40 || triples.size % 40 != 0) return@withTimeout null
 
-                if (aci != null || pni != null) CdsResult(aci, pni) else null
+                var result: CdsResult? = null
+                var offset = 0
+                while (offset + 40 <= triples.size) {
+                    val e164Chunk = ByteBuffer.wrap(triples, offset, 8).long
+                    if (e164Chunk == 0L) { offset += 40; continue }
+                    val pniBytes = triples.copyOfRange(offset + 8, offset + 24)
+                    val aciBytes = triples.copyOfRange(offset + 24, offset + 40)
+                    val pni = if (pniBytes.any { it != 0.toByte() }) {
+                        val buf = ByteBuffer.wrap(pniBytes)
+                        UUID(buf.long, buf.long).toString()
+                    } else null
+                    val aci = if (aciBytes.any { it != 0.toByte() }) {
+                        val buf = ByteBuffer.wrap(aciBytes)
+                        UUID(buf.long, buf.long).toString()
+                    } else null
+                    if (aci != null || pni != null) {
+                        result = CdsResult(aci, pni)
+                        break
+                    }
+                    offset += 40
+                }
+                result
             }
         } finally {
-            socket?.close(1000, "Done")
+            socket?.close(3000, "Normal")
             client.dispatcher.executorService.shutdown()
         }
     }
@@ -187,5 +221,6 @@ class ContactDiscovery(
     companion object {
         private const val TAG = "ContactDiscovery"
         private const val MRENCLAVE = "15637fa1e54fe655176d3df1a9f94b87c01ed377acaa570682dc5d72c95ef07b"
+        private const val CDSI_AUTH_TTL_MS = 23 * 60 * 60 * 1000L // 23 hours, matching Go
     }
 }

@@ -13,8 +13,8 @@ data class DecryptedMessage(
 )
 
 sealed interface MessageContent {
-    data class TextMessage(val body: String, val timestamp: Long, val groupId: String? = null) : MessageContent
-    data class Reaction(val emoji: String, val targetTimestamp: Long, val remove: Boolean, val groupId: String? = null) : MessageContent
+    data class TextMessage(val body: String, val timestamp: Long, val groupId: String? = null, val expireTimer: Int = 0, val isViewOnce: Boolean = false) : MessageContent
+    data class Reaction(val emoji: String, val targetTimestamp: Long, val remove: Boolean, val targetAuthorAci: String? = null, val groupId: String? = null) : MessageContent
     data class Delete(val targetTimestamp: Long, val groupId: String? = null) : MessageContent
     data class Edit(val targetTimestamp: Long, val newBody: String, val groupId: String? = null) : MessageContent
     data class ReadReceipt(val timestamps: List<Long>) : MessageContent
@@ -22,8 +22,13 @@ sealed interface MessageContent {
     data class Typing(val isTyping: Boolean, val groupId: String? = null) : MessageContent
     data class SyncSent(val destinationAci: String?, val message: MessageContent?, val timestamp: Long) : MessageContent
     data class SyncRead(val messages: List<Pair<String, Long>>) : MessageContent
+    data class SyncKeys(val masterKey: ByteArray?, val accountEntropyPool: String?) : MessageContent
+    data class SyncFetchLatest(val type: String) : MessageContent
+    data class SyncDeleteForMe(val timestamp: Long) : MessageContent
     data class Call(val isRinging: Boolean) : MessageContent
-    data class Attachment(val body: String?, val attachments: List<AttachmentPointer>, val groupId: String? = null) : MessageContent
+    data class Attachment(val body: String?, val attachments: List<AttachmentPointer>, val groupId: String? = null, val expireTimer: Int = 0, val isViewOnce: Boolean = false) : MessageContent
+    data class Sticker(val packId: ByteArray, val packKey: ByteArray, val stickerId: Int, val emoji: String?, val groupId: String? = null) : MessageContent
+    data class ProfileKeyUpdate(val profileKey: ByteArray, val senderAci: String) : MessageContent
     data class Unknown(val description: String) : MessageContent
 }
 
@@ -48,9 +53,13 @@ object ContentDispatcher {
         timestamp: Long,
         serverTimestamp: Long,
     ): DecryptedMessage {
+        if (content.hasDataMessage() && content.dataMessage.profileKey.size() > 0) {
+            // Profile key updates are handled by the caller
+        }
+
         val messageContent = when {
             content.hasEditMessage() -> dispatchEdit(content.editMessage)
-            content.hasDataMessage() -> dispatchData(content.dataMessage, timestamp)
+            content.hasDataMessage() -> dispatchData(content.dataMessage, timestamp, senderAci)
             content.hasSyncMessage() -> dispatchSync(content.syncMessage, timestamp)
             content.hasReceiptMessage() -> dispatchReceipt(content.receiptMessage)
             content.hasTypingMessage() -> dispatchTyping(content.typingMessage)
@@ -67,7 +76,7 @@ object ContentDispatcher {
         )
     }
 
-    private fun dispatchData(data: SignalServiceProtos.DataMessage, timestamp: Long): MessageContent {
+    private fun dispatchData(data: SignalServiceProtos.DataMessage, timestamp: Long, senderAci: String = ""): MessageContent {
         val groupId = extractGroupId(data)
 
         if (data.hasDelete()) {
@@ -76,7 +85,22 @@ object ContentDispatcher {
 
         if (data.hasReaction()) {
             val r = data.reaction
-            return MessageContent.Reaction(r.emoji, r.targetSentTimestamp, r.remove, groupId)
+            return MessageContent.Reaction(
+                r.emoji, r.targetSentTimestamp, r.remove,
+                targetAuthorAci = if (r.hasTargetAuthorAci()) r.targetAuthorAci else null,
+                groupId = groupId,
+            )
+        }
+
+        if (data.hasSticker()) {
+            val s = data.sticker
+            return MessageContent.Sticker(
+                packId = s.packId.toByteArray(),
+                packKey = s.packKey.toByteArray(),
+                stickerId = s.stickerId,
+                emoji = if (s.hasEmoji()) s.emoji else null,
+                groupId = groupId,
+            )
         }
 
         if (data.attachmentsCount > 0) {
@@ -95,11 +119,17 @@ object ContentDispatcher {
                 body = if (data.hasBody()) data.body else null,
                 attachments = pointers,
                 groupId = groupId,
+                expireTimer = if (data.hasExpireTimer()) data.expireTimer else 0,
+                isViewOnce = if (data.hasIsViewOnce()) data.isViewOnce else false,
             )
         }
 
         if (data.hasBody()) {
-            return MessageContent.TextMessage(data.body, data.timestamp, groupId)
+            return MessageContent.TextMessage(
+                data.body, data.timestamp, groupId,
+                expireTimer = if (data.hasExpireTimer()) data.expireTimer else 0,
+                isViewOnce = if (data.hasIsViewOnce()) data.isViewOnce else false,
+            )
         }
 
         return MessageContent.Unknown("DataMessage with no recognized fields")
@@ -118,7 +148,18 @@ object ContentDispatcher {
     private fun dispatchSync(sync: SignalServiceProtos.SyncMessage, timestamp: Long): MessageContent {
         if (sync.hasSent()) {
             val sent = sync.sent
-            val innerContent = if (sent.hasMessage()) dispatchData(sent.message, sent.timestamp) else null
+            val innerContent = when {
+                sent.hasEditMessage() && sent.editMessage.hasDataMessage() -> {
+                    val edit = sent.editMessage
+                    MessageContent.Edit(
+                        edit.targetSentTimestamp,
+                        if (edit.dataMessage.hasBody()) edit.dataMessage.body else "",
+                        if (edit.hasDataMessage()) extractGroupId(edit.dataMessage) else null,
+                    )
+                }
+                sent.hasMessage() -> dispatchData(sent.message, sent.timestamp)
+                else -> null
+            }
             return MessageContent.SyncSent(
                 destinationAci = if (sent.hasDestinationServiceId()) sent.destinationServiceId else null,
                 message = innerContent,
@@ -126,9 +167,23 @@ object ContentDispatcher {
             )
         }
 
+        if (sync.hasKeys()) {
+            val keys = sync.keys
+            return MessageContent.SyncKeys(
+                masterKey = null,
+                accountEntropyPool = if (keys.hasAccountEntropyPool()) keys.accountEntropyPool else null,
+            )
+        }
+
+        if (sync.hasFetchLatest()) {
+            return MessageContent.SyncFetchLatest(sync.fetchLatest.type.name)
+        }
+
+        if (sync.hasDeleteForMe()) {
+            return MessageContent.SyncDeleteForMe(timestamp)
+        }
+
         if (sync.hasContacts()) {
-            // Contacts sync contains the contact list from primary device
-            // This is handled separately in SignalClient
             return MessageContent.Unknown("Contacts sync")
         }
 
@@ -162,7 +217,11 @@ object ContentDispatcher {
     private fun extractGroupId(data: SignalServiceProtos.DataMessage): String? {
         if (!data.hasGroupV2()) return null
         return try {
-            Base64.encodeToString(data.groupV2.masterKey.toByteArray(), Base64.NO_WRAP)
+            val masterKey = data.groupV2.masterKey.toByteArray()
+            val groupMasterKey = org.signal.libsignal.zkgroup.groups.GroupMasterKey(masterKey)
+            val groupSecretParams = org.signal.libsignal.zkgroup.groups.GroupSecretParams.deriveFromMasterKey(groupMasterKey)
+            val groupId = groupSecretParams.publicParams.groupIdentifier.serialize()
+            Base64.encodeToString(groupId, Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract groupId", e)
             null

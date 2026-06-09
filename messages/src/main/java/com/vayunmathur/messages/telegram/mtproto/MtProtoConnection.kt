@@ -170,6 +170,24 @@ class MtProtoConnection(
                     }
                 }
             }
+            MessageFraming.TYPE_BAD_MSG_NOTIFICATION -> {
+                buf.int32()
+                val badMsgId = buf.int64()
+                val badMsgSeqno = buf.int32()
+                val errorCode = buf.int32()
+                Log.w(TAG, "Bad msg notification: msgId=$badMsgId, code=$errorCode")
+                rpcEngine.notifyError(badMsgId, errorCode, "bad_msg_notification error code $errorCode")
+            }
+            MessageFraming.TYPE_FUTURE_SALTS -> {
+                buf.int32()
+                buf.data() // consume and ignore future salts
+                Log.d(TAG, "Received future_salts (ignored)")
+            }
+            MessageFraming.TYPE_MSG_DETAILED_INFO,
+            MessageFraming.TYPE_MSG_NEW_DETAILED_INFO -> {
+                buf.int32()
+                buf.data() // silently ignore
+            }
             MessageFraming.TYPE_NEW_SESSION -> {
                 buf.int32()
                 val ns = MessageFraming.parseNewSession(buf)

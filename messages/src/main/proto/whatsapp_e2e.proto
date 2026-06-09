@@ -1,0 +1,197 @@
+syntax = "proto2";
+package whatsapp.e2e;
+option java_package = "com.vayunmathur.messages.whatsapp.proto";
+option java_outer_classname = "WhatsAppE2EProto";
+
+message MessageKey {
+    optional bool fromMe = 1;
+    optional string id = 2;
+    optional string remoteJid = 3;
+    optional string participant = 4;
+}
+
+message ContextInfo {
+    optional string stanzaId = 1;
+    optional string participant = 2;
+    optional Message quotedMessage = 3;
+    optional string remoteJid = 4;
+    repeated string mentionedJid = 15;
+    optional string conversionSource = 18;
+    optional bytes conversionData = 19;
+    optional uint32 conversionDelaySeconds = 20;
+    optional uint32 forwardingScore = 21;
+    optional bool isForwarded = 22;
+    optional MessageKey quotedAd = 23;
+    optional string ephemeralSettingTimestamp = 36;
+}
+
+message Message {
+    optional string conversation = 1;
+    optional ExtendedTextMessage extendedTextMessage = 6;
+    optional ImageMessage imageMessage = 3;
+    optional VideoMessage videoMessage = 5;
+    optional AudioMessage audioMessage = 8;
+    optional DocumentMessage documentMessage = 7;
+    optional StickerMessage stickerMessage = 26;
+    optional ContactMessage contactMessage = 4;
+    optional LocationMessage locationMessage = 16;
+    optional ReactionMessage reactionMessage = 46;
+    optional ProtocolMessage protocolMessage = 12;
+    optional SenderKeyDistributionMessage senderKeyDistributionMessage = 2;
+    optional DeviceSentMessage deviceSentMessage = 31;
+    optional MessageContextInfo messageContextInfo = 35;
+}
+
+message ExtendedTextMessage {
+    optional string text = 1;
+    optional string matchedText = 2;
+    optional string canonicalUrl = 4;
+    optional string description = 5;
+    optional string title = 6;
+    optional bytes jpegThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message ImageMessage {
+    optional string url = 1;
+    optional string mimetype = 2;
+    optional string caption = 3;
+    optional bytes fileSha256 = 4;
+    optional uint64 fileLength = 5;
+    optional uint32 height = 6;
+    optional uint32 width = 7;
+    optional bytes mediaKey = 8;
+    optional bytes fileEncSha256 = 9;
+    optional string directPath = 11;
+    optional int64 mediaKeyTimestamp = 12;
+    optional bytes jpegThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message VideoMessage {
+    optional string url = 1;
+    optional string mimetype = 2;
+    optional bytes fileSha256 = 3;
+    optional uint64 fileLength = 4;
+    optional uint32 seconds = 5;
+    optional bytes mediaKey = 6;
+    optional string caption = 7;
+    optional bool gifPlayback = 8;
+    optional uint32 height = 9;
+    optional uint32 width = 10;
+    optional bytes fileEncSha256 = 11;
+    optional string directPath = 13;
+    optional int64 mediaKeyTimestamp = 14;
+    optional bytes jpegThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message AudioMessage {
+    optional string url = 1;
+    optional string mimetype = 2;
+    optional bytes fileSha256 = 3;
+    optional uint64 fileLength = 4;
+    optional uint32 seconds = 5;
+    optional bool ptt = 6;
+    optional bytes mediaKey = 7;
+    optional bytes fileEncSha256 = 8;
+    optional string directPath = 9;
+    optional int64 mediaKeyTimestamp = 10;
+    optional ContextInfo contextInfo = 17;
+}
+
+message DocumentMessage {
+    optional string url = 1;
+    optional string mimetype = 2;
+    optional string title = 3;
+    optional bytes fileSha256 = 4;
+    optional uint64 fileLength = 5;
+    optional uint32 pageCount = 6;
+    optional bytes mediaKey = 7;
+    optional string fileName = 8;
+    optional bytes fileEncSha256 = 9;
+    optional string directPath = 10;
+    optional int64 mediaKeyTimestamp = 11;
+    optional bytes jpegThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message StickerMessage {
+    optional string url = 1;
+    optional bytes fileSha256 = 2;
+    optional bytes fileEncSha256 = 3;
+    optional bytes mediaKey = 4;
+    optional string mimetype = 5;
+    optional uint32 height = 6;
+    optional uint32 width = 7;
+    optional string directPath = 8;
+    optional uint64 fileLength = 9;
+    optional int64 mediaKeyTimestamp = 10;
+    optional bool isAnimated = 21;
+    optional bytes pngThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message ContactMessage {
+    optional string displayName = 1;
+    optional string vcard = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message LocationMessage {
+    optional double degreesLatitude = 1;
+    optional double degreesLongitude = 2;
+    optional string name = 3;
+    optional string address = 4;
+    optional string url = 5;
+    optional bytes jpegThumbnail = 16;
+    optional ContextInfo contextInfo = 17;
+}
+
+message ReactionMessage {
+    optional MessageKey key = 1;
+    optional string text = 2;
+    optional string groupingKey = 3;
+    optional int64 senderTimestampMs = 4;
+}
+
+message ProtocolMessage {
+    enum Type {
+        REVOKE = 0;
+        EPHEMERAL_SETTING = 3;
+        EPHEMERAL_SYNC_RESPONSE = 4;
+        HISTORY_SYNC_NOTIFICATION = 5;
+        APP_STATE_SYNC_KEY_SHARE = 6;
+        APP_STATE_SYNC_KEY_REQUEST = 7;
+        MSG_FANOUT_BACKFILL_REQUEST = 8;
+        INITIAL_SECURITY_NOTIFICATION_SETTING_SYNC = 9;
+        APP_STATE_FATAL_EXCEPTION_NOTIFICATION = 10;
+        SHARE_PHONE_NUMBER = 11;
+        MESSAGE_EDIT = 14;
+        PEER_DATA_OPERATION_REQUEST_MESSAGE = 16;
+        PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE = 17;
+        PLACEHOLDER_ACTION = 25;
+    }
+
+    optional MessageKey key = 1;
+    optional Type type = 2;
+    optional uint32 ephemeralExpiration = 4;
+    optional int64 ephemeralSettingTimestamp = 5;
+    optional Message editedMessage = 14;
+    optional int64 timestampMs = 15;
+}
+
+message SenderKeyDistributionMessage {
+    optional string groupId = 1;
+    optional bytes axolotlSenderKeyDistributionMessage = 2;
+}
+
+message DeviceSentMessage {
+    optional string destinationJid = 1;
+    optional Message message = 2;
+    optional string phash = 3;
+}
+
+message MessageContextInfo {
+    optional bytes messageSecret = 1;
+}

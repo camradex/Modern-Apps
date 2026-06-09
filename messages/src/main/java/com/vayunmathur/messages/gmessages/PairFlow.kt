@@ -55,7 +55,7 @@ object PairFlow {
         authentication.Authentication.BrowserDetails.newBuilder()
             .setUserAgent(Endpoints.UserAgent)
             .setBrowserType(BrowserType.OTHER)
-            .setOS("modern-apps-messages")
+            .setOS("libgm")
             .setDeviceType(DeviceType.TABLET)
             .build()
     }

@@ -110,6 +110,7 @@ class RealtimeChannel(
                     if (failedRequests > 0 || ackId == 0L) onEvent(RealtimeEvent.Connected)
                     val newAckId = readChunks(resp, ackId).also { anyEventSeen = anyEventSeen || it.eventCount > 0 }
                     ackId = newAckId.lastAckId
+                    if (newAckId.eventCount > 0) failedRequests = 0
                     if (newAckId.needResubscribe) {
                         ChannelOutcome.Reconnect
                     } else {
@@ -138,7 +139,6 @@ class RealtimeChannel(
                 }
                 is ChannelOutcome.Error -> return anyEventSeen
                 ChannelOutcome.Ok -> {
-                    failedRequests = 0
                 }
             }
         }
@@ -271,7 +271,11 @@ class RealtimeChannel(
             "req5___data__" to "[[[\"6\",[null,null,null,[7,5],null,[null,[null,1],[[[\"1\"]]]],null,1,2],null,3]]]",
             "req6___data__" to "[[[\"9\",[null,null,null,[7,5],null,[null,[null,1],[[[\"1\"]]]],null,1,2],null,3]]]",
         )
-        val createResp = rpc.postForm(createUrl, form)
+        val createResp = rpc.postForm(
+            createUrl,
+            form,
+            extraHeaders = mapOf("X-WebChannel-Content-Type" to "application/json+protobuf"),
+        )
         if (createResp.status.value !in 200..299) {
             Log.e(TAG, "createChannel HTTP ${createResp.status.value}")
             return null

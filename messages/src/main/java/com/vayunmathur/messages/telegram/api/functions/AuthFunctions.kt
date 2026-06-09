@@ -81,7 +81,7 @@ data class InitConnection(
     override val typeId = 0xc1cd5ea9.toInt()
     override fun encode(buf: TlBuffer) {
         buf.putId(0xda9b0d0d.toInt()) // invokeWithLayer
-        buf.putInt32(195) // layer
+        buf.putInt32(225) // layer
         buf.putId(typeId)
         buf.putInt32(0) // flags
         buf.putInt32(apiId)

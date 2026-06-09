@@ -12,10 +12,10 @@ package com.vayunmathur.messages.gmessages
 object Endpoints {
     const val GoogleApiKey = "AIzaSyCA4RsOZUFrm9whhtGosPlJLmVPnfSHKz8"
     const val UserAgent =
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
     const val SecUA = "\"Google Chrome\";v=\"146\", \"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\""
-    const val UAPlatform = "Linux"
-    const val SecUAMobile = "?0"
+    const val UAPlatform = "Android"
+    const val SecUAMobile = "?1"
     const val XUserAgent = "grpc-web-javascript/0.1"
 
     /** Base URL the QR code points at. Combined with a base64-encoded
@@ -35,13 +35,23 @@ object Endpoints {
     const val GetWebEncryptionKeyUrl = "$PairingBase/GetWebEncryptionKey"
     const val RevokeRelayPairingUrl = "$PairingBase/RevokeRelayPairing"
 
-    private const val RegistrationBase = "$ImBase/\$rpc/google.internal.communications.instantmessaging.v1.Registration"
+    private const val RegistrationBase = "$ImBaseGoogle/\$rpc/google.internal.communications.instantmessaging.v1.Registration"
     const val RegisterRefreshUrl = "$RegistrationBase/RegisterRefresh"
 
     private const val MessagingBase = "$ImBase/\$rpc/google.internal.communications.instantmessaging.v1.Messaging"
+    private const val MessagingBaseGoogle = "$ImBaseGoogle/\$rpc/google.internal.communications.instantmessaging.v1.Messaging"
     const val ReceiveMessagesUrl = "$MessagingBase/ReceiveMessages"
+    const val ReceiveMessagesUrlGoogle = "$MessagingBaseGoogle/ReceiveMessages"
     const val SendMessageUrl = "$MessagingBase/SendMessage"
+    const val SendMessageUrlGoogle = "$MessagingBaseGoogle/SendMessage"
     const val AckMessagesUrl = "$MessagingBase/AckMessages"
+    const val AckMessagesUrlGoogle = "$MessagingBaseGoogle/AckMessages"
+
+    const val SignInGaiaUrl = "$RegistrationBase/SignInGaia"
+
+    const val ConfigUrl = "$MessagesBaseUrl/web/config"
+
+    const val GoogleNetwork = "GDitto"
 
     /** Used by [com.vayunmathur.messages.gmessages.Media] for the
      *  resumable-upload + finalize media flow. The body is form-encoded

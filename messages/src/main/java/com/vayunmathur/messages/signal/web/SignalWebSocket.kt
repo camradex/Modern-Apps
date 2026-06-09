@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 class SignalWebSocket(
     private val context: Context,
     private val basicAuth: String? = null,
+    private val userAgent: String = "signalmeow",
 ) {
     sealed class ConnectionEvent {
         object Connected : ConnectionEvent()
@@ -40,9 +41,13 @@ class SignalWebSocket(
     private companion object {
         const val TAG = "SignalWebSocket"
         const val PING_INTERVAL_MS = 30_000L
+        const val PING_TIMEOUT_MS = 20_000L
+        const val PING_TIMEOUT_LIMIT = 5
         const val INITIAL_BACKOFF_MS = 10_000L
         const val BACKOFF_INCREMENT_MS = 5_000L
         const val MAX_BACKOFF_MS = 60_000L
+        const val MAX_REQUEST_RETRIES = 3
+        const val ERROR_COUNT_LIMIT = 500
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -55,6 +60,8 @@ class SignalWebSocket(
     private var currentUrl: String? = null
     private var currentBackoff = INITIAL_BACKOFF_MS
     private var shouldReconnect = false
+    private var consecutivePingFailures = 0
+    private var errorCount = 0
 
     private val _connectionEvents = MutableSharedFlow<ConnectionEvent>(replay = 1)
     val connectionEvents: SharedFlow<ConnectionEvent> = _connectionEvents.asSharedFlow()
@@ -106,6 +113,13 @@ class SignalWebSocket(
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Log.e(TAG, "Failure: ${t.message}")
+            errorCount++
+            if (errorCount >= ERROR_COUNT_LIMIT) {
+                Log.e(TAG, "Error count limit reached ($ERROR_COUNT_LIMIT), fatal")
+                shouldReconnect = false
+                onDisconnected("Too many errors")
+                return
+            }
             if (response?.code == 403) {
                 shouldReconnect = false
                 onDisconnected("Logged out")
@@ -138,6 +152,27 @@ class SignalWebSocket(
         body: ByteArray? = null,
         headers: Map<String, String> = emptyMap(),
     ): WebSocketResponseMessage {
+        var lastException: Exception? = null
+        for (attempt in 0 until MAX_REQUEST_RETRIES) {
+            try {
+                return sendRequestOnce(method, path, body, headers)
+            } catch (e: IOException) {
+                lastException = e
+                Log.w(TAG, "Request attempt ${attempt + 1}/$MAX_REQUEST_RETRIES failed: ${e.message}")
+                if (attempt < MAX_REQUEST_RETRIES - 1) {
+                    delay(1000L * (attempt + 1))
+                }
+            }
+        }
+        throw lastException ?: IOException("Request failed after $MAX_REQUEST_RETRIES attempts")
+    }
+
+    private suspend fun sendRequestOnce(
+        method: String,
+        path: String,
+        body: ByteArray? = null,
+        headers: Map<String, String> = emptyMap(),
+    ): WebSocketResponseMessage {
         val id = requestId.getAndIncrement()
         val deferred = CompletableDeferred<WebSocketResponseMessage>()
         pendingRequests[id] = deferred
@@ -147,7 +182,15 @@ class SignalWebSocket(
             .setVerb(method)
             .setPath(path)
             .apply {
-                if (body != null) setBody(com.google.protobuf.ByteString.copyFrom(body))
+                if (body != null) {
+                    setBody(com.google.protobuf.ByteString.copyFrom(body))
+                    if ("content-type" !in headers.keys.map { it.lowercase() }) {
+                        addHeaders("content-type:application/json")
+                    }
+                }
+                if (basicAuth != null) {
+                    addHeaders("authorization:Basic $basicAuth")
+                }
                 headers.forEach { (k, v) -> addHeaders("$k:$v") }
             }
             .build()
@@ -184,6 +227,8 @@ class SignalWebSocket(
     private fun openSocket(url: String) {
         val request = Request.Builder()
             .url(url)
+            .header("User-Agent", userAgent)
+            .header("X-Signal-Agent", "MAU")
             .apply {
                 if (basicAuth != null) {
                     header("Authorization", "Basic $basicAuth")
@@ -215,20 +260,42 @@ class SignalWebSocket(
 
     private fun startPingLoop() {
         pingJob?.cancel()
+        consecutivePingFailures = 0
         pingJob = scope.launch {
             while (true) {
                 delay(PING_INTERVAL_MS)
                 if (isConnected) {
+                    val pingId = requestId.getAndIncrement()
+                    val deferred = CompletableDeferred<WebSocketResponseMessage>()
+                    pendingRequests[pingId] = deferred
+
                     val keepAlive = WebSocketMessage.newBuilder()
                         .setType(WebSocketMessage.Type.REQUEST)
                         .setRequest(
                             WebSocketRequestMessage.newBuilder()
-                                .setId(requestId.getAndIncrement())
+                                .setId(pingId)
                                 .setVerb("GET")
                                 .setPath("/v1/keepalive")
                                 .build()
                         ).build()
                     webSocket?.send(keepAlive.toByteArray().toByteString())
+
+                    try {
+                        kotlinx.coroutines.withTimeout(PING_TIMEOUT_MS) {
+                            deferred.await()
+                        }
+                        consecutivePingFailures = 0
+                    } catch (_: Exception) {
+                        pendingRequests.remove(pingId)
+                        consecutivePingFailures++
+                        Log.w(TAG, "Ping timeout ($consecutivePingFailures/$PING_TIMEOUT_LIMIT)")
+                        if (consecutivePingFailures >= PING_TIMEOUT_LIMIT) {
+                            Log.e(TAG, "Ping timeout limit reached, reconnecting")
+                            webSocket?.cancel()
+                            onDisconnected("Ping timeout")
+                            return@launch
+                        }
+                    }
                 }
             }
         }

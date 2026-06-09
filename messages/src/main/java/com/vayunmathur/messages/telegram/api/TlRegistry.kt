@@ -29,34 +29,39 @@ object TlRegistry {
             0x62ba04d9.toInt() -> decodeUpdateNewChannelMessage(buf)
             0xa20db0e5.toInt() -> decodeUpdateDeleteMessages(buf)
             0xe40370a3.toInt() -> decodeUpdateEditMessage(buf)
-            0x9c974fdf.toInt() -> decodeUpdateReadHistoryInbox(buf)
+            0x9e84bc99.toInt() -> decodeUpdateReadHistoryInbox(buf)
+            0x1b3f4df7.toInt() -> decodeUpdateEditChannelMessage(buf)
+            0xc32d5b12.toInt() -> decodeUpdateDeleteChannelMessages(buf)
+            0x2f2f21bf.toInt() -> decodeUpdateReadHistoryOutbox(buf)
+            0x635b4c09.toInt() -> UpdateChannel(buf.int64())
+            0x922e6e10.toInt() -> decodeUpdateReadChannelInbox(buf)
 
             // Auth
-            0x2390fe44.toInt() -> AuthSentCode.decode(buf)
+            0x5e002502.toInt() -> AuthSentCode.decode(buf)
             0x2ea2c0d4.toInt() -> AuthAuthorization.decode(buf)
             0x957b50fb.toInt() -> AuthPassword.decode(buf)
 
             // Users
-            0x215c4438.toInt() -> User.decode(buf)
+            0x31774388.toInt() -> User.decode(buf)
             0xd3bc4b7a.toInt() -> UserEmpty.decode(buf)
 
             // Chats
             0x41cbf256.toInt() -> Chat.decode(buf)
-            0x94f592db.toInt() -> Channel.decode(buf)
+            0x1c32b11c.toInt() -> Channel.decode(buf)
             0x6592a1a7.toInt() -> ChatForbidden.decode(buf)
             0x17d493d5.toInt() -> ChannelForbidden.decode(buf)
 
             // Response containers
             0x15ba6c40.toInt() -> decodeMessagesDialogs(buf)
             0x71e094f3.toInt() -> decodeMessagesDialogsSlice(buf)
-            0x8c718e87.toInt() -> decodeMessagesMessages(buf)
-            0x3a54685e.toInt() -> decodeMessagesMessagesSlice(buf)
+            0x1d73e7ea.toInt() -> decodeMessagesMessages(buf)
+            0x5f206716.toInt() -> decodeMessagesMessagesSlice(buf)
             0xc776ba4e.toInt() -> decodeMessagesChannelMessages(buf)
             0xb3134d9d.toInt() -> decodeContactsFound(buf)
 
             // UpdatesState / UpdatesDifference
             0xa56c2a3e.toInt() -> UpdatesState.decode(buf)
-            0x00f49d37 -> decodeUpdatesDifference(buf)
+            0x00f49ca0 -> decodeUpdatesDifference(buf)
 
             // Auth export/import
             0xb434e2b8.toInt() -> AuthExportedAuthorization.decode(buf)
@@ -71,9 +76,9 @@ object TlRegistry {
     fun decodeMessage(buf: TlBuffer): TlObject {
         val id = buf.int32()
         return when (id) {
-            0x94345242.toInt() -> Message.decode(buf)
+            0x95ef6f2b.toInt() -> Message.decode(buf)
             0x90a6ca84.toInt() -> MessageEmpty.decode(buf)
-            0x2b085862.toInt() -> MessageService.decode(buf)
+            0x7a800e0a.toInt() -> MessageService.decode(buf)
             else -> UnknownObject(id, buf.data())
         }
     }
@@ -118,6 +123,11 @@ object TlRegistry {
         val pts = buf.int32()
         val ptsCount = buf.int32()
         val date = buf.int32()
+        if (flags.has(2)) { buf.int32(); TlSkip.skipMessageFwdHeader(buf) } // fwd_from
+        if (flags.has(11)) buf.int64() // via_bot_id
+        if (flags.has(3)) TlSkip.skipReplyTo(buf) // reply_to
+        if (flags.has(7)) TlSkip.skipVector(buf) { TlSkip.skipMessageEntity(it) } // entities
+        if (flags.has(25)) buf.int32() // ttl_period
         return UpdateShortMessage(id, userId, message, pts, ptsCount, date, out)
     }
 
@@ -131,6 +141,11 @@ object TlRegistry {
         val pts = buf.int32()
         val ptsCount = buf.int32()
         val date = buf.int32()
+        if (flags.has(2)) { buf.int32(); TlSkip.skipMessageFwdHeader(buf) } // fwd_from
+        if (flags.has(11)) buf.int64() // via_bot_id
+        if (flags.has(3)) TlSkip.skipReplyTo(buf) // reply_to
+        if (flags.has(7)) TlSkip.skipVector(buf) { TlSkip.skipMessageEntity(it) } // entities
+        if (flags.has(25)) buf.int32() // ttl_period
         return UpdateShortChatMessage(id, fromId, chatId, message, pts, ptsCount, date, out)
     }
 
@@ -164,10 +179,46 @@ object TlRegistry {
         return UpdateEditMessage(msg, pts, ptsCount)
     }
 
+    private fun decodeUpdateEditChannelMessage(buf: TlBuffer): UpdateEditChannelMessage {
+        val msg = decodeMessage(buf)
+        val pts = buf.int32()
+        val ptsCount = buf.int32()
+        return UpdateEditChannelMessage(msg, pts, ptsCount)
+    }
+
+    private fun decodeUpdateDeleteChannelMessages(buf: TlBuffer): UpdateDeleteChannelMessages {
+        val channelId = buf.int64()
+        val vecId = buf.int32()
+        val count = buf.int32()
+        val msgs = (0 until count).map { buf.int32() }
+        val pts = buf.int32()
+        val ptsCount = buf.int32()
+        return UpdateDeleteChannelMessages(channelId, msgs, pts, ptsCount)
+    }
+
+    private fun decodeUpdateReadHistoryOutbox(buf: TlBuffer): UpdateReadHistoryOutbox {
+        val peer = decodePeer(buf)
+        val maxId = buf.int32()
+        val pts = buf.int32()
+        val ptsCount = buf.int32()
+        return UpdateReadHistoryOutbox(peer, maxId, pts)
+    }
+
+    private fun decodeUpdateReadChannelInbox(buf: TlBuffer): UpdateReadChannelInbox {
+        val flags = Fields.decode(buf)
+        if (flags.has(0)) buf.int32() // folder_id
+        val channelId = buf.int64()
+        val maxId = buf.int32()
+        buf.int32() // still_unread_count
+        val pts = buf.int32()
+        return UpdateReadChannelInbox(channelId, maxId)
+    }
+
     private fun decodeUpdateReadHistoryInbox(buf: TlBuffer): UpdateReadHistoryInbox {
         val flags = Fields.decode(buf)
         if (flags.has(0)) buf.int32() // folder_id
         val peer = decodePeer(buf)
+        if (flags.has(1)) buf.int32() // top_msg_id
         val maxId = buf.int32()
         buf.int32() // still_unread_count
         val pts = buf.int32()
@@ -178,7 +229,7 @@ object TlRegistry {
     private fun decodeDialog(buf: TlBuffer): TlObject {
         val id = buf.int32()
         return when (id) {
-            0xd58a08c6.toInt() -> Dialog.decode(buf)
+            0xfc89f7f3.toInt() -> Dialog.decode(buf)
             else -> UnknownObject(id, buf.data())
         }
     }
@@ -212,6 +263,7 @@ object TlRegistry {
 
     private fun decodeMessagesMessages(buf: TlBuffer): MessagesMessages {
         val messages = decodeVector(buf) { decodeMessage(it) }
+        skipTopicsVector(buf)
         val chats = decodeVector(buf) { decodeChat(it) }
         val users = decodeVector(buf) { decodeUser(it) }
         return MessagesMessages(messages, chats, users)
@@ -220,9 +272,11 @@ object TlRegistry {
     private fun decodeMessagesMessagesSlice(buf: TlBuffer): MessagesMessagesSlice {
         val flags = Fields.decode(buf)
         val count = buf.int32()
-        if (flags.has(1)) buf.int32() // next_rate
+        if (flags.has(0)) buf.int32() // next_rate
         if (flags.has(2)) buf.int32() // offset_id_offset
+        if (flags.has(3)) buf.int32() // search_flood
         val messages = decodeVector(buf) { decodeMessage(it) }
+        skipTopicsVector(buf)
         val chats = decodeVector(buf) { decodeChat(it) }
         val users = decodeVector(buf) { decodeUser(it) }
         return MessagesMessagesSlice(count, messages, chats, users)
@@ -230,13 +284,18 @@ object TlRegistry {
 
     private fun decodeMessagesChannelMessages(buf: TlBuffer): MessagesChannelMessages {
         val flags = Fields.decode(buf)
+        buf.int32() // pts
         val count = buf.int32()
         if (flags.has(2)) buf.int32() // offset_id_offset
         val messages = decodeVector(buf) { decodeMessage(it) }
-        val topics = decodeVector(buf) { val id = it.int32(); UnknownObject(id, ByteArray(0)) } // topics vector
+        skipTopicsVector(buf)
         val chats = decodeVector(buf) { decodeChat(it) }
         val users = decodeVector(buf) { decodeUser(it) }
         return MessagesChannelMessages(count, messages, chats, users)
+    }
+
+    private fun skipTopicsVector(buf: TlBuffer) {
+        TlSkip.skipVectorBoxed(buf)
     }
 
     private fun decodeContactsFound(buf: TlBuffer): ContactsFound {

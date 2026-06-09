@@ -11,7 +11,7 @@ data class Dialog(
     val readOutboxMaxId: Int,
     val unreadCount: Int,
 ) : TlObject {
-    override val typeId = 0xd58a08c6.toInt()
+    override val typeId = 0xfc89f7f3.toInt()
     override fun encode(buf: TlBuffer) {}
 
     companion object {
@@ -24,6 +24,7 @@ data class Dialog(
             val unreadCount = buf.int32()
             buf.int32() // unread_mentions_count
             buf.int32() // unread_reactions_count
+            buf.int32() // unread_poll_votes_count
             TlSkip.skipPeerNotifySettings(buf) // notifySettings (mandatory)
             if (flags.has(0)) buf.int32() // pts
             if (flags.has(1)) TlSkip.skipBoxedType(buf) // draft

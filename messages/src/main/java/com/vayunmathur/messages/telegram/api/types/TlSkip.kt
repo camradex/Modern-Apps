@@ -51,10 +51,11 @@ object TlSkip {
         if (typeId == 0x99622c0c.toInt()) {
             val flags = Fields.decode(buf)
             if (flags.has(0)) buf.int32() // show_previews (Bool type id)
-            if (flags.has(1)) buf.int32() // mute_until
-            if (flags.has(2)) skipNotificationSound(buf) // ios_sound
-            if (flags.has(3)) skipNotificationSound(buf) // android_sound
-            if (flags.has(4)) skipNotificationSound(buf) // other_sound
+            if (flags.has(1)) buf.int32() // silent (Bool type id)
+            if (flags.has(2)) buf.int32() // mute_until
+            if (flags.has(3)) skipNotificationSound(buf) // ios_sound
+            if (flags.has(4)) skipNotificationSound(buf) // android_sound
+            if (flags.has(5)) skipNotificationSound(buf) // other_sound
             if (flags.has(6)) buf.int32() // stories_muted (Bool type id)
             if (flags.has(7)) buf.int32() // stories_hide_sender (Bool type id)
             if (flags.has(8)) skipNotificationSound(buf) // stories_ios_sound
@@ -105,9 +106,9 @@ object TlSkip {
             0x09d05049.toInt() -> {} // userStatusEmpty
             0xedb93949.toInt() -> buf.int32() // userStatusOnline: expires
             0x008c703f.toInt() -> buf.int32() // userStatusOffline: was_online
-            0xe26f42f1.toInt() -> {} // userStatusRecently
-            0x07bf09fc.toInt() -> {} // userStatusLastWeek
-            0x77ebc742.toInt() -> {} // userStatusLastMonth
+            0x7b197dc8.toInt() -> Fields.decode(buf) // userStatusRecently: flags (layer 225)
+            0x541a1d1a.toInt() -> Fields.decode(buf) // userStatusLastWeek: flags (layer 225)
+            0x65899777.toInt() -> Fields.decode(buf) // userStatusLastMonth: flags (layer 225)
         }
     }
 
@@ -195,6 +196,51 @@ object TlSkip {
                 if (flags.has(0)) skipBoxedType(buf) // document
             }
 
+            // ---- ChatAdminRights ----
+            0x5fb224d5.toInt() -> Fields.decode(buf) // chatAdminRights: flags only
+
+            // ---- ChatBannedRights ----
+            0x9f120418.toInt() -> { Fields.decode(buf); buf.int32() } // chatBannedRights: flags + until_date
+
+            // ---- PeerColor ----
+            0xb54b5acf.toInt() -> { // peerColor
+                val f = Fields.decode(buf)
+                if (f.has(0)) buf.int32() // color
+                if (f.has(1)) buf.int64() // background_emoji_id
+            }
+
+            // ---- Username ----
+            0xb4073647.toInt() -> { Fields.decode(buf); buf.string() } // username: flags + username
+
+            // ---- EmojiStatus ----
+            0x2de11aae.toInt() -> {} // emojiStatusEmpty
+            0xe7ff068a.toInt() -> { // emojiStatus
+                val f = Fields.decode(buf)
+                buf.int64() // document_id
+                if (f.has(0)) buf.int32() // until
+            }
+
+            // ---- RestrictionReason ----
+            0xd072acb4.toInt() -> { buf.string(); buf.string(); buf.string() } // restrictionReason: platform reason text
+
+            // ---- InputChannel ----
+            0xee8c1e86.toInt() -> {} // inputChannelEmpty
+            0xf35aec28.toInt() -> { buf.int64(); buf.int64() } // inputChannel: channel_id access_hash
+
+            // ---- InputPeer ----
+            0x7f3b18ea.toInt() -> {} // inputPeerEmpty
+            0x7da07ec9.toInt() -> {} // inputPeerSelf
+            0x35a95cb9.toInt() -> buf.int64() // inputPeerChat: chat_id
+            0xdde8a54c.toInt() -> { buf.int64(); buf.int64() } // inputPeerUser: user_id access_hash
+            0x27bcbbfc.toInt() -> { buf.int64(); buf.int64() } // inputPeerChannel: channel_id access_hash
+
+            // ---- DraftMessage ----
+            0x1b0c841a.toInt() -> { // draftMessageEmpty
+                val f = Fields.decode(buf)
+                if (f.has(0)) buf.int32() // date
+            }
+            0x96eaa5eb.toInt() -> skipDraftMessage(buf) // draftMessage
+
             else -> {
                 Log.w(TAG, "skipByTypeId: unknown type 0x${typeId.toUInt().toString(16)}, buffer may be corrupted")
             }
@@ -215,6 +261,44 @@ object TlSkip {
         repeat(count) { elementSkip(buf) }
     }
 
+    // ---- PhotoSize (public for media decoder) ----
+
+    fun skipPhotoSizeBoxed(buf: TlBuffer) = skipPhotoSize(buf)
+    fun skipVideoSizeBoxed(buf: TlBuffer) = skipVideoSize(buf)
+    fun skipInputStickerSetBoxed(buf: TlBuffer) = skipInputStickerSet(buf)
+
+    // ---- DraftMessage ----
+
+    private fun skipDraftMessage(buf: TlBuffer) {
+        val flags = Fields.decode(buf)
+        if (flags.has(4)) skipInputReplyTo(buf) // reply_to
+        buf.string() // message
+        if (flags.has(3)) skipVector(buf) { skipMessageEntity(it) } // entities
+        if (flags.has(5)) skipBoxedType(buf) // media
+        buf.int32() // date
+        if (flags.has(7)) buf.int64() // effect
+    }
+
+    private fun skipInputReplyTo(buf: TlBuffer) {
+        val typeId = buf.int32()
+        when (typeId) {
+            0x22c0f6d5.toInt(), 0x3bd4b7c2.toInt() -> { // inputReplyToMessage (layer 225 / latest)
+                val f = Fields.decode(buf)
+                buf.int32() // reply_to_msg_id
+                if (f.has(0)) skipBoxedType(buf) // reply_to_peer_id
+                if (f.has(1)) buf.int32() // top_msg_id
+                if (f.has(2)) buf.string() // quote_text
+                if (f.has(3)) skipVector(buf) { skipMessageEntity(it) } // quote_entities
+                if (f.has(4)) buf.int32() // quote_offset
+            }
+            0x15b0f283.toInt(), 0x5881323a.toInt() -> { // inputReplyToStory (layer 225 / latest)
+                skipBoxedType(buf) // peer
+                buf.int32() // story_id
+            }
+            else -> Log.w(TAG, "Unknown InputReplyTo: 0x${typeId.toUInt().toString(16)}")
+        }
+    }
+
     // ---- PhotoSize ----
 
     private fun skipPhotoSize(buf: TlBuffer) {
@@ -226,7 +310,8 @@ object TlSkip {
             0xe0b0bc2e.toInt() -> { buf.string(); buf.bytes() } // photoStrippedSize
             0xfa3efb95.toInt() -> { // photoSizeProgressive
                 buf.string(); buf.int32(); buf.int32()
-                val c = buf.int32(); buf.int32() // vector header
+                buf.int32() // vector constructor
+                val c = buf.int32() // count
                 repeat(c) { buf.int32() }
             }
             0xd8214d41.toInt() -> { buf.string(); buf.bytes() } // photoPathSize
@@ -271,7 +356,7 @@ object TlSkip {
                     buf.int32(); buf.double(); buf.double(); buf.double() // n x y zoom
                 }
             }
-            0x17399fad.toInt() -> { // video
+            0x17399fad.toInt(), 0x43c57c48.toInt() -> { // video
                 val flags = Fields.decode(buf)
                 buf.double(); buf.int32(); buf.int32() // duration w h
                 if (flags.has(2)) buf.int32() // preload_prefix_size
@@ -307,12 +392,20 @@ object TlSkip {
         }
     }
 
-    // ---- WebPage ----
+    // ---- WebPage (public for media decoder) ----
+
+    fun skipWebPageBoxed(buf: TlBuffer) {
+        skipWebPage(buf)
+    }
 
     private fun skipWebPage(buf: TlBuffer) {
         val typeId = buf.int32()
         when (typeId) {
-            0x211a1788.toInt() -> buf.int64() // webPageEmpty: id
+            0x211a1788.toInt() -> { // webPageEmpty
+                val f = Fields.decode(buf)
+                buf.int64() // id
+                if (f.has(0)) buf.string() // url
+            }
             0xb0d13e47.toInt() -> { // webPagePending
                 val flags = Fields.decode(buf)
                 buf.int64() // id
@@ -341,7 +434,10 @@ object TlSkip {
                 }
                 if (flags.has(12)) skipVectorBoxed(buf) // attributes
             }
-            0x7311ca11.toInt() -> {} // webPageNotModified (flags only if present)
+            0x7311ca11.toInt() -> { // webPageNotModified
+                val wFlags = Fields.decode(buf)
+                if (wFlags.has(0)) buf.int32() // cached_page_views
+            }
             else -> Log.w(TAG, "Unknown WebPage: 0x${typeId.toUInt().toString(16)}")
         }
     }

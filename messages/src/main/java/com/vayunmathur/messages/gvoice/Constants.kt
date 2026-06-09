@@ -45,11 +45,16 @@ object VoiceEndpoints {
     const val EndpointGetAccount = "$ApiBaseUrl/account/get"
     const val EndpointGetThread = "$ApiBaseUrl/api2thread/get"
     const val EndpointListThreads = "$ApiBaseUrl/api2thread/list"
+    const val EndpointGetSIPRegisterInfo = "$ApiBaseUrl/sipregisterinfo/get"
     const val EndpointSendSms = "$ApiBaseUrl/api2thread/sendsms"
     const val EndpointGetThreadingInfo = "$ApiBaseUrl/threadinginfo/get"
     const val EndpointUpdateAttributes = "$ApiBaseUrl/thread/updateattributes"
     const val EndpointMarkAllRead = "$ApiBaseUrl/thread/markallread"
     const val EndpointDeleteThread = "$ApiBaseUrl/thread/delete"
+    const val EndpointBatchUpdateAttributes = "$ApiBaseUrl/thread/batchupdateattributes"
+
+    const val EndpointUpload = "https://$UploadDomain/upload/photos/resumable"
+    const val EndpointDownloadTemplate = "https://voice.google.com/u/%s/a/i/%s"
 
     /**
      * Contacts/PeopleStack endpoints. These live on a different host
@@ -75,5 +80,5 @@ object VoiceEndpoints {
     val RequiredCookies = listOf("SID", "HSID", "SSID", "APISID", "SAPISID")
 
     /** Cookies we recognize + persist if present, even if not required. */
-    val OptionalCookies = listOf("OSID", "COMPASS", "__Secure-1PSIDTS", "__Secure-3PSIDTS")
+    val OptionalCookies = listOf("OSID", "COMPASS", "__Secure-1PSIDTS")
 }

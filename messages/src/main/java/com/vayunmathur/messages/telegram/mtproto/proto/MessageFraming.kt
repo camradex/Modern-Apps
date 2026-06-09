@@ -14,6 +14,9 @@ object MessageFraming {
     const val TYPE_BAD_SERVER_SALT = 0xedab447b.toInt()
     const val TYPE_NEW_SESSION = 0x9ec20908.toInt()
     const val TYPE_BAD_MSG_NOTIFICATION = 0xa7eff811.toInt()
+    const val TYPE_FUTURE_SALTS = 0xae500895.toInt()
+    const val TYPE_MSG_DETAILED_INFO = 0x276d3ec6.toInt()
+    const val TYPE_MSG_NEW_DETAILED_INFO = 0x809db6df.toInt()
 
     data class InnerMessage(val msgId: Long, val seqNo: Int, val data: ByteArray)
 

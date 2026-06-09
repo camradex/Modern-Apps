@@ -28,22 +28,37 @@ class MessageSender(
     private val selfAci: String,
     private val selfDeviceId: Int,
     private val deviceManager: DeviceManager,
+    private val recipientStore: com.vayunmathur.messages.signal.store.SignalRecipientStore? = null,
+    private var unauthedWs: SignalWebSocket? = null,
 ) {
     private val protocolStore = SignalProtocolStoreImpl(
         sessionStore, identityKeyStore, preKeyStore, signedPreKeyStore, kyberPreKeyStore, senderKeyStore
     )
 
-    data class SendResult(val success: Boolean, val error: String? = null)
+    @Volatile
+    private var cachedSenderCertificate: org.signal.libsignal.metadata.certificate.SenderCertificate? = null
+    private var senderCertExpiry: Long = 0
+
+    data class SendResult(val success: Boolean, val error: String? = null, val unidentified: Boolean = false)
 
     suspend fun sendMessage(
         recipientAci: String,
         content: SignalServiceProtos.Content,
         timestamp: Long,
     ): SendResult {
-        val paddedContent = padContent(content.toByteArray())
+        val contentWithProfileKey = if (content.hasDataMessage() && !content.dataMessage.hasProfileKey()) {
+            val profileKey = recipientStore?.getRecipient(selfAci)?.profileKey
+            if (profileKey != null) {
+                val dm = content.dataMessage.toBuilder()
+                    .setProfileKey(com.google.protobuf.ByteString.copyFrom(profileKey))
+                    .build()
+                content.toBuilder().setDataMessage(dm).build()
+            } else content
+        } else content
+        val paddedContent = padContent(contentWithProfileKey.toByteArray())
         return try {
-            sendToRecipient(recipientAci, paddedContent, timestamp)
-            sendSyncMessage(recipientAci, content, timestamp)
+            sendToRecipient(recipientAci, paddedContent, timestamp, isUrgent(contentWithProfileKey))
+            sendSyncMessage(recipientAci, contentWithProfileKey, timestamp)
             SendResult(success = true)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send message to $recipientAci", e)
@@ -61,7 +76,7 @@ class MessageSender(
         val results = memberAcis.map { aci ->
             if (aci == selfAci) return@map SendResult(success = true)
             try {
-                sendToRecipient(aci, paddedContent, timestamp)
+                sendToRecipient(aci, paddedContent, timestamp, isUrgent(content))
                 SendResult(success = true)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send group message to $aci", e)
@@ -80,9 +95,11 @@ class MessageSender(
         recipientAci: String,
         paddedContent: ByteArray,
         timestamp: Long,
+        urgent: Boolean = true,
         retryCount: Int = 0,
+        useSealedSender: Boolean = true,
     ) {
-        if (retryCount > 2) throw IllegalStateException("Too many retries sending to $recipientAci")
+        if (retryCount > 3) throw IllegalStateException("Too many retries sending to $recipientAci")
 
         val deviceIds = deviceManager.getDeviceIds(recipientAci)
         val messages = JSONArray()
@@ -102,28 +119,71 @@ class MessageSender(
         val payload = JSONObject().apply {
             put("timestamp", timestamp)
             put("online", false)
-            put("urgent", true)
+            put("urgent", urgent)
             put("messages", messages)
         }
 
-        val response = ws.sendRequest(
-            "PUT",
-            "/v1/messages/$recipientAci",
-            payload.toString().toByteArray(),
-            mapOf("Content-Type" to "application/json")
-        )
+        val response = if (useSealedSender && unauthedWs != null && recipientAci != selfAci) {
+            val profileKey = recipientStore?.getRecipient(recipientAci)?.profileKey
+            if (profileKey != null) {
+                val accessKey = deriveAccessKey(profileKey)
+                unauthedWs!!.sendRequest(
+                    "PUT",
+                    "/v1/messages/$recipientAci",
+                    payload.toString().toByteArray(),
+                    mapOf(
+                        "Content-Type" to "application/json",
+                        "Unidentified-Access-Key" to Base64.encodeToString(accessKey, Base64.NO_WRAP),
+                    )
+                )
+            } else {
+                ws.sendRequest(
+                    "PUT",
+                    "/v1/messages/$recipientAci",
+                    payload.toString().toByteArray(),
+                    mapOf("Content-Type" to "application/json")
+                )
+            }
+        } else {
+            ws.sendRequest(
+                "PUT",
+                "/v1/messages/$recipientAci",
+                payload.toString().toByteArray(),
+                mapOf("Content-Type" to "application/json")
+            )
+        }
 
         when (response.status) {
             in 200..299 -> return
             409 -> {
                 Log.w(TAG, "Stale devices for $recipientAci, handling mismatched devices")
                 handleMismatchedDevices(recipientAci, response.body.toByteArray())
-                sendToRecipient(recipientAci, paddedContent, timestamp, retryCount + 1)
+                sendToRecipient(recipientAci, paddedContent, timestamp, urgent, retryCount + 1, useSealedSender)
             }
             410 -> {
                 Log.w(TAG, "Removed devices for $recipientAci, clearing sessions")
                 handleGoneDevices(recipientAci, response.body.toByteArray())
-                sendToRecipient(recipientAci, paddedContent, timestamp, retryCount + 1)
+                sendToRecipient(recipientAci, paddedContent, timestamp, urgent, retryCount + 1, useSealedSender)
+            }
+            428 -> {
+                Log.w(TAG, "Rate limited (428) for $recipientAci")
+                throw IllegalStateException("Got 428 rate limit error")
+            }
+            401 -> {
+                Log.w(TAG, "Unauthorized (401) for $recipientAci, retrying without sealed sender")
+                sendToRecipient(recipientAci, paddedContent, timestamp, urgent, retryCount + 1, useSealedSender = false)
+            }
+            404 -> {
+                Log.w(TAG, "Recipient not found (404): $recipientAci, removing sessions")
+                val allDevices = deviceManager.getDeviceIds(recipientAci)
+                for (devId in allDevices) {
+                    sessionStore.deleteSession(SignalProtocolAddress(recipientAci, devId))
+                }
+                throw IllegalStateException("Recipient not registered (404)")
+            }
+            500, 503 -> {
+                Log.w(TAG, "Server error (${response.status}) for $recipientAci, retrying")
+                sendToRecipient(recipientAci, paddedContent, timestamp, urgent, retryCount + 1, useSealedSender)
             }
             else -> throw IllegalStateException("Send failed with status ${response.status}")
         }
@@ -137,7 +197,9 @@ class MessageSender(
         val ciphertext = cipher.encrypt(paddedContent)
         val type = when (ciphertext.type) {
             CiphertextMessage.PREKEY_TYPE -> 3
-            else -> 1
+            CiphertextMessage.WHISPER_TYPE -> 1
+            CiphertextMessage.PLAINTEXT_CONTENT_TYPE -> 8
+            else -> 0
         }
         val regId = protocolStore.loadSession(address).remoteRegistrationId
         return Triple(type, regId, Base64.encodeToString(ciphertext.serialize(), Base64.NO_WRAP))
@@ -161,10 +223,14 @@ class MessageSender(
             sentBuilder.setDestinationServiceId(recipientAci)
         }
 
+        val syncPadding = ByteArray(java.security.SecureRandom().nextInt(511) + 1)
+        java.security.SecureRandom().nextBytes(syncPadding)
+
         val syncContent = SignalServiceProtos.Content.newBuilder()
             .setSyncMessage(
                 SignalServiceProtos.SyncMessage.newBuilder()
                     .setSent(sentBuilder.build())
+                    .setPadding(com.google.protobuf.ByteString.copyFrom(syncPadding))
                     .build()
             ).build()
 
@@ -185,7 +251,7 @@ class MessageSender(
                 val payload = JSONObject().apply {
                     put("timestamp", timestamp)
                     put("online", false)
-                    put("urgent", true)
+                    put("urgent", isSyncMessageUrgent(syncContent))
                     put("messages", messages)
                 }
                 ws.sendRequest(
@@ -200,15 +266,31 @@ class MessageSender(
         }
     }
 
-    private fun handleGoneDevices(recipientAci: String, responseBody: ByteArray?) {
+    private suspend fun handleGoneDevices(recipientAci: String, responseBody: ByteArray?) {
         if (responseBody == null) return
         try {
             val json = JSONObject(String(responseBody))
-            val staleDevices = json.optJSONArray("staleDevices") ?: return
-            for (i in 0 until staleDevices.length()) {
-                val deviceId = staleDevices.getInt(i)
-                val address = SignalProtocolAddress(recipientAci, deviceId)
-                sessionStore.deleteSession(address)
+            val staleDevices = json.optJSONArray("staleDevices")
+            val missingDevices = json.optJSONArray("missingDevices")
+            val extraDevices = json.optJSONArray("extraDevices")
+            if (staleDevices != null) {
+                for (i in 0 until staleDevices.length()) {
+                    val deviceId = staleDevices.getInt(i)
+                    val address = SignalProtocolAddress(recipientAci, deviceId)
+                    sessionStore.deleteSession(address)
+                    deviceManager.ensureSession(recipientAci, deviceId)
+                }
+            }
+            if (missingDevices != null) {
+                for (i in 0 until missingDevices.length()) {
+                    deviceManager.ensureSession(recipientAci, missingDevices.getInt(i))
+                }
+            }
+            if (extraDevices != null) {
+                for (i in 0 until extraDevices.length()) {
+                    val address = SignalProtocolAddress(recipientAci, extraDevices.getInt(i))
+                    sessionStore.deleteSession(address)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error parsing gone devices response", e)
@@ -250,15 +332,49 @@ class MessageSender(
         }
     }
 
+    private fun deriveAccessKey(profileKey: ByteArray): ByteArray {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(profileKey, "HmacSHA256"))
+        val full = mac.doFinal(ByteArray(32))
+        return full.copyOfRange(0, 16)
+    }
+
+    suspend fun sendDeliveryReceipt(recipientAci: String, timestamps: List<Long>) {
+        try {
+            val content = ContentBuilders.deliveryReceipt(timestamps)
+            sendMessage(recipientAci, content, System.currentTimeMillis())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to send delivery receipt to $recipientAci", e)
+        }
+    }
+
     companion object {
         private const val TAG = "SignalSender"
 
         fun padContent(content: ByteArray): ByteArray {
-            val paddedLength = ((content.size + 160) / 160) * 160
+            val messageLengthWithTerminator = content.size + 1
+            val messagePartCount = (messageLengthWithTerminator + 159) / 160
+            val paddedLength = messagePartCount * 160
             val padded = ByteArray(paddedLength)
             content.copyInto(padded)
             padded[content.size] = 0x80.toByte()
             return padded
+        }
+
+        private fun isUrgent(content: SignalServiceProtos.Content): Boolean {
+            return when {
+                content.hasDataMessage() -> true
+                content.hasEditMessage() -> true
+                content.hasCallMessage() -> true
+                content.hasSyncMessage() -> isSyncMessageUrgent(content)
+                else -> false
+            }
+        }
+
+        private fun isSyncMessageUrgent(content: SignalServiceProtos.Content): Boolean {
+            if (!content.hasSyncMessage()) return false
+            val sync = content.syncMessage
+            return sync.hasSent() || sync.hasRequest()
         }
     }
 }

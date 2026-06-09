@@ -25,6 +25,8 @@ object SignalHttpClient {
     const val CDN2_HOST = "cdn2.signal.org"
     const val CDN3_HOST = "cdn3.signal.org"
 
+    const val SIGNAL_AGENT = "MAU"
+
     private lateinit var client: OkHttpClient
 
     private var initialized = false
@@ -55,6 +57,8 @@ object SignalHttpClient {
         val request = Request.Builder()
             .url(url)
             .method(method, requestBody)
+            .header("User-Agent", SIGNAL_AGENT)
+            .header("X-Signal-Agent", SIGNAL_AGENT)
             .apply {
                 if (username != null && password != null) {
                     header("Authorization", Credentials.basic(username, password))

@@ -21,7 +21,7 @@ import java.security.SecureRandom
 object PreKeyManager {
     private const val TAG = "PreKeyManager"
     private const val BATCH_SIZE = 100
-    private const val MIN_KEY_COUNT = 10
+    private const val MIN_KEY_COUNT = BATCH_SIZE / 2
 
     suspend fun generateAndUploadPreKeys(
         ws: SignalWebSocket,
@@ -55,7 +55,8 @@ object PreKeyManager {
     private suspend fun getPreKeyCount(ws: SignalWebSocket, identity: String): Int {
         val response = ws.sendRequest("GET", "/v2/keys?identity=$identity")
         if (response.status != 200) return 0
-        return JSONObject(response.body.toStringUtf8()).optInt("count", 0)
+        val json = JSONObject(response.body.toStringUtf8())
+        return minOf(json.optInt("count", 0), json.optInt("pqCount", 0))
     }
 
     private suspend fun uploadKeysForIdentity(
@@ -120,6 +121,10 @@ object PreKeyManager {
             body = payload.toString().toByteArray(),
             headers = mapOf("Content-Type" to "application/json"),
         )
+        if (response.status == 422 && identity == "pni") {
+            Log.e(TAG, "Got 422 on PNI prekey upload - account may be logged out")
+            throw IOException("PNI prekey upload rejected (422), re-provisioning required")
+        }
         if (response.status !in 200..299) {
             throw IOException("Pre-key upload failed for $identity: ${response.status}")
         }

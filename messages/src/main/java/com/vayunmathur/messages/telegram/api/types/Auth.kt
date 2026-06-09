@@ -7,7 +7,7 @@ import com.vayunmathur.messages.telegram.mtproto.tl.TlObject
 data class AuthSentCode(
     val phoneCodeHash: String,
 ) : TlObject {
-    override val typeId = 0x2390fe44.toInt()
+    override val typeId = 0x5e002502.toInt()
     override fun encode(buf: TlBuffer) {}
 
     companion object {
@@ -24,6 +24,8 @@ data class AuthSentCode(
                 -> buf.string() // pattern
             }
             val phoneCodeHash = buf.string()
+            if (flags.has(1)) buf.int32() // next_type constructor
+            if (flags.has(2)) buf.int32() // timeout
             return AuthSentCode(phoneCodeHash)
         }
     }
@@ -36,9 +38,9 @@ data class AuthAuthorization(val user: User) : TlObject {
     companion object {
         fun decode(buf: TlBuffer): AuthAuthorization {
             val flags = Fields.decode(buf)
-            if (flags.has(0)) buf.int32() // tmp_sessions (flags.0)
-            if (flags.has(1)) buf.int32() // otherwise_relogin_days (flags.1)
-            if (flags.has(2)) buf.bytes() // future_auth_token (flags.2)
+            if (flags.has(1)) buf.int32() // otherwise_relogin_days
+            if (flags.has(0)) buf.int32() // tmp_sessions
+            if (flags.has(2)) buf.bytes() // future_auth_token
             val userTypeId = buf.int32()
             val user = User.decode(buf)
             return AuthAuthorization(user)
@@ -64,6 +66,12 @@ data class AuthPassword(
             val srpB = if (flags.has(2)) buf.bytes() else ByteArray(0)
             val srpId = if (flags.has(2)) buf.int64() else 0L
             val hint = if (flags.has(3)) buf.string() else ""
+            if (flags.has(4)) buf.string() // email_unconfirmed_pattern
+            TlSkip.skipBoxedType(buf) // new_algo (mandatory)
+            TlSkip.skipBoxedType(buf) // new_secure_algo (mandatory)
+            buf.bytes() // secure_random (mandatory)
+            if (flags.has(5)) buf.int32() // pending_reset_date
+            if (flags.has(6)) buf.string() // login_email_pattern
             return AuthPassword(hasPassword, srpId, srpB, hint, currentAlgo)
         }
     }

@@ -13,7 +13,7 @@ import androidx.room.TypeConverters
  */
 @Database(
     entities = [WhatsAppDevice::class, WhatsAppSession::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(WhatsAppTypeConverters::class)
@@ -31,7 +31,8 @@ abstract class WhatsAppDatabase : RoomDatabase() {
                     context.applicationContext,
                     WhatsAppDatabase::class.java,
                     "whatsapp_database"
-                ).build()
+                ).fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

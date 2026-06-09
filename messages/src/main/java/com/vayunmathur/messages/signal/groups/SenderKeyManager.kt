@@ -13,11 +13,26 @@ class SenderKeyManager(
     private val selfAci: String,
     private val selfDeviceId: Int,
 ) {
+    companion object {
+        private const val TAG = "SenderKeyManager"
+        private const val SENDER_KEY_MAX_AGE_MS = 14L * 24 * 60 * 60 * 1000 // 14 days
+    }
+
     private val distributedTo = mutableMapOf<String, MutableSet<String>>()
+    private val distributionIds = mutableMapOf<String, UUID>()
+    private val distributionCreatedAt = mutableMapOf<String, Long>()
 
     fun createDistributionMessage(groupId: String): SenderKeyDistributionMessage {
         val selfAddress = SignalProtocolAddress(selfAci, selfDeviceId)
-        val distributionId = UUID.nameUUIDFromBytes(groupId.toByteArray())
+        val now = System.currentTimeMillis()
+        val createdAt = distributionCreatedAt[groupId]
+        if (createdAt != null && (now - createdAt) > SENDER_KEY_MAX_AGE_MS) {
+            resetForGroup(groupId)
+        }
+        val distributionId = distributionIds.getOrPut(groupId) {
+            distributionCreatedAt[groupId] = now
+            UUID.randomUUID()
+        }
         val builder = GroupSessionBuilder(senderKeyStore)
         return builder.create(selfAddress, distributionId)
     }
@@ -33,10 +48,8 @@ class SenderKeyManager(
 
     fun resetForGroup(groupId: String) {
         distributedTo.remove(groupId)
+        distributionIds.remove(groupId)
+        distributionCreatedAt.remove(groupId)
         Log.d(TAG, "Reset sender key distribution for group $groupId")
-    }
-
-    companion object {
-        private const val TAG = "SenderKeyManager"
     }
 }

@@ -80,6 +80,19 @@ class RpcClient {
     }
 
     /**
+     * POST [body] as a pblite JSON array and decode the response as the
+     * template's message type. Used for RegisterRefresh.
+     */
+    suspend fun <T : Message> postPbLiteDecoded(
+        url: String,
+        body: Message,
+        responseTemplate: T,
+    ): T {
+        val resp = postPbLite(url, body)
+        return decodeBody(resp, responseTemplate)
+    }
+
+    /**
      * POST [body] as a pblite JSON array. Used for SendMessage and Ack.
      * Most responses we care about are empty-ish OutgoingRPCResponse
      * acks (any failure is conveyed via HTTP status).

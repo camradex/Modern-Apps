@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import requests.Requests
 import responses.Responses
 import threads.Threads
+import waa.Waa
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -58,6 +59,8 @@ object GVoiceClient {
     @Volatile private var rpc: GVoiceRpcClient? = null
     private var realtime: RealtimeChannel? = null
     private var backfillJob: Job? = null
+    @Volatile private var versionToken: String = ""
+    private const val AUTH_USER = "0"
 
     fun init(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
@@ -109,7 +112,7 @@ object GVoiceClient {
         val accountOk = try {
             val acc = client.postPbLite(
                 url = VoiceEndpoints.EndpointGetAccount,
-                body = Requests.ReqGetAccount.getDefaultInstance(),
+                body = Requests.ReqGetAccount.newBuilder().setUnknownInt2(1).build(),
                 responseTemplate = Responses.RespGetAccount.getDefaultInstance(),
             )
             Log.i(TAG, "GetAccount OK; primary=${acc.account.primaryDestinationID}")
@@ -295,6 +298,71 @@ object GVoiceClient {
             "image/webp" -> Requests.ReqSendSMS.Media.Type.WEBP
             else -> null
         }
+
+    /**
+     * Download an attachment by media ID. Mirrors `Client.DownloadAttachment`
+     * in `pkg/libgv/client.go`. Returns (data, mimeType) or null on failure.
+     */
+    suspend fun downloadAttachment(mediaId: String): Pair<ByteArray, String>? {
+        val client = rpc ?: return null
+        val url = VoiceEndpoints.EndpointDownloadTemplate.format(AUTH_USER, mediaId)
+        return try {
+            client.getRaw(
+                url = url,
+                extraQuery = mapOf("s" to Threads.Attachment.Metadata.SizeSpec.ORIGINAL.number.toString()),
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "downloadAttachment failed id=$mediaId: ${t.message}")
+            null
+        }
+    }
+
+    /**
+     * Create a WAA challenge token. Mirrors `Client.CreateWaa` in
+     * `pkg/libgv/client.go`.
+     */
+    suspend fun createWaa(): Waa.CreatedWaa? {
+        val client = rpc ?: return null
+        return try {
+            val req = Waa.ReqCreateWaa.newBuilder()
+                .setRequestKey(VoiceEndpoints.WaaRequestKey)
+                .build()
+            val resp = client.postPbLite(
+                url = VoiceEndpoints.EndpointCreateWaa,
+                body = req,
+                responseTemplate = Waa.RespCreateWaa.getDefaultInstance(),
+            )
+            resp.waa
+        } catch (t: Throwable) {
+            Log.w(TAG, "createWaa failed: ${t.message}")
+            null
+        }
+    }
+
+    /**
+     * Ping the WAA endpoint with a generated signature. Mirrors
+     * `Client.PingWaa` in `pkg/libgv/client.go`.
+     */
+    suspend fun pingWaa(signature: String, value: Long): Boolean {
+        val client = rpc ?: return false
+        return try {
+            val req = Waa.ReqPingWaa.newBuilder()
+                .setRequestKey(VoiceEndpoints.WaaRequestKey)
+                .setPayload(signature)
+                .setI1(72)
+                .setI2(value)
+                .build()
+            client.postPbLite(
+                url = VoiceEndpoints.EndpointPingWaa,
+                body = req,
+                responseTemplate = Waa.RespPingWaa.getDefaultInstance(),
+            )
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "pingWaa failed: ${t.message}")
+            false
+        }
+    }
 
     /**
      * Send a text message to a brand-new thread keyed by [recipients].
@@ -493,7 +561,7 @@ object GVoiceClient {
     }
 
     /** Load (or refresh) messages for a thread. */
-    fun fetchMessages(conversationId: String, count: Int = 100) {
+    fun fetchMessages(conversationId: String, count: Int = 100, paginationToken: String = "") {
         if (_state.value !is State.Connected) return
         scope.launch {
             val client = rpc ?: return@launch
@@ -502,6 +570,12 @@ object GVoiceClient {
             val req = Requests.ReqGetThread.newBuilder()
                 .setThreadID(webId)
                 .setMaybeMessageCount(count)
+                .setPaginationToken(paginationToken)
+                .setUnknownWrapper(
+                    Requests.UnknownWrapper.newBuilder()
+                        .setUnknownInt2(1)
+                        .setUnknownInt3(1)
+                )
                 .build()
             val resp = try {
                 client.postPbLite(
@@ -528,6 +602,13 @@ object GVoiceClient {
     private fun bootSession(auth: VoiceAuthData) {
         val client = rpc ?: GVoiceRpcClient(auth.cookies).also { rpc = it }
         client.updateCookies(auth.cookies)
+        client.onCookiesChanged = { updatedCookies ->
+            scope.launch {
+                val newAuth = VoiceAuthData(updatedCookies)
+                newAuth.save(appContext)
+                Log.i(TAG, "cookies refreshed and persisted")
+            }
+        }
         rpc = client
 
         _state.value = State.Connecting
@@ -556,15 +637,18 @@ object GVoiceClient {
 
     private suspend fun doBackfill() {
         val client = rpc ?: return
-        Log.i(TAG, "ListThreads (TEXT_THREADS)")
+        Log.i(TAG, "ListThreads (ALL_THREADS) versionToken=${versionToken.take(20)}")
+        val unknownInt2 = if (versionToken.isNotEmpty()) 10 else 20
         val req = Requests.ReqListThreads.newBuilder()
-            .setFolder(Threads.ThreadFolder.TEXT_THREADS)
-            // libgv hard-codes these "unknown" fields — 20 on the
-            // first call (10 on subsequent), 15 for the second.
-            // Without them the server returns 0 threads even though
-            // the account has real conversations.
-            .setUnknownInt2(20)
+            .setFolder(Threads.ThreadFolder.ALL_THREADS)
+            .setUnknownInt2(unknownInt2)
             .setUnknownInt3(15)
+            .setVersionToken(versionToken)
+            .setUnknownWrapper(
+                Requests.UnknownWrapper.newBuilder()
+                    .setUnknownInt2(1)
+                    .setUnknownInt3(1)
+            )
             .build()
         val resp = try {
             client.postPbLite(
@@ -576,6 +660,9 @@ object GVoiceClient {
             Log.w(TAG, "ListThreads failed: ${t.message}")
             _state.value = State.Disconnected(t.message ?: "ListThreads failed")
             return
+        }
+        if (resp.versionToken.isNotEmpty()) {
+            versionToken = resp.versionToken
         }
         Log.i(TAG, "ListThreads: ${resp.threadsCount} threads")
         for (i in 0 until resp.threadsCount) {
@@ -648,20 +735,32 @@ object GVoiceClient {
     }
 
     private suspend fun emitMessage(threadId: String, m: Threads.Message, fromBackfill: Boolean = false) {
-        // Skip non-text messages (calls / voicemail / etc.) for v1.
-        if (m.text.isBlank()) return
-        val outgoing = m.type == Threads.Message.Type.SMS_OUT
+        val outgoing = when (m.type) {
+            Threads.Message.Type.SMS_OUT,
+            Threads.Message.Type.OUTGOING_CALL,
+            Threads.Message.Type.OUTGOING_CALL_CANCELLED -> true
+            else -> false
+        }
         val tsMs = m.timestamp
-        val peerPhone = if (m.hasContact()) m.contact.phoneNumber.takeIf { it.isNotBlank() } else null
+        val peerPhone = when {
+            m.hasMMS() && m.getMMS().senderPhoneNumber.isNotBlank() -> m.getMMS().senderPhoneNumber
+            m.hasContact() -> m.contact.phoneNumber.takeIf { it.isNotBlank() }
+            else -> null
+        }
+        val senderName = if (m.hasContact()) m.contact.name.takeIf { it.isNotBlank() } else null
+
+        val body = buildMessageBody(m)
+        if (body.isBlank()) return
+
         _events.emit(
             GMEvent.MessageUpdate(
                 source = source,
                 conversationId = threadId,
                 messageId = m.getID(),
-                body = m.text,
+                body = body,
                 outgoing = outgoing,
                 timestamp = tsMs,
-                senderName = if (m.hasContact()) m.contact.name.takeIf { it.isNotBlank() } else null,
+                senderName = senderName,
             )
         )
         if (!outgoing && !fromBackfill) {
@@ -670,12 +769,94 @@ object GVoiceClient {
                     source = source,
                     conversationId = threadId,
                     messageId = m.getID(),
-                    body = m.text,
-                    peerName = if (m.hasContact()) m.contact.name.takeIf { it.isNotBlank() } else null,
+                    body = body,
+                    peerName = senderName,
                     peerPhone = peerPhone,
                     timestamp = tsMs,
                 )
             )
         }
+    }
+
+    private fun buildMessageBody(m: Threads.Message): String {
+        // Voicemail handling (checked first, matches Go's convertGVVoicemailMessage)
+        if (m.type == Threads.Message.Type.VOICEMAIL &&
+            m.coarseType == Threads.Message.CoarseType.CALL_TYPE_VOICEMAIL
+        ) {
+            val transcript = buildVoicemailTranscript(m)
+            if (transcript.isNotBlank()) return "Voicemail: $transcript"
+        }
+
+        // Missed calls — no text/MMS guard (matches Go's convertGVMissedCallMessage
+        // which has no `msg.GetText() != ""` check)
+        if (m.type == Threads.Message.Type.MISSED_CALL &&
+            m.coarseType == Threads.Message.CoarseType.CALL_TYPE_MISSED
+        ) {
+            return "Missed voice call"
+        }
+
+        // Other call messages — only when no text/MMS content (matches Go's
+        // convertGVCallMessage guard: `if msg.GetText() != "" || msg.GetMMS() != nil { return nil }`)
+        if (m.text.isEmpty() && !m.hasMMS()) {
+            when (m.coarseType) {
+                Threads.Message.CoarseType.CALL_TYPE_INCOMING ->
+                    if (m.type == Threads.Message.Type.INCOMING_CALL)
+                        return formatCallBody(m.durationSeconds)
+                Threads.Message.CoarseType.CALL_TYPE_OUTGOING -> when (m.type) {
+                    Threads.Message.Type.OUTGOING_CALL -> return formatCallBody(m.durationSeconds)
+                    Threads.Message.Type.OUTGOING_CALL_CANCELLED -> return "Unanswered voice call"
+                    else -> {}
+                }
+                else -> {}
+            }
+        }
+
+        // MMS messages
+        if (m.hasMMS()) {
+            val mms = m.getMMS()
+            val textPart = when {
+                mms.subject.isNotBlank() && mms.text.isNotBlank() -> "${mms.subject}\n${mms.text}"
+                mms.subject.isNotBlank() -> mms.subject
+                mms.text.isNotBlank() -> mms.text
+                else -> ""
+            }
+            val attachmentParts = (0 until mms.attachmentsCount).mapNotNull { i ->
+                val att = mms.getAttachments(i)
+                if (att.status == Threads.Attachment.Status.NOT_SUPPORTED) {
+                    "[Unsupported attachment]"
+                } else {
+                    val mime = att.mimeType.ifBlank { "image" }
+                    val url = VoiceEndpoints.EndpointDownloadTemplate.format(AUTH_USER, att.getID())
+                    "[${mime.substringBefore('/')} attachment: $url]"
+                }
+            }
+            val parts = listOfNotNull(
+                textPart.takeIf { it.isNotBlank() },
+            ) + attachmentParts
+            return parts.joinToString("\n").ifBlank { "[MMS message]" }
+        }
+
+        return m.text
+    }
+
+    private fun formatCallBody(durationSeconds: Float): String {
+        val totalSec = (durationSeconds + 0.5f).toInt()
+        if (totalSec <= 0) return "Voice call"
+        val mins = totalSec / 60
+        val secs = totalSec % 60
+        val parts = mutableListOf<String>()
+        if (mins > 0) parts += "$mins min${if (mins != 1) "s" else ""}"
+        if (secs > 0) parts += "$secs sec${if (secs != 1) "s" else ""}"
+        return "Voice call \u2022 ${parts.joinToString(" ")}"
+    }
+
+    private fun buildVoicemailTranscript(m: Threads.Message): String {
+        if (!m.hasTranscript()) return ""
+        return (0 until m.transcript.tokensCount).mapNotNull { i ->
+            val text = m.transcript.getTokens(i).text
+            if (text != null && text.isValidUtf8) {
+                text.toStringUtf8().trim().takeIf { it.isNotBlank() }
+            } else null
+        }.joinToString(" ")
     }
 }

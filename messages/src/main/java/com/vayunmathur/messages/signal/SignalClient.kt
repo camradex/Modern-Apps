@@ -10,6 +10,7 @@ import com.vayunmathur.messages.signal.auth.Provisioning
 import com.vayunmathur.messages.signal.contacts.ContactDiscovery
 import com.vayunmathur.messages.signal.contacts.ContactManager
 import com.vayunmathur.messages.signal.contacts.ProfileManager
+import com.vayunmathur.messages.signal.contacts.StorageServiceManager
 import com.vayunmathur.messages.signal.groups.GroupManager
 import com.vayunmathur.messages.signal.groups.SenderKeyManager
 import com.vayunmathur.messages.signal.media.AttachmentManager
@@ -325,15 +326,17 @@ object SignalClient {
             ws.connect("wss://chat.signal.org/v1/websocket/?login=${auth.aci}.${auth.deviceId}")
             webSocket = ws
 
-            val devManager = DeviceManager(ws, sessStore, idStore, pkStore, pkStore, pkStore, skStore)
-            val sender = MessageSender(ws, sessStore, idStore, pkStore, pkStore, pkStore, skStore, auth.aci, auth.deviceId, devManager)
-            messageSender = sender
+            val unauthedWs = SignalWebSocket(appContext)
+            unauthedWs.connect("wss://chat.signal.org/v1/websocket/")
 
+            val devManager = DeviceManager(ws, sessStore, idStore, pkStore, pkStore, pkStore, skStore)
             val recipientStore = SignalRecipientStore(database)
+            val sender = MessageSender(ws, sessStore, idStore, pkStore, pkStore, pkStore, skStore, auth.aci, auth.deviceId, devManager, recipientStore, unauthedWs)
+            messageSender = sender
             contactManager = ContactManager(recipientStore)
             contactDiscovery = ContactDiscovery(recipientStore, auth.aci, auth.deviceId, auth.password, appContext)
             profileManager = ProfileManager(ws, recipientStore)
-            groupManager = GroupManager(ws, SignalGroupStore(database), auth.aci, auth.password)
+            groupManager = GroupManager(ws, SignalGroupStore(database), auth.aci, auth.pni, auth.password)
 
             ws.incomingRequestHandler = { request ->
                 handleIncomingRequest(request, auth, sessStore, idStore, pkStore, skStore)
@@ -341,6 +344,23 @@ object SignalClient {
 
             _state.value = State.Connected
             Log.i(TAG, "Connected to Signal")
+
+            scope.launch {
+                try {
+                    ws.sendRequest(
+                        "PUT",
+                        "/v1/devices/capabilities",
+                        org.json.JSONObject().apply {
+                            put("attachmentBackfill", true)
+                            put("spqr", true)
+                        }.toString().toByteArray(),
+                        mapOf("Content-Type" to "application/json"),
+                    )
+                    Log.d(TAG, "Successfully registered capabilities")
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to register capabilities: ${t.message}")
+                }
+            }
 
             scope.launch {
                 try {
@@ -353,6 +373,16 @@ object SignalClient {
             }
 
             kickoffBackfill()
+
+            if (auth.masterKey == null) {
+                scope.launch {
+                    try {
+                        sendStorageMasterKeyRequest()
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Storage key sync request failed: ${t.message}")
+                    }
+                }
+            }
 
             scope.launch {
                 ws.connectionEvents.collect { event ->
@@ -386,6 +416,10 @@ object SignalClient {
         pkStore: SignalPreKeyStore,
         skStore: SignalSenderKeyStore,
     ) {
+        if (request.verb == "PUT" && request.path == "/api/v1/queue/empty") {
+            webSocket?.sendResponse(request.id, 200)
+            return
+        }
         if (request.verb != "PUT" || request.path != "/api/v1/message") {
             webSocket?.sendResponse(request.id, 200)
             return
@@ -405,6 +439,13 @@ object SignalClient {
                         result.content, result.timestamp, result.serverTimestamp,
                     )
                     handleDecryptedMessage(decrypted)
+
+                    if (result.senderAci != auth.aci && result.content.hasDataMessage()) {
+                        messageSender?.sendDeliveryReceipt(
+                            result.senderAci,
+                            listOf(result.content.dataMessage.timestamp),
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to handle incoming message", e)
@@ -465,6 +506,35 @@ object SignalClient {
                 _events.emit(GMEvent.MessageUpdate(source, chatId, msgId, content.newBody, false, msg.timestamp, senderName))
             }
             is MessageContent.SyncRead -> {}
+            is MessageContent.SyncKeys -> {
+                val masterKey = content.masterKey
+                    ?: content.accountEntropyPool?.let { aep ->
+                        try {
+                            org.signal.libsignal.messagebackup.AccountEntropyPool.deriveSvrKey(aep)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to derive master key from account entropy pool", e)
+                            null
+                        }
+                    }
+                if (masterKey != null) {
+                    val auth = authData ?: return
+                    val updated = auth.copy(masterKey = Base64.encodeToString(masterKey, Base64.NO_WRAP))
+                    updated.save(appContext)
+                    authData = updated
+                    Log.i(TAG, "Received and saved master key from sync")
+                }
+            }
+            is MessageContent.SyncFetchLatest -> {
+                Log.d(TAG, "Received fetch latest: ${content.type}")
+            }
+            is MessageContent.SyncDeleteForMe -> {}
+            is MessageContent.Sticker -> {
+                val msgId = "${chatId}_${msg.timestamp}"
+                val body = content.emoji ?: "[Sticker]"
+                _events.emit(GMEvent.MessageUpdate(source, chatId, msgId, body, false, msg.timestamp, senderName))
+                _events.emit(GMEvent.IncomingMessage(source, chatId, msgId, body, senderName, null, msg.timestamp))
+            }
+            is MessageContent.ProfileKeyUpdate -> {}
             is MessageContent.Unknown -> {
                 Log.d(TAG, "Unknown content: ${content.description}")
             }
@@ -506,6 +576,22 @@ object SignalClient {
                 Log.w(TAG, "Contacts sync request failed: ${t.message}")
             }
         }
+    }
+
+    private suspend fun sendStorageMasterKeyRequest() {
+        val sender = messageSender ?: return
+        val auth = authData ?: return
+        val syncRequest = SignalServiceProtos.SyncMessage.Request.newBuilder()
+            .setType(SignalServiceProtos.SyncMessage.Request.Type.KEYS)
+            .build()
+        val syncMessage = SignalServiceProtos.SyncMessage.newBuilder()
+            .setRequest(syncRequest)
+            .build()
+        val content = SignalServiceProtos.Content.newBuilder()
+            .setSyncMessage(syncMessage)
+            .build()
+        sender.sendMessage(auth.aci, content, System.currentTimeMillis())
+        Log.d(TAG, "Sent storage master key request to primary device")
     }
 
     private fun extractAci(conversationId: String): String? {

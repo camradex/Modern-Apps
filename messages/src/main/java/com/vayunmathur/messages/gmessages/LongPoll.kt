@@ -42,8 +42,17 @@ class LongPoll(
 ) {
     private var job: Job? = null
 
+    /** Number of old messages to skip at reconnect (set from ack payload). */
+    @Volatile var skipCount: Int = 0
+
+    /** Stable listen request ID reused across reconnections within a single
+     *  poll session. Matches Go's `listenReqID` in `doLongPoll` which is
+     *  generated once per session and reused for all iterations. */
+    @Volatile private var listenReqId: String = java.util.UUID.randomUUID().toString()
+
     fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
+        listenReqId = java.util.UUID.randomUUID().toString()
         job = scope.launch { loop() }
     }
 
@@ -63,6 +72,10 @@ class LongPoll(
                 openAndRead()
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: FatalLongPollException) {
+                Log.e(TAG, "long-poll fatal: ${e.message}")
+                onEvent(LongPollEvent.FatalError(e.message ?: "fatal long-poll error"))
+                return
             } catch (t: Throwable) {
                 Log.w(TAG, "long-poll error: ${t.message}")
                 false
@@ -73,7 +86,6 @@ class LongPoll(
     }
 
     private suspend fun openAndRead(): Boolean {
-        // Refresh token before each poll iteration, matching Go's doLongPoll.
         try { refreshToken() } catch (t: Throwable) {
             Log.w(TAG, "token refresh before long-poll failed: ${t.message}")
         }
@@ -86,9 +98,9 @@ class LongPoll(
         val payload = ReceiveMessagesRequest.newBuilder()
             .setAuth(
                 AuthMessage.newBuilder()
-                    .setRequestID(java.util.UUID.randomUUID().toString())
-                    .setNetwork(PairFlow.QrNetwork)
-                    .setTachyonAuthToken(token.toByteString())
+                    .setRequestID(listenReqId)
+                    .setNetwork(auth.authNetwork())
+                    .setTachyonAuthToken(com.google.protobuf.ByteString.copyFrom(token))
                     .setConfigVersion(PairFlow.ConfigVersion)
             )
             .setUnknown(
@@ -97,28 +109,24 @@ class LongPoll(
             )
             .build()
 
-        // Log the actual JSON we send so we can spot encoder bugs.
-        val pbliteBody = PbLite.encode(payload)
-        Log.i(TAG, "opening long-poll with body: $pbliteBody")
-        return rpc.openLongPoll(Endpoints.ReceiveMessagesUrl, payload) { response ->
-            if (response.status.value !in 200..299) {
-                Log.e(TAG, "long-poll HTTP ${response.status.value}")
+        Log.i(TAG, "opening long-poll (network=${auth.authNetwork()})")
+        val url = if (auth.hasCookies())
+            Endpoints.ReceiveMessagesUrlGoogle else Endpoints.ReceiveMessagesUrl
+        return rpc.openLongPoll(url, payload) { response ->
+            val status = response.status.value
+            if (status == 401 || status == 403) {
+                throw FatalLongPollException("HTTP $status (unauthorized/forbidden)")
+            }
+            if (status !in 200..299) {
+                Log.e(TAG, "long-poll HTTP $status")
                 return@openLongPoll false
             }
-            Log.i(TAG, "long-poll open (HTTP ${response.status.value})")
+            Log.i(TAG, "long-poll open (HTTP $status)")
             consumeBody(response.bodyAsChannel())
         }
     }
 
     private suspend fun consumeBody(channel: io.ktor.utils.io.ByteReadChannel): Boolean {
-        // Body framing per `pkg/libgm/longpoll.go.readLongPoll`:
-        //   - First two bytes: `[[`
-        //   - Each message: a pblite-encoded JSON array (also starting
-        //     with `[`), separated by `,`
-        //   - Stream end: `]]`
-        // We walk bytes once, tracking JSON bracket depth with string-
-        // escape awareness, and emit one message every time depth returns
-        // to 0 at the top level of the outer array.
         val readBuf = ByteArray(64 * 1024)
         val accumulator = ByteArrayBuilder()
         var sawAnyEvent = false
@@ -156,7 +164,7 @@ class LongPoll(
 
                 if (depth == 0 && accumulator.isEmpty()) {
                     if (c == ',' || c.isWhitespace()) continue
-                    if (c == ']') continue  // stream-end marker
+                    if (c == ']') continue
                 }
 
                 accumulator.append(b)
@@ -201,16 +209,24 @@ class LongPoll(
                 handleData(payload.data)
             }
             payload.hasHeartbeat() -> Log.d(TAG, "dispatch: heartbeat")
-            payload.hasAck() -> Log.d(TAG, "got startup ack count=${payload.ack.count}")
+            payload.hasAck() -> {
+                val count = payload.ack.count
+                Log.d(TAG, "got startup ack count=$count")
+                skipCount = count
+            }
             payload.hasStartRead() -> Log.d(TAG, "got startRead marker")
             else -> Log.d(TAG, "long-poll unknown payload type")
         }
     }
 
     private suspend fun handleData(data: IncomingRPCMessage) {
+        // Queue ack for every received message (port of Go's HandleRPCMsg)
+        sessionHandler.queueMessageAck(data.responseID)
+
         when (data.bugleRoute) {
             BugleRoute.PairEvent -> handlePairEvent(data)
             BugleRoute.DataEvent -> handleDataEvent(data)
+            BugleRoute.GaiaEvent -> handleGaiaEvent(data)
             else -> Log.d(TAG, "skipping bugle route ${data.bugleRoute}")
         }
     }
@@ -239,6 +255,27 @@ class LongPoll(
         }
     }
 
+    private suspend fun handleGaiaEvent(data: IncomingRPCMessage) {
+        Log.d(TAG, "gaia event received (responseID=${data.responseID})")
+        // Decrypt and deliver to waiter if applicable
+        val msg: RPCMessageData = try {
+            RPCMessageData.parseFrom(data.messageData)
+        } catch (e: InvalidProtocolBufferException) {
+            Log.e(TAG, "failed to decode RPCMessageData in gaia event", e)
+            return
+        }
+        val incoming = IncomingRpc(
+            responseId = data.responseID,
+            requestId = msg.sessionID.takeIf { it.isNotEmpty() },
+            action = msg.action,
+            decryptedData = null,
+            unencryptedData = if (msg.unencryptedData.size() > 0) msg.unencryptedData.toByteArray() else null,
+        )
+        val reqId = msg.sessionID
+        if (reqId.isNotEmpty()) sessionHandler.deliverResponse(reqId, incoming)
+        onEvent(LongPollEvent.Data(incoming))
+    }
+
     private suspend fun handleDataEvent(data: IncomingRPCMessage) {
         val msg: RPCMessageData = try {
             RPCMessageData.parseFrom(data.messageData)
@@ -250,6 +287,13 @@ class LongPoll(
             TAG,
             "data event: action=${msg.action} sessionID=${msg.sessionID} encrypted=${msg.encryptedData.size()}B",
         )
+
+        // Track old messages via skipCount
+        val isOld = if (skipCount > 0) {
+            skipCount--
+            true
+        } else false
+
         var decrypted: ByteArray? = null
         if (msg.encryptedData.size() > 0) {
             decrypted = try {
@@ -258,12 +302,24 @@ class LongPoll(
                 Log.w(TAG, "failed to decrypt data event payload: ${t.message}")
                 null
             }
+        } else if (msg.encryptedData2.size() > 0) {
+            decrypted = try {
+                authProvider().crypto().decrypt(msg.encryptedData2.toByteArray())
+            } catch (t: Throwable) {
+                Log.w(TAG, "failed to decrypt encryptedData2: ${t.message}")
+                null
+            }
         }
+
+        val unencrypted = if (msg.unencryptedData.size() > 0) msg.unencryptedData.toByteArray() else null
+
         val incoming = IncomingRpc(
             responseId = data.responseID,
             requestId = msg.sessionID.takeIf { it.isNotEmpty() },
             action = msg.action,
             decryptedData = decrypted,
+            unencryptedData = unencrypted,
+            isOld = isOld,
         )
         val reqId = msg.sessionID
         if (reqId.isNotEmpty()) sessionHandler.deliverResponse(reqId, incoming)
@@ -287,7 +343,13 @@ sealed interface LongPollEvent {
     data object Revoked : LongPollEvent
 
     data class Data(val msg: IncomingRpc) : LongPollEvent
+
+    /** Fatal error — long-poll should NOT retry (e.g. HTTP 401/403). */
+    data class FatalError(val reason: String) : LongPollEvent
 }
+
+/** Thrown when the long-poll encounters a non-retryable error (HTTP 401/403). */
+private class FatalLongPollException(message: String) : Exception(message)
 
 /** Minimal mutable byte buffer to avoid string-conversion overhead. */
 private class ByteArrayBuilder(initial: Int = 4096) {

@@ -4,15 +4,25 @@ import android.util.Log
 import com.google.protobuf.Message
 import com.vayunmathur.messages.gmessages.PairFlow.ConfigVersion
 import authentication.Authentication.AuthMessage
+import client.Client.AckMessageRequest
 import rpc.Rpc.ActionType
 import rpc.Rpc.BugleRoute
 import rpc.Rpc.MessageType
 import rpc.Rpc.OutgoingRPCData
 import rpc.Rpc.OutgoingRPCMessage
+import rpc.Rpc.OutgoingRPCResponse
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import io.ktor.client.statement.bodyAsBytes
+import com.google.protobuf.ByteString
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -24,6 +34,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *  - Send via [RpcClient.postPbLite].
  *  - Match relay responses (delivered out-of-band via the long-poll)
  *    back to in-flight requests by request-ID.
+ *  - Queue and periodically send message acks to the relay.
  */
 class SessionHandler(
     private val rpc: RpcClient,
@@ -33,6 +44,81 @@ class SessionHandler(
 
     @Volatile
     private var currentSessionId: String = UUID.randomUUID().toString()
+
+    // --- Ack interval (port of Go's ackMap + ackTicker) ---
+    private val ackMapMutex = Mutex()
+    private val ackMap = mutableListOf<String>()
+    private var ackJob: Job? = null
+
+    /**
+     * Queue a message ID for acknowledgment. Called for every incoming
+     * RPC message from the long-poll — matches Go's `queueMessageAck`.
+     */
+    suspend fun queueMessageAck(messageId: String) {
+        ackMapMutex.withLock {
+            if (messageId !in ackMap) {
+                ackMap.add(messageId)
+                Log.d(TAG, "queued ack for $messageId")
+            }
+        }
+    }
+
+    /**
+     * Start the periodic ack sender (every 5 seconds).
+     * Matches Go's `startAckInterval`.
+     */
+    fun startAckInterval(scope: CoroutineScope) {
+        if (ackJob?.isActive == true) return
+        ackJob = scope.launch {
+            while (isActive) {
+                delay(5_000)
+                sendAckRequest()
+            }
+        }
+    }
+
+    /**
+     * Send queued acks to the relay. Port of Go's `sendAckRequest`.
+     */
+    suspend fun sendAckRequest() {
+        val toAck = ackMapMutex.withLock {
+            if (ackMap.isEmpty()) return
+            val copy = ackMap.toList()
+            ackMap.clear()
+            copy
+        }
+        val auth = authProvider()
+        val browser = auth.browser()
+        val ackMessages = toAck.map { reqId ->
+            AckMessageRequest.Message.newBuilder()
+                .setRequestID(reqId)
+                .apply { if (browser != null) setDevice(browser) }
+                .build()
+        }
+        val payload = AckMessageRequest.newBuilder()
+            .setAuthData(
+                AuthMessage.newBuilder()
+                    .setRequestID(UUID.randomUUID().toString())
+                    .setTachyonAuthToken(
+                        com.google.protobuf.ByteString.copyFrom(
+                            auth.tachyonToken() ?: return
+                        )
+                    )
+                    .setNetwork(auth.authNetwork())
+                    .setConfigVersion(PairFlow.ConfigVersion)
+            )
+            .setEmptyArr(util.Util.EmptyArr.getDefaultInstance())
+            .addAllAcks(ackMessages)
+            .build()
+        val url = if (auth.hasCookies())
+            Endpoints.AckMessagesUrlGoogle else Endpoints.AckMessagesUrl
+        try {
+            rpc.postPbLite(url, payload)
+            Log.d(TAG, "sent ${toAck.size} acks")
+        } catch (t: Throwable) {
+            Log.e(TAG, "failed to send acks: ${t.message}")
+        }
+    }
 
     /**
      * Send an RPC and wait up to [timeoutMs] ms for the matching
@@ -44,18 +130,18 @@ class SessionHandler(
         timeoutMs: Long = 30_000,
         messageType: MessageType = MessageType.BUGLE_MESSAGE,
     ): IncomingRpc? {
-        val (requestId, envelope) = buildEnvelope(action, payload, messageType)
+        val params = SendMessageParams(
+            action = action,
+            data = payload,
+            messageType = messageType,
+        )
+        val (requestId, envelope) = buildMessage(params)
         val deferred = CompletableDeferred<IncomingRpc>()
         waiters[requestId] = deferred
         Log.i(TAG, "sendAndWait $action requestID=$requestId")
         try {
-            // Dump the actual pblite payload so we can compare against
-            // what libgm's working implementation sends.
-            val pbliteBody = PbLite.encode(envelope)
-            Log.i(TAG, "sendAndWait envelope: $pbliteBody")
-            val resp = rpc.postPbLite(Endpoints.SendMessageUrl, envelope)
-            // Dump the response body so we can see if the relay is
-            // returning an error in the body (vs. just 200-with-no-result).
+            val url = sendMessageUrl()
+            val resp = rpc.postPbLite(url, envelope)
             val respBytes = try { resp.bodyAsBytes() } catch (_: Throwable) { ByteArray(0) }
             Log.i(TAG, "SendMessage HTTP ${resp.status.value}, response body: ${String(respBytes, Charsets.UTF_8).take(500)}")
             if (resp.status.value !in 200..299) {
@@ -77,12 +163,75 @@ class SessionHandler(
     /** Fire-and-forget: don't register a waiter. Used for things like
      *  ack messages where we don't care about the response. */
     suspend fun sendNoWait(action: ActionType, payload: Message?): Boolean {
-        val (_, envelope) = buildEnvelope(action, payload, MessageType.BUGLE_MESSAGE)
+        val params = SendMessageParams(action = action, data = payload)
+        val (_, envelope) = buildMessage(params)
         return try {
-            val resp = rpc.postPbLite(Endpoints.SendMessageUrl, envelope)
+            val url = sendMessageUrl()
+            val resp = rpc.postPbLite(url, envelope)
             resp.status.value in 200..299
         } catch (t: Throwable) {
             Log.e(TAG, "sendNoWait $action failed", t)
+            false
+        }
+    }
+
+    /**
+     * Send with full params control (DontEncrypt, CustomTTL, etc.).
+     * Used by GAIA pairing and advanced flows.
+     */
+    suspend fun sendMessageWithParams(params: SendMessageParams): IncomingRpc? {
+        val (requestId, envelope) = buildMessage(params)
+        val deferred = CompletableDeferred<IncomingRpc>()
+        waiters[requestId] = deferred
+        try {
+            val url = sendMessageUrl()
+            val resp = rpc.postPbLite(url, envelope)
+            if (resp.status.value !in 200..299) {
+                waiters.remove(requestId)
+                return null
+            }
+            // Short-circuit timeout matching Go's 5s ping-trigger behavior
+            return withTimeoutOrNull(30_000) { deferred.await() }.also {
+                waiters.remove(requestId)
+            }
+        } catch (t: Throwable) {
+            waiters.remove(requestId)
+            return null
+        }
+    }
+
+    /**
+     * Send async — return the deferred so caller can wait with custom timeout.
+     * Used by GAIA pairing.
+     */
+    suspend fun sendAsyncMessage(params: SendMessageParams): Pair<String, CompletableDeferred<IncomingRpc>>? {
+        val (requestId, envelope) = buildMessage(params)
+        val deferred = CompletableDeferred<IncomingRpc>()
+        waiters[requestId] = deferred
+        return try {
+            val url = sendMessageUrl()
+            val resp = rpc.postPbLite(url, envelope)
+            if (resp.status.value !in 200..299) {
+                waiters.remove(requestId)
+                null
+            } else {
+                requestId to deferred
+            }
+        } catch (t: Throwable) {
+            waiters.remove(requestId)
+            null
+        }
+    }
+
+    /** Fire-and-forget with full params. */
+    suspend fun sendMessageNoResponse(params: SendMessageParams): Boolean {
+        val (_, envelope) = buildMessage(params)
+        return try {
+            val url = sendMessageUrl()
+            val resp = rpc.postPbLite(url, envelope)
+            resp.status.value in 200..299
+        } catch (t: Throwable) {
+            Log.e(TAG, "sendMessageNoResponse ${params.action} failed", t)
             false
         }
     }
@@ -96,26 +245,27 @@ class SessionHandler(
     suspend fun setActiveSession(): Boolean {
         currentSessionId = UUID.randomUUID().toString()
         Log.i(TAG, "setActiveSession (GET_UPDATES, requestID=sessionID=$currentSessionId)")
-        val envelope = buildEnvelopeWithFixedRequestId(
+        return sendMessageNoResponse(SendMessageParams(
             action = ActionType.GET_UPDATES,
-            payload = null,
-            messageType = MessageType.BUGLE_MESSAGE,
-            requestId = currentSessionId,
             omitTtl = true,
-        )
-        return try {
-            val resp = rpc.postPbLite(Endpoints.SendMessageUrl, envelope)
-            val body = try { resp.bodyAsBytes() } catch (_: Throwable) { ByteArray(0) }
-            Log.i(TAG, "setActiveSession HTTP ${resp.status.value}, body: ${String(body, Charsets.UTF_8).take(200)}")
-            resp.status.value in 200..299
-        } catch (t: Throwable) {
-            Log.e(TAG, "setActiveSession failed", t)
-            false
-        }
+            requestId = currentSessionId,
+        ))
     }
 
     /** Called by the long-poll dispatcher when a response arrives. */
     fun deliverResponse(requestId: String, msg: IncomingRpc) {
+        val auth = authProvider()
+        if (auth.hasCookies()) {
+            when (msg.action) {
+                ActionType.CREATE_GAIA_PAIRING_CLIENT_INIT,
+                ActionType.CREATE_GAIA_PAIRING_CLIENT_FINISHED -> { /* allow */ }
+                else -> {
+                    if (msg.unencryptedData != null && msg.decryptedData == null) {
+                        return
+                    }
+                }
+            }
+        }
         val waiter = waiters.remove(requestId)
         if (waiter == null) {
             Log.d(TAG, "no waiter for requestID=$requestId (action=${msg.action})")
@@ -129,48 +279,48 @@ class SessionHandler(
     fun cancelAll() {
         waiters.values.forEach { it.cancel() }
         waiters.clear()
+        ackJob?.cancel()
+        ackJob = null
     }
 
-    private fun buildEnvelope(
-        action: ActionType,
-        payload: Message?,
-        messageType: MessageType,
-    ): Pair<String, OutgoingRPCMessage> {
-        val requestId = UUID.randomUUID().toString()
-        return requestId to buildEnvelopeWithFixedRequestId(
-            action = action,
-            payload = payload,
-            messageType = messageType,
-            requestId = requestId,
-            omitTtl = false,
-        )
-    }
-
-    /**
-     * Build an envelope with a caller-chosen [requestId]. Used by
-     * [setActiveSession] so the requestID can be the sessionID — a
-     * libgm-style convention that the relay treats as a wake-up.
-     */
-    private fun buildEnvelopeWithFixedRequestId(
-        action: ActionType,
-        payload: Message?,
-        messageType: MessageType,
-        requestId: String,
-        omitTtl: Boolean,
-    ): OutgoingRPCMessage {
+    private fun sendMessageUrl(): String {
         val auth = authProvider()
+        return if (auth.hasCookies())
+            Endpoints.SendMessageUrlGoogle else Endpoints.SendMessageUrl
+    }
 
-        val serializedPayload = payload?.toByteArray() ?: ByteArray(0)
-        val encryptedPayload = if (serializedPayload.isNotEmpty()) {
-            auth.crypto().encrypt(serializedPayload)
-        } else ByteArray(0)
+    private fun buildMessage(params: SendMessageParams): Pair<String, OutgoingRPCMessage> {
+        val auth = authProvider()
+        val requestId = params.requestId ?: UUID.randomUUID().toString()
+        val msgType = params.messageType
 
-        val rpcData = OutgoingRPCData.newBuilder()
+        val serializedPayload = params.data?.toByteArray() ?: ByteArray(0)
+        val encryptedPayload: ByteArray
+        val unencryptedPayload: ByteArray
+        if (serializedPayload.isNotEmpty()) {
+            if (params.dontEncrypt) {
+                encryptedPayload = ByteArray(0)
+                unencryptedPayload = serializedPayload
+            } else {
+                encryptedPayload = auth.crypto().encrypt(serializedPayload)
+                unencryptedPayload = ByteArray(0)
+            }
+        } else {
+            encryptedPayload = ByteArray(0)
+            unencryptedPayload = ByteArray(0)
+        }
+
+        val rpcDataBuilder = OutgoingRPCData.newBuilder()
             .setRequestID(requestId)
-            .setAction(action)
-            .setEncryptedProtoData(encryptedPayload.toByteString())
+            .setAction(params.action)
             .setSessionID(currentSessionId)
-            .build()
+        if (encryptedPayload.isNotEmpty()) {
+            rpcDataBuilder.setEncryptedProtoData(ByteString.copyFrom(encryptedPayload))
+        }
+        if (unencryptedPayload.isNotEmpty()) {
+            rpcDataBuilder.setUnencryptedProtoData(ByteString.copyFrom(unencryptedPayload))
+        }
+        val rpcData = rpcDataBuilder.build()
 
         val builder = OutgoingRPCMessage.newBuilder()
             .setData(
@@ -181,27 +331,51 @@ class SessionHandler(
                     .setMessageTypeData(
                         OutgoingRPCMessage.Data.Type.newBuilder()
                             .setEmptyArr(util.Util.EmptyArr.getDefaultInstance())
-                            .setMessageType(messageType)
+                            .setMessageType(msgType)
                     )
             )
             .setAuth(
                 OutgoingRPCMessage.Auth.newBuilder()
                     .setRequestID(requestId)
                     .setTachyonAuthToken((auth.tachyonToken()
-                        ?: error("tachyon token is null — not paired or token expired")).toByteString())
+                        ?: error("tachyon token is null — not paired or token expired"))
+                                                .let { ByteString.copyFrom(it) })
                     .setConfigVersion(PairFlow.ConfigVersion)
             )
 
-        if (!omitTtl) builder.setTTL(auth.tachyonTtlUs)
+        // DestRegistrationIDs for GAIA pairing
+        if (!auth.destRegId.isNullOrBlank()) {
+            builder.addDestRegistrationIDs(auth.destRegId)
+        }
+
+        if (params.customTtl != 0L) {
+            builder.setTTL(params.customTtl)
+        } else if (!params.omitTtl) {
+            builder.setTTL(auth.tachyonTtlUs)
+        }
 
         auth.mobile()?.let { builder.setMobile(it) }
-        return builder.build()
+        return requestId to builder.build()
     }
 
     companion object {
         private const val TAG = "GMessages/Session"
     }
 }
+
+/**
+ * Parameters for sending an outgoing message.
+ * Port of Go's `SendMessageParams`.
+ */
+data class SendMessageParams(
+    val action: ActionType,
+    val data: Message? = null,
+    val requestId: String? = null,
+    val omitTtl: Boolean = false,
+    val customTtl: Long = 0L,
+    val dontEncrypt: Boolean = false,
+    val messageType: MessageType = MessageType.BUGLE_MESSAGE,
+)
 
 /**
  * Decoded incoming RPC message — either a paired event, a response to
@@ -216,6 +390,10 @@ data class IncomingRpc(
     val action: ActionType?,
     /** Decrypted payload bytes, if any. */
     val decryptedData: ByteArray?,
+    /** Unencrypted data from the RPC (used by GAIA pairing). */
+    val unencryptedData: ByteArray? = null,
+    /** Whether this message was already seen before the long-poll reconnected. */
+    val isOld: Boolean = false,
     /** Raw decoded pair event (BugleRoute=PairEvent), if applicable. */
     val pairEvent: PairEventKind = PairEventKind.None,
     /** Paired data when [pairEvent] is [PairEventKind.Paired]. */

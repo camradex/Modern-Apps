@@ -9,6 +9,7 @@ import androidx.room.Query
 
 /**
  * Device information for WhatsApp Web companion.
+ * Stores per-device metadata for multi-device support.
  */
 @Entity(tableName = "whatsapp_devices")
 data class WhatsAppDevice(
@@ -18,17 +19,21 @@ data class WhatsAppDevice(
     val pushName: String,
     val platform: String,
     val lastSeen: Long,
+    val jid: String = "", // Full JID including device suffix
 )
 
 /**
- * Session keys for Noise protocol.
+ * Signal Protocol session data for E2E encryption.
+ * Each peer device gets its own session record.
+ * Based on whatsmeow's signal session store.
  */
 @Entity(tableName = "whatsapp_sessions")
 data class WhatsAppSession(
     @PrimaryKey
-    val jid: String, // e.g., "1234567890@s.whatsapp.net"
-    val sessionData: ByteArray,
+    val jid: String, // e.g., "1234567890:0@s.whatsapp.net" (includes device ID)
+    val sessionData: ByteArray, // Serialized Signal session record
     val timestamp: Long,
+    val isPreKey: Boolean = false, // Whether this session was established via pre-key
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -63,6 +68,12 @@ interface WhatsAppDeviceDao {
 interface WhatsAppSessionDao {
     @Query("SELECT * FROM whatsapp_sessions WHERE jid = :jid")
     suspend fun getSession(jid: String): WhatsAppSession?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM whatsapp_sessions WHERE jid = :jid)")
+    suspend fun containsSession(jid: String): Boolean
+
+    @Query("SELECT * FROM whatsapp_sessions")
+    suspend fun getAllSessions(): List<WhatsAppSession>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: WhatsAppSession)

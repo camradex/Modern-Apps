@@ -9,6 +9,9 @@ import org.signal.libsignal.protocol.state.PreKeyStore
 import org.signal.libsignal.protocol.state.SignedPreKeyStore
 import org.signal.libsignal.protocol.state.KyberPreKeyStore
 import org.signal.libsignal.protocol.groups.state.SenderKeyStore
+import org.signal.libsignal.protocol.groups.GroupSessionBuilder
+import org.signal.libsignal.protocol.message.SenderKeyDistributionMessage
+import org.signal.libsignal.protocol.SignalProtocolAddress
 
 class MessageReceiver(
     private val sessionStore: SessionStore,
@@ -20,8 +23,13 @@ class MessageReceiver(
     private val selfAci: String,
     private val deviceId: Int,
     private val onDecrypted: (DecryptedMessage) -> Unit,
+    private val recipientStore: com.vayunmathur.messages.signal.store.SignalRecipientStore? = null,
 ) {
     fun handleRequest(request: WebSocketProtos.WebSocketRequestMessage) {
+        if (request.verb == "PUT" && request.path == "/api/v1/queue/empty") {
+            Log.d(TAG, "Received queue empty notice")
+            return
+        }
         if (request.verb != "PUT" || request.path != "/api/v1/message") {
             Log.d(TAG, "Ignoring request: ${request.verb} ${request.path}")
             return
@@ -53,6 +61,31 @@ class MessageReceiver(
         }
 
         val content = result.content
+
+        if (content != null && content.hasSenderKeyDistributionMessage()) {
+            try {
+                val skdmBytes = content.senderKeyDistributionMessage.toByteArray()
+                val skdm = SenderKeyDistributionMessage(skdmBytes)
+                val senderAddress = SignalProtocolAddress(result.senderAci, result.senderDeviceId)
+                val groupBuilder = GroupSessionBuilder(senderKeyStore)
+                groupBuilder.process(senderAddress, skdm)
+                Log.d(TAG, "Processed SKDM from ${result.senderAci}:${result.senderDeviceId}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to process SKDM from ${result.senderAci}", e)
+            }
+        }
+
+        if (content != null && content.hasDataMessage() && content.dataMessage.profileKey.size() == 32) {
+            try {
+                recipientStore?.storeProfileKey(
+                    result.senderAci,
+                    content.dataMessage.profileKey.toByteArray()
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to store profile key from ${result.senderAci}", e)
+            }
+        }
+
         if (content == null) {
             Log.d(TAG, "No content (server delivery receipt) from ${result.senderAci}")
             onDecrypted(

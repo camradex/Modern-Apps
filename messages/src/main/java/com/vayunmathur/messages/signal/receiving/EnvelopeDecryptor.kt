@@ -28,6 +28,8 @@ object EnvelopeDecryptor {
         val timestamp: Long,
         val serverTimestamp: Long,
         val error: Throwable? = null,
+        val senderE164: String? = null,
+        val unidentified: Boolean = false,
     )
 
     fun decrypt(
@@ -83,7 +85,17 @@ object EnvelopeDecryptor {
                         content = content,
                         timestamp = timestamp,
                         serverTimestamp = serverTimestamp,
+                        senderE164 = result.senderE164.orElse(null),
+                        unidentified = true,
                     )
+                }
+
+                SignalServiceProtos.Envelope.Type.PLAINTEXT_CONTENT -> {
+                    val plaintext = stripPadding(envelope.content.toByteArray())
+                    val content = SignalServiceProtos.Content.newBuilder()
+                        .setDecryptionErrorMessage(com.google.protobuf.ByteString.copyFrom(plaintext))
+                        .build()
+                    DecryptionResult(senderAci, senderDeviceId, content, timestamp, serverTimestamp)
                 }
 
                 SignalServiceProtos.Envelope.Type.SERVER_DELIVERY_RECEIPT -> {
@@ -106,6 +118,6 @@ object EnvelopeDecryptor {
         var i = padded.size - 1
         while (i >= 0 && padded[i] == 0.toByte()) i--
         if (i >= 0 && padded[i] == 0x80.toByte()) return padded.copyOfRange(0, i)
-        return padded
+        throw IllegalArgumentException("Invalid padding: no 0x80 marker found")
     }
 }

@@ -16,9 +16,7 @@ import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsBytes
-import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
-import io.ktor.http.contentType
 
 /**
  * Port of `pkg/libgm/media.go` (mautrix-gmessages).
@@ -91,7 +89,7 @@ class Media(private val authProvider: () -> AuthData) {
                                 ?: error("tachyon token is null — not paired or token expired")
                         )
                     )
-                    .setNetwork(PairFlow.QrNetwork)
+                    .setNetwork(auth.authNetwork())
                     .setConfigVersion(PairFlow.ConfigVersion)
             )
         auth.mobile()?.let { req.setMobile(it) }
@@ -104,7 +102,6 @@ class Media(private val authProvider: () -> AuthData) {
         val sizeStr = encrypted.size.toString()
         val resp: HttpResponse = http.request(Endpoints.UploadMediaUrl) {
             method = HttpMethod.Post
-            contentType(ContentType.parse("application/x-www-form-urlencoded;charset=UTF-8"))
             uploadHeaders(
                 contentLength = sizeStr,
                 command = "start",
@@ -144,24 +141,19 @@ class Media(private val authProvider: () -> AuthData) {
             error("finalize-upload HTTP ${resp.status.value}")
         }
         var bodyBytes = resp.bodyAsBytes()
-        // The response may be base64-encoded protobuf or raw protobuf.
-        // Use Content-Type to decide rather than inspecting the bytes.
-        val isBinaryContent = resp.contentType()?.let { ct ->
-            ct.contentType == "application"
-        } ?: false
-        if (!isBinaryContent) {
-            bodyBytes = runCatching {
-                Base64.decode(bodyBytes, Base64.NO_WRAP)
-            }.getOrDefault(bodyBytes)
+        val parsed = try {
+            UploadMediaResponse.parseFrom(bodyBytes)
+        } catch (_: Throwable) {
+            bodyBytes = Base64.decode(bodyBytes, Base64.NO_WRAP)
+            UploadMediaResponse.parseFrom(bodyBytes)
         }
-        val parsed = UploadMediaResponse.parseFrom(bodyBytes)
         return FinalizedUpload(
             mediaID = parsed.media.mediaID,
             mediaNumber = parsed.media.mediaNumber,
         )
     }
 
-    companion object {
+    /**
      * Apply the upload header bundle (port of util/func.go.NewMediaUploadHeaders).
      * The relay's anti-abuse layer inspects these alongside the URL +
      * Origin to decide whether the request looks like a real browser.
@@ -180,6 +172,7 @@ class Media(private val authProvider: () -> AuthData) {
             append("sec-ch-ua-mobile", Endpoints.SecUAMobile)
             append("user-agent", Endpoints.UserAgent)
             if (contentMime != null) append("x-goog-upload-header-content-type", contentMime)
+            append("content-type", "application/x-www-form-urlencoded;charset=UTF-8")
             if (command != null) append("x-goog-upload-command", command)
             if (offset != null) append("x-goog-upload-offset", offset)
             append("sec-ch-ua-platform", "\"${Endpoints.UAPlatform}\"")
@@ -189,6 +182,7 @@ class Media(private val authProvider: () -> AuthData) {
             append("sec-fetch-mode", "cors")
             append("sec-fetch-dest", "empty")
             append("referer", "https://messages.google.com/")
+            append("accept-encoding", "gzip, deflate, br")
             append("accept-language", "en-US,en;q=0.9")
         }
     }
@@ -212,13 +206,34 @@ class Media(private val authProvider: () -> AuthData) {
         "video/webm" -> MediaFormats.VIDEO_WEBM
         "video/x-matroska" -> MediaFormats.VIDEO_MKV
         "audio/aac" -> MediaFormats.AUDIO_AAC
-        "audio/mp4" -> MediaFormats.AUDIO_MP4
+        "audio/amr" -> MediaFormats.AUDIO_AMR
+        "audio/mp3" -> MediaFormats.AUDIO_MP3
         "audio/mpeg" -> MediaFormats.AUDIO_MPEG
+        "audio/mpg" -> MediaFormats.AUDIO_MPG
+        "audio/mp4" -> MediaFormats.AUDIO_MP4
+        "audio/mp4-latm" -> MediaFormats.AUDIO_MP4_LATM
+        "audio/3gpp" -> MediaFormats.AUDIO_3GPP
         "audio/ogg" -> MediaFormats.AUDIO_OGG
+        "text/vcard" -> MediaFormats.TEXT_VCARD
+        "application/pdf" -> MediaFormats.APP_PDF
+        "text/plain" -> MediaFormats.APP_TXT
+        "text/html" -> MediaFormats.APP_HTML
+        "application/msword" -> MediaFormats.APP_DOC
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> MediaFormats.APP_DOCX
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> MediaFormats.APP_PPTX
+        "application/vnd.ms-powerpoint" -> MediaFormats.APP_PPT
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> MediaFormats.APP_XLSX
+        "application/vnd.ms-excel" -> MediaFormats.APP_XLS
+        "application/vnd.android.package-archive" -> MediaFormats.APP_APK
+        "application/zip" -> MediaFormats.APP_ZIP
+        "application/java-archive" -> MediaFormats.APP_JAR
+        "text/x-calendar" -> MediaFormats.CAL_TEXT_VCALENDAR
+        "text/calendar" -> MediaFormats.CAL_TEXT_CALENDAR
         else -> when (mime.substringBefore('/').lowercase()) {
             "image" -> MediaFormats.IMAGE_UNSPECIFIED
             "video" -> MediaFormats.VIDEO_UNSPECIFIED
             "audio" -> MediaFormats.AUDIO_UNSPECIFIED
+            "text" -> MediaFormats.APP_TXT
             else -> MediaFormats.APP_UNSPECIFIED
         }
     }

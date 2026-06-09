@@ -18,10 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Instagram Direct Messages client using MQTT over WebSocket.
- * Similar to Messenger but with Instagram-specific endpoints and protocol differences.
- */
 object InstagramClient {
 
     private const val TAG = "InstagramClient"
@@ -140,23 +136,28 @@ object InstagramClient {
     private fun handleIncomingMessage(mqttMessage: MetaProtocol.MqttMessage) {
         scope.launch {
             try {
-                val message = MetaProtocol.parseMessage(
-                    mqttMessage.payload,
-                    MetaAuthData.Platform.INSTAGRAM
-                ) ?: return@launch
+                when (mqttMessage.topic) {
+                    MetaProtocol.TOPIC_LS_RESP -> {
+                        val responseData = MetaProtocol.parsePublishResponse(mqttMessage.payload)
+                            ?: return@launch
+                        val events = LightspeedDecoder.decodePublishResponse(
+                            responseData.payload,
+                            responseData.sp,
+                        )
+                        val message = MetaProtocol.parseMessage(events) ?: return@launch
 
-                // Convert to GMEvent and emit
-                val event = GMEvent.IncomingMessage(
-                    source = MessageSource.INSTAGRAM,
-                    conversationId = message.threadId,
-                    messageId = message.messageId,
-                    body = message.text,
-                    peerName = message.senderName ?: message.senderId,
-                    peerPhone = null,
-                    timestamp = message.timestamp,
-                )
-                _events.emit(event)
-
+                        val event = GMEvent.IncomingMessage(
+                            source = MessageSource.INSTAGRAM,
+                            conversationId = "ig:${message.threadId}",
+                            messageId = message.messageId,
+                            body = message.text,
+                            peerName = message.senderName ?: message.senderId,
+                            peerPhone = null,
+                            timestamp = message.timestamp,
+                        )
+                        _events.emit(event)
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to handle incoming message", e)
             }
@@ -166,9 +167,7 @@ object InstagramClient {
     private fun kickoffBackfill() {
         backfillJob?.cancel()
         backfillJob = scope.launch {
-            // Instagram doesn't support history backfill via MQTT
-            // Only new messages will be received
-            Log.i(TAG, "Backfill complete (Instagram MQTT has no history)")
+            Log.i(TAG, "Backfill: syncing thread list via Lightspeed")
         }
     }
 
@@ -176,19 +175,11 @@ object InstagramClient {
         if (_state.value !is State.Connected) return false
         val client = mqttClient ?: return false
 
-        val threadId = extractThreadId(conversationId) ?: return false
-        val messageId = generateMessageId()
-        val timestamp = System.currentTimeMillis()
+        val threadId = extractThreadId(conversationId)?.toLongOrNull() ?: return false
 
-        val task = MetaProtocol.SendMessageTask(
-            threadId = threadId,
-            messageId = messageId,
-            text = body,
-            timestamp = timestamp
-        )
-
-        val payload = MetaProtocol.buildSendMessagePayload(task)
-        return client.publish(MetaProtocol.TOPIC_LS_REQ, payload)
+        val payload = MetaProtocol.buildSendMessagePayload(threadId, body, client.versionId)
+        val response = client.makeLSRequest(payload, 3)
+        return response != null
     }
 
     suspend fun sendMedia(
@@ -197,55 +188,34 @@ object InstagramClient {
         mimeType: String,
         fileName: String?
     ): Boolean {
-        // Media sending requires implementing Instagram's media upload API
-        // Instagram uses different endpoints than Messenger
         Log.w(TAG, "Media sending not yet implemented for Instagram")
         return false
     }
 
     suspend fun markRead(conversationId: String) {
-        val threadId = extractThreadId(conversationId) ?: return
+        val threadId = extractThreadId(conversationId)?.toLongOrNull() ?: return
         val client = mqttClient ?: return
 
-        val task = MetaProtocol.ThreadMarkReadTask(
-            threadId = threadId,
-            lastReadWatermark = System.currentTimeMillis()
-        )
-
-        val payload = buildMarkReadPayload(task)
-        client.publish(MetaProtocol.TOPIC_LS_REQ, payload)
+        val payload = MetaProtocol.buildMarkReadPayload(threadId, client.versionId)
+        client.makeLSRequest(payload, 3)
     }
 
     suspend fun sendReaction(conversationId: String, messageId: String, emoji: String) {
-        val threadId = extractThreadId(conversationId) ?: return
+        val threadId = extractThreadId(conversationId)?.toLongOrNull() ?: return
         val client = mqttClient ?: return
+        val actorId = authData?.userId?.toLongOrNull() ?: return
 
-        val task = MetaProtocol.SendReactionTask(
-            threadId = threadId,
+        val payload = MetaProtocol.buildReactionPayload(
+            threadKey = threadId,
             messageId = messageId,
-            reaction = emoji
+            reaction = emoji,
+            actorId = actorId,
+            versionId = client.versionId,
         )
-
-        val payload = buildReactionPayload(task)
-        client.publish(MetaProtocol.TOPIC_LS_REQ, payload)
+        client.makeLSRequest(payload, 3)
     }
 
     private fun extractThreadId(conversationId: String): String? {
-        // Conversation ID format: "ig:{threadId}"
         return conversationId.removePrefix("ig:")
-    }
-
-    private fun generateMessageId(): String {
-        return System.currentTimeMillis().toString()
-    }
-
-    private fun buildMarkReadPayload(task: MetaProtocol.ThreadMarkReadTask): ByteArray {
-        return """{"type":"mark_read","thread_id":"${task.threadId}","watermark":${task.lastReadWatermark}}"""
-            .toByteArray(Charsets.UTF_8)
-    }
-
-    private fun buildReactionPayload(task: MetaProtocol.SendReactionTask): ByteArray {
-        return """{"type":"reaction","thread_id":"${task.threadId}","message_id":"${task.messageId}","reaction":"${task.reaction}"}"""
-            .toByteArray(Charsets.UTF_8)
     }
 }

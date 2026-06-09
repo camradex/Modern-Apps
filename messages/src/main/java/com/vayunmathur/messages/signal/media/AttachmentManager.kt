@@ -26,11 +26,14 @@ object AttachmentManager {
             val macKey = ByteArray(32).also { random.nextBytes(it) }
             val iv = ByteArray(16).also { random.nextBytes(it) }
 
-            val encrypted = encryptAttachment(data, aesKey, macKey, iv)
+            val paddedLen = padAttachmentSize(data.size)
+            val paddedData = ByteArray(paddedLen)
+            data.copyInto(paddedData)
+
+            val encrypted = encryptAttachment(paddedData, aesKey, macKey, iv)
             val digest = MessageDigest.getInstance("SHA-256").digest(encrypted)
 
             val formResponse = SignalHttpClient.request(
-                host = SignalHttpClient.CDN1_HOST,
                 method = "GET",
                 path = "/v4/attachments/form/upload",
             )
@@ -38,7 +41,8 @@ object AttachmentManager {
 
             val formJson = JSONObject(formResponse.body!!.string())
             val uploadUrl = formJson.getString("signedUploadLocation")
-            val cdnId = formJson.getLong("cdn")
+            val cdnNumber = formJson.optInt("cdn", 2)
+            val cdnKey = formJson.optString("key", "")
 
             val uploadResponse = SignalHttpClient.request(
                 host = uploadUrl.substringAfter("://").substringBefore("/"),
@@ -50,7 +54,8 @@ object AttachmentManager {
             if (!uploadResponse.isSuccessful) return null
 
             SignalServiceProtos.AttachmentPointer.newBuilder()
-                .setCdnId(cdnId)
+                .setCdnKey(cdnKey)
+                .setCdnNumber(cdnNumber)
                 .setKey(com.google.protobuf.ByteString.copyFrom(aesKey + macKey))
                 .setDigest(com.google.protobuf.ByteString.copyFrom(digest))
                 .setSize(data.size)
@@ -77,5 +82,12 @@ object AttachmentManager {
         val hmac = mac.doFinal()
 
         return iv + ciphertext + hmac
+    }
+
+    private fun padAttachmentSize(size: Int): Int {
+        if (size <= 541) return 541
+        val logSize = Math.log(size.toDouble()) / Math.log(1.05)
+        val rounded = Math.ceil(logSize)
+        return Math.floor(Math.pow(1.05, rounded)).toInt().coerceAtLeast(size)
     }
 }

@@ -27,12 +27,47 @@ data class UpdateEditMessage(val message: TlObject, val pts: Int, val ptsCount: 
 }
 
 data class UpdateReadHistoryInbox(val peer: TlObject, val maxId: Int, val pts: Int) : TlObject {
-    override val typeId = 0x9c974fdf.toInt()
+    override val typeId = 0x9e84bc99.toInt()
     override fun encode(buf: TlBuffer) {}
 }
 
 data class UpdateReadChannelInbox(val channelId: Long, val maxId: Int) : TlObject {
     override val typeId = 0x922e6e10.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateEditChannelMessage(val message: TlObject, val pts: Int, val ptsCount: Int) : TlObject {
+    override val typeId = 0x1b3f4df7.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateDeleteChannelMessages(val channelId: Long, val messages: List<Int>, val pts: Int, val ptsCount: Int) : TlObject {
+    override val typeId = 0xc32d5b12.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateReadHistoryOutbox(val peer: TlObject, val maxId: Int, val pts: Int) : TlObject {
+    override val typeId = 0x2f2f21bf.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateChannel(val channelId: Long) : TlObject {
+    override val typeId = 0x635b4c09.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateUserTyping(val userId: Long, val actionTypeId: Int) : TlObject {
+    override val typeId = 0xc01e857f.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateChatUserTyping(val chatId: Long, val fromId: TlObject, val actionTypeId: Int) : TlObject {
+    override val typeId = 0x83487af0.toInt()
+    override fun encode(buf: TlBuffer) {}
+}
+
+data class UpdateChannelUserTyping(val channelId: Long, val topMsgId: Int, val fromId: TlObject, val actionTypeId: Int) : TlObject {
+    override val typeId = 0x8c88c923.toInt()
     override fun encode(buf: TlBuffer) {}
 }
 
@@ -97,6 +132,6 @@ data class UpdatesDifference(
     val users: List<TlObject>,
     val state: UpdatesState,
 ) : TlObject {
-    override val typeId = 0x00f49d37.toInt()
+    override val typeId = 0x00f49ca0.toInt()
     override fun encode(buf: TlBuffer) {}
 }

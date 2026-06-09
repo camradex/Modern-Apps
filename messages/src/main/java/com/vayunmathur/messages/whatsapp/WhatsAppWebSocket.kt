@@ -17,55 +17,55 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * WebSocket client for WhatsApp Web.
- * Handles connection, reconnection, Noise protocol handshake, and message framing.
- * 
+ * OkHttp WebSocket client for WhatsApp Web.
+ * Handles Noise_XX_25519_AESGCM_SHA256 handshake, frame processing,
+ * and encrypted post-handshake communication.
+ *
  * Frame format (from whatsmeow/socket/framesocket.go):
- * - Binary WebSocket frames only
- * - Frame: [header?][3-byte big-endian length][protobuf payload]
- * - Header is "WA" + version for first frame after handshake
+ *   [header?][3-byte big-endian length][payload]
+ *   Header ('WA' + version) is sent only on the first frame.
+ *
+ * Reference: whatsmeow/socket/framesocket.go, noisehandshake.go, noisesocket.go
  */
 class WhatsAppWebSocket(
     private val authData: WhatsAppAuthData?,
 ) {
     private companion object {
         const val TAG = "WhatsAppWebSocket"
-        const val PING_INTERVAL_MS = 30000L
-        const val RECONNECT_DELAY_MS = 5000L
-        const val HANDSHAKE_TIMEOUT_MS = 20000L
+        const val KEEPALIVE_INTERVAL_MIN_MS = 20_000L
+        const val KEEPALIVE_INTERVAL_MAX_MS = 30_000L
+        const val KEEPALIVE_RESPONSE_DEADLINE_MS = 10_000L
+        const val KEEPALIVE_MAX_FAIL_MS = 180_000L
+        const val RECONNECT_DELAY_MS = 5_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
-    // WhatsApp Web requires modern TLS configuration
-    // SSLv3 alert close_notify means the server is terminating the TLS handshake.
-    // This happens when:
-    // 1. SNI (Server Name Indication) is missing or incorrect - OkHttp sets this automatically from URL
-    // 2. The server is blocking the connection based on fingerprinting
-    // 3. WhatsApp may require specific TLS cipher suites or extensions
-    // 
-    // The whatsmeow Go client uses github.com/coder/websocket which uses Go's crypto/tls.
-    // OkHttp on Android should be compatible, but WhatsApp may be blocking based on JA3 fingerprint.
+
     private val client = OkHttpClient.Builder()
-        .pingInterval(PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.SECONDS) // indefinite read for WebSocket
         .writeTimeout(30, TimeUnit.SECONDS)
-        // OkHttp automatically sets SNI from the URL hostname
-        // TLS 1.2+ is used by default on modern Android
         .build()
 
     private var webSocket: WebSocket? = null
     private var reconnectJob: Job? = null
-    private var pingJob: Job? = null
+    private var keepaliveJob: Job? = null
     private var handshakeJob: Job? = null
-    
+
     // Noise protocol state
     private var noiseHandshake: WhatsAppProtocol.NoiseHandshake? = null
     private var noiseSocket: NoiseSocket? = null
     private var isHandshakeComplete = false
+    private var ephemeralPrivateKey: ByteArray? = null
+    private var headerSent = false
+    private var serverHeaderReceived = false
+
+    // IQ request counter for keepalive
+    private val iqCounter = AtomicInteger(0)
+    private var lastKeepaliveSuccess = System.currentTimeMillis()
 
     private val _messages = MutableSharedFlow<ByteArray>(extraBufferCapacity = 256)
     val messages: SharedFlow<ByteArray> = _messages.asSharedFlow()
@@ -80,21 +80,14 @@ class WhatsAppWebSocket(
     }
 
     fun connect() {
-        scope.launch {
-            _connectionState.emit(ConnectionState.Connecting)
-        }
+        scope.launch { _connectionState.emit(ConnectionState.Connecting) }
+        headerSent = false
+        serverHeaderReceived = false
 
-        // WhatsApp requires specific TLS configuration and headers
-        // The SSLv3 alert usually indicates a protocol mismatch or missing headers
-        // Note: Sec-WebSocket-* headers are managed by OkHttp and cannot be set manually
         val request = Request.Builder()
             .url(WhatsAppProtocol.WS_URL)
-            .header("Origin", "https://web.whatsapp.com")
+            .header("Origin", WhatsAppProtocol.WS_ORIGIN)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("Accept-Encoding", "gzip, deflate, br")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
@@ -104,48 +97,42 @@ class WhatsAppWebSocket(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                val data = bytes.toByteArray()
+                var rawData = bytes.toByteArray()
+                if (!serverHeaderReceived) {
+                    serverHeaderReceived = true
+                    if (rawData.size >= WhatsAppProtocol.WA_CONN_HEADER.size &&
+                        rawData[0] == 'W'.code.toByte() && rawData[1] == 'A'.code.toByte()) {
+                        rawData = rawData.copyOfRange(WhatsAppProtocol.WA_CONN_HEADER.size, rawData.size)
+                    }
+                }
                 scope.launch {
                     if (!isHandshakeComplete) {
-                        handleHandshakeMessage(data)
+                        val framePayload = WhatsAppProtocol.extractFrame(rawData)
+                        handleHandshakeMessage(framePayload)
                     } else {
-                        // Decrypt and emit the message
-                        noiseSocket?.let { socket ->
-                            try {
-                                val plaintext = socket.decrypt(data)
-                                _messages.emit(plaintext)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to decrypt message", e)
-                            }
-                        }
+                        processIncomingFrames(rawData)
                     }
                 }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // WhatsApp uses binary frames, but handle text for debugging
-                Log.d(TAG, "Received text message: $text")
+                Log.d(TAG, "Received text message (unexpected): $text")
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "WebSocket closing: $code $reason")
                 webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "WebSocket closed: $code $reason")
-                scope.launch {
-                    _connectionState.emit(ConnectionState.Disconnected("Closed: $reason"))
-                }
+                scope.launch { _connectionState.emit(ConnectionState.Disconnected("Closed: $reason")) }
                 cleanup()
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure", t)
-                scope.launch {
-                    _connectionState.emit(ConnectionState.Disconnected("Failure: ${t.message}"))
-                }
+                scope.launch { _connectionState.emit(ConnectionState.Disconnected("Failure: ${t.message}")) }
                 cleanup()
                 scheduleReconnect()
             }
@@ -156,117 +143,199 @@ class WhatsAppWebSocket(
         handshakeJob?.cancel()
         handshakeJob = scope.launch {
             try {
-                // Initialize Noise handshake
-                // Pattern: Noise_XX_25519_AESGCM_SHA256
-                // From whatsmeow/handshake.go line 30
-                // Header: "WA" + version (from whatsmeow/socket/constants.go)
-                // WAConnHeader = {'W', 'A', 6, 2} where 6 is WAMagicValue and 2 is DictVersion
-                val waHeader = byteArrayOf('W'.code.toByte(), 'A'.code.toByte(), 6, 2)
                 noiseHandshake = WhatsAppProtocol.NoiseHandshake().apply {
-                    start("Noise_XX_25519_AESGCM_SHA256", waHeader)
+                    start(WhatsAppProtocol.NOISE_START_PATTERN, WhatsAppProtocol.WA_CONN_HEADER)
                 }
 
-                // Generate ephemeral key pair
-                val (ephemeralPriv, ephemeralPub) = WhatsAppProtocol.generateX25519KeyPair()
-                
-                // Build ClientHello using protobuf
-                // From whatsmeow/handshake.go lines 34-38:
-                // HandshakeMessage with ClientHello containing ephemeral public key
-                val clientHello = buildClientHello(ephemeralPub)
-                
-                // Send handshake message with WA header and frame length prefix
-                // From whatsmeow/socket/framesocket.go lines 130-149:
-                // Frame format: [header][3-byte length][protobuf payload]
-                // Header is sent only once (WA header)
-                val framedMessage = buildFramedMessage(clientHello, waHeader)
+                val (ephPriv, ephPub) = WhatsAppProtocol.generateX25519KeyPair()
+                ephemeralPrivateKey = ephPriv
+
+                noiseHandshake?.authenticate(ephPub)
+
+                val handshakeMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppHandshakeProto.HandshakeMessage.newBuilder()
+                    .setClientHello(
+                        com.vayunmathur.messages.whatsapp.proto.WhatsAppHandshakeProto.HandshakeMessage.ClientHello.newBuilder()
+                            .setEphemeral(com.google.protobuf.ByteString.copyFrom(ephPub))
+                            .build()
+                    )
+                    .build()
+                val clientHelloBytes = handshakeMessage.toByteArray()
+
+                val framedMessage = WhatsAppProtocol.buildFramedMessage(
+                    clientHelloBytes,
+                    WhatsAppProtocol.WA_CONN_HEADER
+                )
+                headerSent = true
                 webSocket?.send(ByteString.of(*framedMessage))
-                
-                Log.i(TAG, "Sent ClientHello (${clientHello.size} bytes), waiting for ServerHello")
-                
+
+                Log.i(TAG, "Sent ClientHello (${clientHelloBytes.size} bytes)")
             } catch (e: Exception) {
-                Log.e(TAG, "Handshake failed", e)
-                scope.launch {
-                    _connectionState.emit(ConnectionState.Disconnected("Handshake failed: ${e.message}"))
-                }
+                Log.e(TAG, "Handshake initiation failed", e)
+                scope.launch { _connectionState.emit(ConnectionState.Disconnected("Handshake failed: ${e.message}")) }
                 disconnect()
             }
         }
     }
-    
-    /**
-     * Build framed message with header and 3-byte length prefix
-     * From whatsmeow/socket/framesocket.go SendFrame()
-     */
-    private fun buildFramedMessage(data: ByteArray, header: ByteArray?): ByteArray {
-        val headerLength = header?.size ?: 0
-        val dataLength = data.size
-        val frame = ByteArray(headerLength + 3 + dataLength)
-        
-        var offset = 0
-        // Copy header if present (only sent once)
-        if (header != null) {
-            System.arraycopy(header, 0, frame, offset, headerLength)
-            offset += headerLength
-        }
-        
-        // 3-byte big-endian length
-        frame[offset] = (dataLength shr 16).toByte()
-        frame[offset + 1] = (dataLength shr 8).toByte()
-        frame[offset + 2] = dataLength.toByte()
-        offset += 3
-        
-        // Copy payload
-        System.arraycopy(data, 0, frame, offset, dataLength)
-        
-        return frame
-    }
 
     private fun handleHandshakeMessage(data: ByteArray) {
-        Log.i(TAG, "Received handshake response (${data.size} bytes)")
-        
         try {
             val handshakeMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppHandshakeProto.HandshakeMessage.parseFrom(data)
             val serverHello = handshakeMessage.serverHello
-            
             if (serverHello == null) {
                 Log.e(TAG, "ServerHello is null")
                 scope.launch { _connectionState.emit(ConnectionState.Disconnected("Invalid ServerHello")) }
                 disconnect()
                 return
             }
-            
-            val handshake = noiseHandshake ?: run {
-                Log.e(TAG, "Noise handshake not initialized")
-                return
-            }
 
-            // Process ServerHello and derive keys (mirrors WebViewWebSocket logic)
+            val handshake = noiseHandshake ?: return
+            val ephPriv = ephemeralPrivateKey ?: return
+
             val serverEphemeral = serverHello.ephemeral.toByteArray()
             val serverStaticCiphertext = serverHello.getStatic().toByteArray()
             val certificateCiphertext = serverHello.payload.toByteArray()
-            
-            // TODO: full ServerHello processing would go here
-            // For now, derive keys and create encrypted socket
-            val (writeKey, readKey) = handshake.finish()
-            
-            isHandshakeComplete = true
-            noiseSocket = NoiseSocket(writeKey, readKey)
-            
-            scope.launch {
-                _connectionState.emit(ConnectionState.Connected)
+
+            if (serverEphemeral.size != 32 || serverStaticCiphertext.isEmpty() || certificateCiphertext.isEmpty()) {
+                Log.e(TAG, "Missing parts of ServerHello")
+                disconnect()
+                return
             }
-            startPing()
+
+            // Process ServerHello (whatsmeow/handshake.go lines 65-87)
+            handshake.authenticate(serverEphemeral)
+            handshake.mixSharedSecretIntoKey(ephPriv, serverEphemeral)
+
+            val staticDecrypted = handshake.decrypt(serverStaticCiphertext)
+            if (staticDecrypted.size != 32) {
+                Log.e(TAG, "Invalid static key length: ${staticDecrypted.size}")
+                disconnect()
+                return
+            }
+
+            handshake.mixSharedSecretIntoKey(ephPriv, staticDecrypted)
+
+            val certDecrypted = handshake.decrypt(certificateCiphertext)
+            Log.d(TAG, "Certificate decrypted (${certDecrypted.size} bytes)")
+
+            // Send ClientFinish (whatsmeow/handshake.go lines 89-119)
+            val noiseKeyPair = if (authData != null) {
+                Pair(
+                    android.util.Base64.decode(authData.noisePrivateKey, android.util.Base64.NO_WRAP),
+                    android.util.Base64.decode(authData.noisePublicKey, android.util.Base64.NO_WRAP)
+                )
+            } else {
+                WhatsAppProtocol.generateX25519KeyPair()
+            }
+            val (noisePriv, noisePub) = noiseKeyPair
+
+            val encryptedPubkey = handshake.encrypt(noisePub)
+            handshake.mixSharedSecretIntoKey(noisePriv, serverEphemeral)
+
+            val clientPayloadBytes = buildClientPayload()
+            val encryptedPayload = handshake.encrypt(clientPayloadBytes)
+
+            val clientFinishMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppHandshakeProto.HandshakeMessage.newBuilder()
+                .setClientFinish(
+                    com.vayunmathur.messages.whatsapp.proto.WhatsAppHandshakeProto.HandshakeMessage.ClientFinish.newBuilder()
+                        .setStatic(com.google.protobuf.ByteString.copyFrom(encryptedPubkey))
+                        .setPayload(com.google.protobuf.ByteString.copyFrom(encryptedPayload))
+                        .build()
+                )
+                .build()
+            val clientFinishBytes = clientFinishMessage.toByteArray()
+
+            // No header on subsequent frames
+            val framedFinish = WhatsAppProtocol.buildFramedMessage(clientFinishBytes, null)
+            webSocket?.send(ByteString.of(*framedFinish))
+            Log.i(TAG, "Sent ClientFinish (${clientFinishBytes.size} bytes)")
+
+            // Derive final encryption keys
+            val (writeKey, readKey) = handshake.finish()
+            noiseSocket = NoiseSocket(writeKey, readKey)
+            isHandshakeComplete = true
+
+            Log.i(TAG, "Noise handshake complete")
+            scope.launch { _connectionState.emit(ConnectionState.Connected) }
+            startKeepalive()
+
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to process handshake response", e)
+            Log.e(TAG, "Handshake processing failed", e)
             scope.launch { _connectionState.emit(ConnectionState.Disconnected("Handshake failed: ${e.message}")) }
             disconnect()
         }
     }
 
-    private fun buildClientHello(ephemeralPub: ByteArray): ByteArray {
-        // Simplified ClientHello - real implementation uses protobuf
-        // waWa6.HandshakeMessage with ClientHello containing ephemeral key
-        return ephemeralPub
+    private fun buildClientPayload(): ByteArray {
+        val versionProto = com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.UserAgent.AppVersion.newBuilder()
+            .setPrimary(WhatsAppProtocol.WA_VERSION[0])
+            .setSecondary(WhatsAppProtocol.WA_VERSION[1])
+            .setTertiary(WhatsAppProtocol.WA_VERSION[2])
+            .build()
+
+        val userAgent = com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.UserAgent.newBuilder()
+            .setPlatform(com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.UserAgent.Platform.WEB)
+            .setReleaseChannel(com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.UserAgent.ReleaseChannel.RELEASE)
+            .setAppVersion(versionProto)
+            .setMcc("000")
+            .setMnc("000")
+            .setOsVersion("0.1")
+            .setManufacturer("")
+            .setDevice("Desktop")
+            .setOsBuildNumber("0.1")
+            .setLocaleLanguageIso6391("en")
+            .setLocaleCountryIso31661Alpha2("US")
+            .build()
+
+        val webInfo = com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.WebInfo.newBuilder()
+            .setWebSubPlatform(com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.WebInfo.WebSubPlatform.WEB_BROWSER)
+            .build()
+
+        val payloadBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.newBuilder()
+            .setUserAgent(userAgent)
+            .setWebInfo(webInfo)
+            .setConnectType(com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.ConnectType.WIFI_UNKNOWN)
+            .setConnectReason(com.vayunmathur.messages.whatsapp.proto.WhatsAppPayloadProto.ClientPayload.ConnectReason.USER_ACTIVATED)
+
+        if (authData != null) {
+            // Login payload (existing device)
+            val widUser = authData.wid.substringBefore("@")
+            payloadBuilder.username = widUser.toLongOrNull() ?: 0L
+            payloadBuilder.device = authData.deviceId
+            payloadBuilder.passive = true
+            payloadBuilder.pull = true
+        } else {
+            // Registration payload (new device pairing)
+            payloadBuilder.passive = false
+            payloadBuilder.pull = false
+        }
+
+        return payloadBuilder.build().toByteArray()
+    }
+
+    /**
+     * Process incoming post-handshake frames.
+     * Strips 3-byte length prefix, decrypts, and emits decoded node.
+     */
+    private suspend fun processIncomingFrames(rawData: ByteArray) {
+        var data = rawData
+        while (data.size >= WhatsAppProtocol.FRAME_LENGTH_SIZE) {
+            val length = ((data[0].toInt() and 0xFF) shl 16) or
+                    ((data[1].toInt() and 0xFF) shl 8) or
+                    (data[2].toInt() and 0xFF)
+            if (data.size < WhatsAppProtocol.FRAME_LENGTH_SIZE + length) break
+
+            val frameData = data.copyOfRange(WhatsAppProtocol.FRAME_LENGTH_SIZE, WhatsAppProtocol.FRAME_LENGTH_SIZE + length)
+            data = data.copyOfRange(WhatsAppProtocol.FRAME_LENGTH_SIZE + length, data.size)
+
+            noiseSocket?.let { socket ->
+                try {
+                    val plaintext = socket.decrypt(frameData)
+                    _messages.emit(plaintext)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to decrypt frame", e)
+                }
+            }
+        }
     }
 
     fun disconnect() {
@@ -276,37 +345,50 @@ class WhatsAppWebSocket(
     }
 
     private fun cleanup() {
-        pingJob?.cancel()
+        keepaliveJob?.cancel()
         reconnectJob?.cancel()
         handshakeJob?.cancel()
         isHandshakeComplete = false
         noiseHandshake = null
         noiseSocket = null
+        ephemeralPrivateKey = null
+        serverHeaderReceived = false
     }
 
     fun send(data: ByteArray): Boolean {
-        return if (isHandshakeComplete && noiseSocket != null) {
-            // Encrypt data before sending
-            try {
-                val encrypted = noiseSocket!!.encrypt(data)
-                webSocket?.send(ByteString.of(*encrypted)) ?: false
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to encrypt message", e)
-                false
-            }
-        } else {
-            // Send unencrypted (during handshake)
-            webSocket?.send(ByteString.of(*data)) ?: false
+        if (!isHandshakeComplete) return false
+        val socket = noiseSocket ?: return false
+        return try {
+            val encrypted = socket.encrypt(data)
+            val framed = WhatsAppProtocol.buildFramedMessage(encrypted, null)
+            webSocket?.send(ByteString.of(*framed)) ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send", e)
+            false
         }
     }
 
-    private fun startPing() {
-        pingJob?.cancel()
-        pingJob = scope.launch {
+    private fun startKeepalive() {
+        keepaliveJob?.cancel()
+        lastKeepaliveSuccess = System.currentTimeMillis()
+        keepaliveJob = scope.launch {
             while (true) {
-                delay(PING_INTERVAL_MS)
-                // WhatsApp ping format: "?,,"
-                send("?,, ".toByteArray(Charsets.UTF_8))
+                delay(KEEPALIVE_INTERVAL_MIN_MS + (Math.random() * (KEEPALIVE_INTERVAL_MAX_MS - KEEPALIVE_INTERVAL_MIN_MS)).toLong())
+                val id = "keepalive-${iqCounter.incrementAndGet()}"
+                val keepaliveNode = WhatsAppProtocol.buildKeepalive(id)
+                val encoded = WhatsAppProtocol.encodeNode(keepaliveNode)
+                val sent = send(encoded)
+                if (!sent) {
+                    Log.w(TAG, "Failed to send keepalive")
+                    if (System.currentTimeMillis() - lastKeepaliveSuccess > KEEPALIVE_MAX_FAIL_MS) {
+                        Log.w(TAG, "Keepalive failed for too long, forcing reconnect")
+                        disconnect()
+                        scheduleReconnect()
+                        return@launch
+                    }
+                } else {
+                    lastKeepaliveSuccess = System.currentTimeMillis()
+                }
             }
         }
     }
@@ -321,8 +403,9 @@ class WhatsAppWebSocket(
     }
 
     /**
-     * Encrypted socket using AES-256-GCM with counter-based IVs.
-     * Keys are derived from the Noise handshake finish() call.
+     * Post-handshake encrypted socket using AES-256-GCM with counter-based IVs.
+     * No AAD is used post-handshake (unlike during handshake where hash is AAD).
+     * From whatsmeow/socket/noisesocket.go
      */
     private inner class NoiseSocket(
         private val writeKey: javax.crypto.spec.SecretKeySpec,
@@ -333,9 +416,9 @@ class WhatsAppWebSocket(
 
         private fun generateIV(counter: UInt): ByteArray {
             val iv = ByteArray(12)
-            java.nio.ByteBuffer.wrap(iv, 4, 8)
+            java.nio.ByteBuffer.wrap(iv, 8, 4)
                 .order(java.nio.ByteOrder.BIG_ENDIAN)
-                .putLong(counter.toLong())
+                .putInt(counter.toInt())
             return iv
         }
 
@@ -347,7 +430,7 @@ class WhatsAppWebSocket(
             writeCounter++
             return ciphertext
         }
-        
+
         fun decrypt(ciphertext: ByteArray): ByteArray {
             val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
             val spec = javax.crypto.spec.GCMParameterSpec(128, generateIV(readCounter))

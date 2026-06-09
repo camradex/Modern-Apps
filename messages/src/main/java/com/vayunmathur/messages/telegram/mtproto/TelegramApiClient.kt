@@ -40,10 +40,10 @@ class TelegramApiClient {
     companion object {
         val DC_ADDRESSES = mapOf(
             1 to ("149.154.175.53" to 443),
-            2 to ("149.154.167.51" to 443),
+            2 to ("149.154.167.41" to 443),
             3 to ("149.154.175.100" to 443),
             4 to ("149.154.167.91" to 443),
-            5 to ("91.108.56.130" to 443),
+            5 to ("91.108.56.191" to 443),
         )
     }
 

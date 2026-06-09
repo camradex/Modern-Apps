@@ -8,6 +8,7 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.bouncycastle.crypto.agreement.X25519Agreement
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters
@@ -18,45 +19,52 @@ import org.bouncycastle.crypto.digests.SHA256Digest
 
 /**
  * WhatsApp Web protocol implementation.
- * Handles Noise protocol handshake, message encoding/decoding, and binary protocol.
- * 
- * Implements Noise_XX_25519_AESGCM_SHA256 handshake as per:
- * https://github.com/tulir/whatsmeow/blob/main/handshake.go
+ * Implements Noise_XX_25519_AESGCM_SHA256 handshake, binary XML encoding,
+ * protobuf E2E message format, and media encryption.
+ *
+ * Reference: whatsmeow (github.com/tulir/whatsmeow)
  */
 object WhatsAppProtocol {
     private const val TAG = "WhatsAppProtocol"
 
-    // WhatsApp Web WebSocket URL
     const val WS_URL = "wss://web.whatsapp.com/ws/chat"
+    const val WS_ORIGIN = "https://web.whatsapp.com"
 
-    // Protocol constants
-    private const val NOISE_PROTOCOL = "Noise_XX_25519_AESGCM_SHA256\u0000\u0000\u0000\u0000"
-    private const val WA_HEADER = "WA"
-    private const val WA_VERSION = "2.3000.1017131629"
-    
+    // Noise protocol pattern — 32 bytes, null-padded
+    const val NOISE_START_PATTERN = "Noise_XX_25519_AESGCM_SHA256\u0000\u0000\u0000\u0000"
+
+    // WA connection header: 'W', 'A', WAMagicValue(6), DictVersion(3)
+    val WA_CONN_HEADER = byteArrayOf('W'.code.toByte(), 'A'.code.toByte(), 6, 3)
+
+    // Frame constants (from whatsmeow/socket/constants.go)
+    const val FRAME_MAX_SIZE = 1 shl 24
+    const val FRAME_LENGTH_SIZE = 3
+
+    // WhatsApp web message ID prefix
+    private const val WEB_MESSAGE_ID_PREFIX = "3EB0"
+
+    // WhatsApp web client version (from whatsmeow/store/clientpayload.go)
+    val WA_VERSION = intArrayOf(2, 3000, 1040390703)
+
+    // Media type keys for HKDF (from whatsmeow/download.go)
+    const val MEDIA_KEY_IMAGE = "WhatsApp Image Keys"
+    const val MEDIA_KEY_VIDEO = "WhatsApp Video Keys"
+    const val MEDIA_KEY_AUDIO = "WhatsApp Audio Keys"
+    const val MEDIA_KEY_DOCUMENT = "WhatsApp Document Keys"
+    const val MEDIA_KEY_STICKER = "WhatsApp Image Keys"
+    const val MEDIA_KEY_HISTORY = "WhatsApp History Keys"
+    const val MEDIA_KEY_APP_STATE = "WhatsApp App State Keys"
+    const val MEDIA_KEY_STICKER_PACK = "WhatsApp Sticker Pack Keys"
+    const val MEDIA_KEY_LINK_THUMBNAIL = "WhatsApp Link Thumbnail Keys"
+
     // WhatsApp certificate authority public key (Ed25519)
-    // From whatsmeow/handshake.go line 27
-    private val WA_CERT_PUBKEY = byteArrayOf(
-        0x14, 0x23, 0x75, 0x57, 0x4d, 0x0a, 0x58, 0x71, 0x66, 0xaa.toByte(), 0xe7.toByte(), 0x1e, 0xbe.toByte(), 0x51, 0x64, 0x37,
-        0xc4.toByte(), 0xa2.toByte(), 0x8b.toByte(), 0x73, 0xe3.toByte(), 0x69, 0x5c, 0x6c, 0xe1.toByte(), 0xf7.toByte(), 0xf9.toByte(), 0x54, 0x5d, 0xa8.toByte(), 0xee.toByte(), 0x6b
+    val WA_CERT_PUBKEY = byteArrayOf(
+        0x14, 0x23, 0x75, 0x57, 0x4d, 0x0a, 0x58, 0x71,
+        0x66, 0xaa.toByte(), 0xe7.toByte(), 0x1e, 0xbe.toByte(), 0x51, 0x64, 0x37,
+        0xc4.toByte(), 0xa2.toByte(), 0x8b.toByte(), 0x73, 0xe3.toByte(), 0x69, 0x5c, 0x6c,
+        0xe1.toByte(), 0xf7.toByte(), 0xf9.toByte(), 0x54, 0x5d, 0xa8.toByte(), 0xee.toByte(), 0x6b
     )
 
-    /**
-     * Noise protocol handshake message.
-     */
-    data class HandshakeMessage(
-        val clientHello: ClientHello,
-    )
-
-    data class ClientHello(
-        val ephemeral: String, // Base64 encoded public key
-        val static: String?, // Base64 encoded static key (optional)
-        val payload: String, // Base64 encoded encrypted payload
-    )
-
-    /**
-     * WhatsApp message node (binary XML-like structure).
-     */
     data class Node(
         val tag: String,
         val attrs: Map<String, String> = emptyMap(),
@@ -84,6 +92,10 @@ object WhatsAppProtocol {
             result = 31 * result + (data?.contentHashCode() ?: 0)
             return result
         }
+
+        fun getChildren(): List<Node> = content
+
+        fun getChildByTag(tag: String): Node? = content.find { it.tag == tag }
     }
 
     /**
@@ -96,9 +108,6 @@ object WhatsAppProtocol {
         private var key: SecretKeySpec? = null
         private var counter: UInt = 0u
 
-        /**
-         * Initialize handshake with protocol pattern and header
-         */
         fun start(pattern: String, header: ByteArray) {
             val data = pattern.toByteArray(Charsets.UTF_8)
             hash = if (data.size == 32) {
@@ -111,22 +120,15 @@ object WhatsAppProtocol {
             authenticate(header)
         }
 
-        /**
-         * Mix data into the handshake hash (transcript)
-         */
         fun authenticate(data: ByteArray) {
             hash = sha256(hash + data)
         }
 
-        /**
-         * Encrypt plaintext with AES-GCM using current key
-         * Increments counter and mixes ciphertext into transcript
-         */
         fun encrypt(plaintext: ByteArray): ByteArray {
             val currentKey = key ?: throw IllegalStateException("Handshake not started")
             val iv = generateIV(counter)
             counter++
-            
+
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             val spec = GCMParameterSpec(128, iv)
             cipher.init(Cipher.ENCRYPT_MODE, currentKey, spec)
@@ -136,15 +138,11 @@ object WhatsAppProtocol {
             return ciphertext
         }
 
-        /**
-         * Decrypt ciphertext with AES-GCM using current key
-         * Increments counter and mixes ciphertext into transcript on success
-         */
         fun decrypt(ciphertext: ByteArray): ByteArray {
             val currentKey = key ?: throw IllegalStateException("Handshake not started")
             val iv = generateIV(counter)
             counter++
-            
+
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             val spec = GCMParameterSpec(128, iv)
             cipher.init(Cipher.DECRYPT_MODE, currentKey, spec)
@@ -154,18 +152,11 @@ object WhatsAppProtocol {
             return plaintext
         }
 
-        /**
-         * Mix shared secret (from X25519) into the key
-         * Uses HKDF-SHA256 to derive new salt and key
-         */
         fun mixSharedSecretIntoKey(privateKey: ByteArray, publicKey: ByteArray) {
             val sharedSecret = x25519(privateKey, publicKey)
             mixIntoKey(sharedSecret)
         }
 
-        /**
-         * Mix arbitrary data into the key using HKDF
-         */
         fun mixIntoKey(data: ByteArray) {
             counter = 0u
             val (newSalt, newKey) = extractAndExpand(salt, data)
@@ -173,25 +164,18 @@ object WhatsAppProtocol {
             key = SecretKeySpec(newKey, "AES")
         }
 
-        /**
-         * HKDF-SHA256 extract and expand
-         * Returns (salt, key) pair, each 32 bytes
-         */
         private fun extractAndExpand(salt: ByteArray, data: ByteArray): Pair<ByteArray, ByteArray> {
             val hkdf = HKDFBytesGenerator(SHA256Digest())
             hkdf.init(HKDFParameters(data, salt, null))
-            
+
             val writeKey = ByteArray(32)
             val readKey = ByteArray(32)
             hkdf.generateBytes(writeKey, 0, 32)
             hkdf.generateBytes(readKey, 0, 32)
-            
+
             return Pair(writeKey, readKey)
         }
 
-        /**
-         * Finish handshake and derive final read/write keys
-         */
         fun finish(): Pair<SecretKeySpec, SecretKeySpec> {
             val (writeKey, readKey) = extractAndExpand(salt, ByteArray(0))
             return Pair(
@@ -202,17 +186,15 @@ object WhatsAppProtocol {
 
         private fun generateIV(counter: UInt): ByteArray {
             val iv = ByteArray(12)
-            // First 4 bytes are 0, last 8 bytes are counter (big-endian)
-            ByteBuffer.wrap(iv, 4, 8)
+            ByteBuffer.wrap(iv, 8, 4)
                 .order(ByteOrder.BIG_ENDIAN)
-                .putLong(counter.toLong())
+                .putInt(counter.toInt())
             return iv
         }
     }
 
-    /**
-     * Perform X25519 scalar multiplication
-     */
+    // -- Cryptography helpers --
+
     fun x25519(privateKey: ByteArray, publicKey: ByteArray): ByteArray {
         val privParams = X25519PrivateKeyParameters(privateKey, 0)
         val pubParams = X25519PublicKeyParameters(publicKey, 0)
@@ -223,48 +205,24 @@ object WhatsAppProtocol {
         return sharedSecret
     }
 
-    /**
-     * Generate X25519 key pair
-     */
     fun generateX25519KeyPair(): Pair<ByteArray, ByteArray> {
         val random = SecureRandom()
         val privateKey = ByteArray(32)
         random.nextBytes(privateKey)
-        // Clamp the private key as per X25519 spec
         privateKey[0] = (privateKey[0].toInt() and 248).toByte()
         privateKey[31] = (privateKey[31].toInt() and 127).toByte()
         privateKey[31] = (privateKey[31].toInt() or 64).toByte()
-        
+
         val privParams = X25519PrivateKeyParameters(privateKey, 0)
         val publicKey = privParams.generatePublicKey().encoded
         return Pair(privateKey, publicKey)
     }
 
-    /**
-     * Encrypt data using AES-256-GCM.
-     */
-    fun encryptAesGcm(key: ByteArray, iv: ByteArray, plaintext: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val keySpec = SecretKeySpec(key, "AES")
-        val spec = GCMParameterSpec(128, iv)
-        cipher.init(Cipher.ENCRYPT_MODE, keySpec, spec)
-        return cipher.doFinal(plaintext)
+    fun sha256(data: ByteArray): ByteArray {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(data)
     }
 
-    /**
-     * Decrypt data using AES-256-GCM.
-     */
-    fun decryptAesGcm(key: ByteArray, iv: ByteArray, ciphertext: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val keySpec = SecretKeySpec(key, "AES")
-        val spec = GCMParameterSpec(128, iv)
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, spec)
-        return cipher.doFinal(ciphertext)
-    }
-
-    /**
-     * Compute HMAC-SHA256.
-     */
     fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
         val mac = Mac.getInstance("HmacSHA256")
         val keySpec = SecretKeySpec(key, "HmacSHA256")
@@ -273,17 +231,150 @@ object WhatsAppProtocol {
     }
 
     /**
-     * Compute SHA256 hash.
+     * Derive media encryption keys from a media key using HKDF.
+     * Returns (iv, cipherKey, macKey, refKey) — each used in media encrypt/decrypt.
+     * From whatsmeow/download.go getMediaKeys()
      */
-    fun sha256(data: ByteArray): ByteArray {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(data)
+    fun getMediaKeys(mediaKey: ByteArray, mediaType: String): MediaKeys {
+        val hkdf = HKDFBytesGenerator(SHA256Digest())
+        hkdf.init(HKDFParameters(mediaKey, null, mediaType.toByteArray(Charsets.UTF_8)))
+        val expanded = ByteArray(112)
+        hkdf.generateBytes(expanded, 0, 112)
+        return MediaKeys(
+            iv = expanded.copyOfRange(0, 16),
+            cipherKey = expanded.copyOfRange(16, 48),
+            macKey = expanded.copyOfRange(48, 80),
+            refKey = expanded.copyOfRange(80, 112)
+        )
     }
 
+    data class MediaKeys(
+        val iv: ByteArray,
+        val cipherKey: ByteArray,
+        val macKey: ByteArray,
+        val refKey: ByteArray,
+    )
+
     /**
-     * WhatsApp binary XML token constants.
-     * From whatsmeow/binary/token/token.go
+     * Encrypt media using AES-256-CBC + HMAC-SHA256.
+     * From whatsmeow/upload.go Upload()
      */
+    fun encryptMedia(plaintext: ByteArray, mediaType: String): MediaEncryptResult {
+        val random = SecureRandom()
+        val mediaKey = ByteArray(32).also { random.nextBytes(it) }
+        val keys = getMediaKeys(mediaKey, mediaType)
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        val keySpec = SecretKeySpec(keys.cipherKey, "AES")
+        val ivSpec = IvParameterSpec(keys.iv)
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec)
+        val ciphertext = cipher.doFinal(plaintext)
+
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(keys.macKey, "HmacSHA256"))
+        mac.update(keys.iv)
+        mac.update(ciphertext)
+        val macValue = mac.doFinal()
+
+        val dataToUpload = ciphertext + macValue.copyOfRange(0, 10)
+        val fileSha256 = sha256(plaintext)
+        val fileEncSha256 = sha256(dataToUpload)
+
+        return MediaEncryptResult(
+            mediaKey = mediaKey,
+            encryptedData = dataToUpload,
+            fileSha256 = fileSha256,
+            fileEncSha256 = fileEncSha256,
+            fileLength = plaintext.size.toLong()
+        )
+    }
+
+    data class MediaEncryptResult(
+        val mediaKey: ByteArray,
+        val encryptedData: ByteArray,
+        val fileSha256: ByteArray,
+        val fileEncSha256: ByteArray,
+        val fileLength: Long,
+    )
+
+    /**
+     * Decrypt downloaded media.
+     * From whatsmeow/download.go
+     */
+    fun decryptMedia(ciphertextWithMac: ByteArray, mediaKey: ByteArray, mediaType: String): ByteArray {
+        val keys = getMediaKeys(mediaKey, mediaType)
+
+        val macOffset = ciphertextWithMac.size - 10
+        val ciphertext = ciphertextWithMac.copyOfRange(0, macOffset)
+
+        // Verify HMAC
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(keys.macKey, "HmacSHA256"))
+        mac.update(keys.iv)
+        mac.update(ciphertext)
+        val expectedMac = mac.doFinal().copyOfRange(0, 10)
+        val actualMac = ciphertextWithMac.copyOfRange(macOffset, ciphertextWithMac.size)
+        if (!expectedMac.contentEquals(actualMac)) {
+            throw SecurityException("Media HMAC verification failed")
+        }
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        val keySpec = SecretKeySpec(keys.cipherKey, "AES")
+        val ivSpec = IvParameterSpec(keys.iv)
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
+        return cipher.doFinal(ciphertext)
+    }
+
+    // -- Message ID generation --
+
+    /**
+     * Generate a message ID in WhatsApp's format: "3EB0" + uppercase hex.
+     * From whatsmeow/send.go GenerateMessageID()
+     */
+    fun generateMessageId(ownJid: String?): String {
+        val buf = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
+            .putLong(System.currentTimeMillis() / 1000)
+        val data = mutableListOf<Byte>()
+        data.addAll(buf.array().toList())
+        if (ownJid != null) {
+            val user = ownJid.substringBefore("@")
+            data.addAll((user + "@c.us").toByteArray(Charsets.UTF_8).toList())
+        }
+        val randomPart = ByteArray(16)
+        SecureRandom().nextBytes(randomPart)
+        data.addAll(randomPart.toList())
+
+        val hash = sha256(data.toByteArray())
+        val hex = hash.copyOfRange(0, 9).joinToString("") { "%02X".format(it) }
+        return WEB_MESSAGE_ID_PREFIX + hex
+    }
+
+    // -- Message padding (Signal Protocol requirement) --
+
+    /**
+     * Pad message with random 1-15 bytes where each pad byte equals the pad count.
+     * From whatsmeow/message.go padMessage()
+     */
+    fun padMessage(plaintext: ByteArray): ByteArray {
+        var padSize = SecureRandom().nextInt(16) and 0x0F
+        if (padSize == 0) padSize = 0x0F
+        val padded = ByteArray(plaintext.size + padSize)
+        System.arraycopy(plaintext, 0, padded, 0, plaintext.size)
+        for (i in plaintext.size until padded.size) {
+            padded[i] = padSize.toByte()
+        }
+        return padded
+    }
+
+    fun unpadMessage(padded: ByteArray): ByteArray {
+        if (padded.isEmpty()) return padded
+        val padSize = padded.last().toInt() and 0xFF
+        if (padSize > padded.size || padSize > 15 || padSize == 0) return padded
+        return padded.copyOfRange(0, padded.size - padSize)
+    }
+
+    // -- Binary XML encoding/decoding (unchanged, already correct) --
+
     private object BinaryToken {
         const val LIST_EMPTY: Byte = 0
         const val DICTIONARY_0: Int = 236
@@ -301,6 +392,30 @@ object WhatsAppProtocol {
         const val PACKED_MAX = 127
         const val SINGLE_BYTE_MAX = 256
 
+        val doubleByteTokens = arrayOf(
+            arrayOf("read-self", "active", "fbns", "protocol", "reaction", "screen_width", "heartbeat", "deviceid", "2:47DEQpj8", "uploadfieldstat", "voip_settings", "retry", "priority", "longitude", "conflict", "false", "ig_professional", "replaced", "preaccept", "cover_photo", "uncompressed", "encopt", "ppic", "04", "passive", "status-revoke-drop", "keygen", "540", "offer", "rate", "opus", "latitude", "w:gp2", "ver", "4", "business_profile", "medium", "sender", "prev_v_id", "email", "website", "invited", "sign_credential", "05", "transport", "skey", "reason", "peer_abtest_bucket", "America/Sao_Paulo", "appid", "refresh", "100", "06", "404", "101", "104", "107", "102", "109", "103", "member_add_mode", "105", "transaction-id", "110", "106", "outgoing", "108", "111", "tokens", "followers", "ig_handle", "self_pid", "tue", "dec", "thu", "joinable", "peer_pid", "mon", "features", "wed", "peer_device_presence", "pn", "delete", "07", "fri", "audio_duration", "admin", "connected", "delta", "rcat", "disable", "collection", "08", "480", "sat", "phash", "all", "invite", "accept", "critical_unblock_low", "group_update", "signed_credential", "blinded_credential", "eph_setting", "net", "09", "background_location", "refresh_id", "Asia/Kolkata", "privacy_mode_ts", "account_sync", "voip_payload_type", "service_areas", "acs_public_key", "v_id", "0a", "fallback_class", "relay", "actual_actors", "metadata", "w:biz", "5", "connected-limit", "notice", "0b", "host_storage", "fb_page", "subject", "privatestats", "invis", "groupadd", "010", "note.m4r", "uuid", "0c", "8000", "sun", "372", "1020", "stage", "1200", "720", "canonical", "fb", "011", "video_duration", "0d", "1140", "superadmin", "012", "Opening.m4r", "keystore_attestation", "dleq_proof", "013", "timestamp", "ab_key", "w:sync:app:state", "0e", "vertical", "600", "p_v_id", "6", "likes", "014", "500", "1260", "creator", "0f", "rte", "destination", "group", "group_info", "syncd_anti_tampering_fatal_exception_enabled", "015", "dl_bw", "Asia/Jakarta", "vp8/h.264", "online", "1320", "fb:multiway", "10", "timeout", "016", "nse_retry", "urn:xmpp:whatsapp:dirty", "017", "a_v_id", "web_shops_chat_header_button_enabled", "nse_call", "inactive-upgrade", "none", "web", "groups", "2250", "mms_hot_content_timespan_in_seconds", "contact_blacklist", "nse_read", "suspended_group_deletion_notification", "binary_version", "018", "https://www.whatsapp.com/otp/copy/", "reg_push", "shops_hide_catalog_attachment_entrypoint", "server_sync", ".", "ephemeral_messages_allowed_values", "019", "mms_vcache_aggregation_enabled", "iphone", "America/Argentina/Buenos_Aires", "01a", "mms_vcard_autodownload_size_kb", "nse_ver", "shops_header_dropdown_menu_item", "dhash", "catalog_status", "communities_mvp_new_iqs_serverprop", "blocklist", "default", "11", "ephemeral_messages_enabled", "01b", "original_dimensions", "8", "mms4_media_retry_notification_encryption_enabled", "mms4_server_error_receipt_encryption_enabled", "original_image_url", "sync", "multiway", "420", "companion_enc_static", "shops_profile_drawer_entrypoint", "01c", "vcard_as_document_size_kb", "status_video_max_duration", "request_image_url", "01d", "regular_high", "s_t", "abt", "share_ext_min_preliminary_image_quality", "01e", "32", "syncd_key_rotation_enabled", "data_namespace", "md_downgrade_read_receipts2", "patch", "polltype", "ephemeral_messages_setting", "userrate", "15", "partial_pjpeg_bw_threshold", "played-self", "catalog_exists", "01f", "mute_v2"),
+            arrayOf("reject", "dirty", "announcement", "020", "13", "9", "status_video_max_bitrate", "fb:thrift_iq", "offline_batch", "022", "full", "ctwa_first_business_reply_logging", "h.264", "smax_id", "group_description_length", "https://www.whatsapp.com/otp/code", "status_image_max_edge", "smb_upsell_business_profile_enabled", "021", "web_upgrade_to_md_modal", "14", "023", "s_o", "smaller_video_thumbs_status_enabled", "media_max_autodownload", "960", "blocking_status", "peer_msg", "joinable_group_call_client_version", "group_call_video_maximization_enabled", "return_snapshot", "high", "America/Mexico_City", "entry_point_block_logging_enabled", "pop", "024", "1050", "16", "1380", "one_tap_calling_in_group_chat_size", "regular_low", "inline_joinable_education_enabled", "hq_image_max_edge", "locked", "America/Bogota", "smb_biztools_deeplink_enabled", "status_image_quality", "1088", "025", "payments_upi_intent_transaction_limit", "voip", "w:g2", "027", "md_pin_chat_enabled", "026", "multi_scan_pjpeg_download_enabled", "shops_product_grid", "transaction_id", "ctwa_context_enabled", "20", "fna", "hq_image_quality", "alt_jpeg_doc_detection_quality", "group_call_max_participants", "pkey", "America/Belem", "image_max_kbytes", "web_cart_v1_1_order_message_changes_enabled", "ctwa_context_enterprise_enabled", "urn:xmpp:whatsapp:account", "840", "Asia/Kuala_Lumpur", "max_participants", "video_remux_after_repair_enabled", "stella_addressbook_restriction_type", "660", "900", "780", "context_menu_ios13_enabled", "mute-state", "ref", "payments_request_messages", "029", "frskmsg", "vcard_max_size_kb", "sample_buffer_gif_player_enabled", "match_last_seen", "510", "4983", "video_max_bitrate", "028", "w:comms:chat", "17", "frequently_forwarded_max", "groups_privacy_blacklist", "Asia/Karachi", "02a", "web_download_document_thumb_mms_enabled", "02b", "hist_sync", "biz_block_reasons_version", "1024", "18", "web_is_direct_connection_for_plm_transparent", "view_once_write", "file_max_size", "paid_convo_id", "online_privacy_setting", "video_max_edge", "view_once_read", "enhanced_storage_management", "multi_scan_pjpeg_encoding_enabled", "ctwa_context_forward_enabled", "video_transcode_downgrade_enable", "template_doc_mime_types", "hq_image_bw_threshold", "30", "body", "u_aud_limit_sil_restarts_ctrl", "other", "participating", "w:biz:directory", "1110", "vp8", "4018", "meta", "doc_detection_image_max_edge", "image_quality", "1170", "02c", "smb_upsell_chat_banner_enabled", "key_expiry_time_second", "pid", "stella_interop_enabled", "19", "linked_device_max_count", "md_device_sync_enabled", "02d", "02e", "360", "enhanced_block_enabled", "ephemeral_icon_in_forwarding", "paid_convo_status", "gif_provider", "project_name", "server-error", "canonical_url_validation_enabled", "wallpapers_v2", "syncd_clear_chat_delete_chat_enabled", "medianotify", "02f", "shops_required_tos_version", "vote", "reset_skey_on_id_change", "030", "image_max_edge", "multicast_limit_global", "ul_bw", "21", "25", "5000", "poll", "570", "22", "031", "1280", "WhatsApp", "032", "bloks_shops_enabled", "50", "upload_host_switching_enabled", "web_ctwa_context_compose_enabled", "ptt_forwarded_features_enabled", "unblocked", "partial_pjpeg_enabled", "fbid:devices", "height", "ephemeral_group_query_ts", "group_join_permissions", "order", "033", "alt_jpeg_status_quality", "migrate", "popular-bank", "win_uwp_deprecation_killswitch_enabled", "web_download_status_thumb_mms_enabled", "blocking", "url_text", "035", "web_forwarding_limit_to_groups", "1600", "val", "1000", "syncd_msg_date_enabled", "bank-ref-id", "max_subject", "payments_web_enabled", "web_upload_document_thumb_mms_enabled", "size", "request", "ephemeral", "24", "receipt_agg", "ptt_remember_play_position", "sampling_weight", "enc_rekey", "mute_always", "037", "034", "23", "036", "action", "click_to_chat_qr_enabled", "width", "disabled", "038", "md_blocklist_v2", "played_self_enabled", "web_buttons_message_enabled", "flow_id", "clear", "450", "fbid:thread", "bloks_session_state", "America/Lima", "attachment_picker_refresh", "download_host_switching_enabled", "1792", "u_aud_limit_sil_restarts_test2", "custom_urls", "device_fanout", "optimistic_upload", "2000", "key_cipher_suite", "web_smb_upsell_in_biz_profile_enabled", "e", "039", "siri_post_status_shortcut", "pair-device", "lg", "lc", "stream_attribution_url", "model", "mspjpeg_phash_gen", "catalog_send_all", "new_multi_vcards_ui", "share_biz_vcard_enabled", "-", "clean", "200", "md_blocklist_v2_server", "03b", "03a", "web_md_migration_experience", "ptt_conversation_waveform", "u_aud_limit_sil_restarts_test1"),
+            arrayOf("64", "ptt_playback_speed_enabled", "web_product_list_message_enabled", "paid_convo_ts", "27", "manufacturer", "psp-routing", "grp_uii_cleanup", "ptt_draft_enabled", "03c", "business_initiated", "web_catalog_products_onoff", "web_upload_link_thumb_mms_enabled", "03e", "mediaretry", "35", "hfm_string_changes", "28", "America/Fortaleza", "max_keys", "md_mhfs_days", "streaming_upload_chunk_size", "5541", "040", "03d", "2675", "03f", "...", "512", "mute", "48", "041", "alt_jpeg_quality", "60", "042", "md_smb_quick_reply", "5183", "c", "1343", "40", "1230", "043", "044", "mms_cat_v1_forward_hot_override_enabled", "user_notice", "ptt_waveform_send", "047", "Asia/Calcutta", "250", "md_privacy_v2", "31", "29", "128", "md_messaging_enabled", "046", "crypto", "690", "045", "enc_iv", "75", "failure", "ptt_oot_playback", "AIzaSyDR5yfaG7OG8sMTUj8kfQEb8T9pN8BM6Lk", "w", "048", "2201", "web_large_files_ui", "Asia/Makassar", "812", "status_collapse_muted", "1334", "257", "2HP4dm", "049", "patches", "1290", "43cY6T", "America/Caracas", "web_sticker_maker", "campaign", "ptt_pausable_enabled", "33", "42", "attestation", "biz", "04b", "query_linked", "s", "125", "04a", "810", "availability", "1411", "responsiveness_v2_m1", "catalog_not_created", "34", "America/Santiago", "1465", "enc_p", "04d", "status_info", "04f", "key_version", "..", "04c", "04e", "md_group_notification", "1598", "1215", "web_cart_enabled", "37", "630", "1920", "2394", "-1", "vcard", "38", "elapsed", "36", "828", "peer", "pricing_category", "1245", "invalid", "stella_ios_enabled", "2687", "45", "1528", "39", "u_is_redial_audio_1104_ctrl", "1025", "1455", "58", "2524", "2603", "054", "bsp_system_message_enabled", "web_pip_redesign", "051", "verify_apps", "1974", "1272", "1322", "1755", "052", "70", "050", "1063", "1135", "1361", "80", "1096", "1828", "1851", "1251", "1921", "key_config_id", "1254", "1566", "1252", "2525", "critical_block", "1669", "max_available", "w:auth:backup:token", "product", "2530", "870", "1022", "participant_uuid", "web_cart_on_off", "1255", "1432", "1867", "41", "1415", "1440", "240", "1204", "1608", "1690", "1846", "1483", "1687", "1749", "69", "url_number", "053", "1325", "1040", "365", "59", "Asia/Riyadh", "1177", "test_recommended", "057", "1612", "43", "1061", "1518", "1635", "055", "1034", "1375", "750", "1430", "event_code", "1682", "503", "55", "865", "78", "1309", "1365", "44", "America/Guayaquil", "535", "LIMITED", "1377", "1613", "1420", "1599", "1822", "05a", "1681", "password", "1111", "1214", "1376", "1478", "47", "1082", "4282", "Europe/Istanbul", "1307", "46", "058", "1124", "256", "rate-overlimit", "retail", "u_a_socket_err_fix_succ_test", "1292", "1370", "1388", "520", "861", "psa", "regular", "1181", "1766", "05b", "1183", "1213", "1304", "1537"),
+            arrayOf("1724", "profile_picture", "1071", "1314", "1605", "407", "990", "1710", "746", "pricing_model", "056", "059", "061", "1119", "6027", "65", "877", "1607", "05d", "917", "seen", "1516", "49", "470", "973", "1037", "1350", "1394", "1480", "1796", "keys", "794", "1536", "1594", "2378", "1333", "1524", "1825", "116", "309", "52", "808", "827", "909", "495", "1660", "361", "957", "google", "1357", "1565", "1967", "996", "1775", "586", "736", "1052", "1670", "bank", "177", "1416", "2194", "2222", "1454", "1839", "1275", "53", "997", "1629", "6028", "smba", "1378", "1410", "05c", "1849", "727", "create", "1559", "536", "1106", "1310", "1944", "670", "1297", "1316", "1762", "en", "1148", "1295", "1551", "1853", "1890", "1208", "1784", "7200", "05f", "178", "1283", "1332", "381", "643", "1056", "1238", "2024", "2387", "179", "981", "1547", "1705", "05e", "290", "903", "1069", "1285", "2436", "062", "251", "560", "582", "719", "56", "1700", "2321", "325", "448", "613", "777", "791", "51", "488", "902", "Asia/Almaty", "is_hidden", "1398", "1527", "1893", "1999", "2367", "2642", "237", "busy", "065", "067", "233", "590", "993", "1511", "54", "723", "860", "363", "487", "522", "605", "995", "1321", "1691", "1865", "2447", "2462", "NON_TRANSACTIONAL", "433", "871", "432", "1004", "1207", "2032", "2050", "2379", "2446", "279", "636", "703", "904", "248", "370", "691", "700", "1068", "1655", "2334", "060", "063", "364", "533", "534", "567", "1191", "1210", "1473", "1827", "069", "701", "2531", "514", "prev_dhash", "064", "496", "790", "1046", "1139", "1505", "1521", "1108", "207", "544", "637", "final", "1173", "1293", "1694", "1939", "1951", "1993", "2353", "2515", "504", "601", "857", "modify", "spam_request", "p_121_aa_1101_test4", "866", "1427", "1502", "1638", "1744", "2153", "068", "382", "725", "1704", "1864", "1990", "2003", "Asia/Dubai", "508", "531", "1387", "1474", "1632", "2307", "2386", "819", "2014", "066", "387", "1468", "1706", "2186", "2261", "471", "728", "1147", "1372", "1961")
+        )
+
+        private val doubleByteIndex: Map<String, Pair<Byte, Byte>> by lazy {
+            val map = HashMap<String, Pair<Byte, Byte>>()
+            for (dictIdx in doubleByteTokens.indices) {
+                for (tokenIdx in doubleByteTokens[dictIdx].indices) {
+                    val token = doubleByteTokens[dictIdx][tokenIdx]
+                    if (token.isNotEmpty()) {
+                        map[token] = Pair(dictIdx.toByte(), tokenIdx.toByte())
+                    }
+                }
+            }
+            map
+        }
+
+        const val INTEROP_JID: Int = 245
+        const val FB_JID: Int = 246
+        const val AD_JID: Int = 247
+
         val singleByteTokens = arrayOf("", "xmlstreamstart", "xmlstreamend", "s.whatsapp.net", "type", "participant", "from", "receipt", "id", "notification", "disappearing_mode", "status", "jid", "broadcast", "user", "devices", "device_hash", "to", "offline", "message", "result", "class", "xmlns", "duration", "notify", "iq", "t", "ack", "g.us", "enc", "urn:xmpp:whatsapp:push", "presence", "config_value", "picture", "verified_name", "config_code", "key-index-list", "contact", "mediatype", "routing_info", "edge_routing", "get", "read", "urn:xmpp:ping", "fallback_hostname", "0", "chatstate", "business_hours_config", "unavailable", "download_buckets", "skmsg", "verified_level", "composing", "handshake", "device-list", "media", "text", "fallback_ip4", "media_conn", "device", "creation", "location", "config", "item", "fallback_ip6", "count", "w:profile:picture", "image", "business", "2", "hostname", "call-creator", "display_name", "relaylatency", "platform", "abprops", "success", "msg", "offline_preview", "prop", "key-index", "v", "day_of_week", "pkmsg", "version", "1", "ping", "w:p", "download", "video", "set", "specific_hours", "props", "primary", "unknown", "hash", "commerce_experience", "last", "subscribe", "max_buckets", "call", "profile", "member_since_text", "close_time", "call-id", "sticker", "mode", "participants", "value", "query", "profile_options", "open_time", "code", "list", "host", "ts", "contacts", "upload", "lid", "preview", "update", "usync", "w:stats", "delivery", "auth_ttl", "context", "fail", "cart_enabled", "appdata", "category", "atn", "direct_connection", "decrypt-fail", "relay_id", "mmg-fallback.whatsapp.net", "target", "available", "name", "last_id", "mmg.whatsapp.net", "categories", "401", "is_new", "index", "tctoken", "ip4", "token_id", "latency", "recipient", "edit", "ip6", "add", "thumbnail-document", "26", "paused", "true", "identity", "stream:error", "key", "sidelist", "background", "audio", "3", "thumbnail-image", "biz-cover-photo", "cat", "gcm", "thumbnail-video", "error", "auth", "deny", "serial", "in", "registration", "thumbnail-link", "remove", "00", "gif", "thumbnail-gif", "tag", "capability", "multicast", "item-not-found", "description", "business_hours", "config_expo_key", "md-app-state", "expiration", "fallback", "ttl", "300", "md-msg-hist", "device_orientation", "out", "w:m", "open_24h", "side_list", "token", "inactive", "01", "document", "te2", "played", "encrypt", "msgr", "hide", "direct_path", "12", "state", "not-authorized", "url", "terminate", "signature", "status-revoke-delay", "02", "te", "linked_accounts", "trusted_contact", "timezone", "ptt", "kyc-id", "privacy_token", "readreceipts", "appointment_only", "address", "expected_ts", "privacy", "7", "android", "interactive", "device-identity", "enabled", "attribute_padding", "1080", "03", "screen_height")
 
         private val singleByteIndex: Map<String, Byte> by lazy {
@@ -316,14 +431,21 @@ object WhatsAppProtocol {
         fun indexOfSingleToken(token: String): Int {
             return singleByteIndex[token]?.toInt()?.and(0xFF) ?: -1
         }
+
+        fun indexOfDoubleByteToken(token: String): Triple<Int, Int, Boolean> {
+            val pair = doubleByteIndex[token] ?: return Triple(0, 0, false)
+            return Triple(pair.first.toInt() and 0xFF, pair.second.toInt() and 0xFF, true)
+        }
+
+        fun getDoubleToken(dictIndex: Int, tokenIndex: Int): String {
+            if (dictIndex < 0 || dictIndex >= doubleByteTokens.size) return ""
+            if (tokenIndex < 0 || tokenIndex >= doubleByteTokens[dictIndex].size) return ""
+            return doubleByteTokens[dictIndex][tokenIndex]
+        }
     }
 
-    /**
-     * Binary XML encoder — encodes Nodes to WhatsApp binary wire format.
-     * From whatsmeow/binary/encoder.go
-     */
     private class BinaryEncoder {
-        private val data = mutableListOf<Byte>(0) // starts with 0 flag byte
+        private val data = mutableListOf<Byte>(0)
 
         fun getData(): ByteArray = data.toByteArray()
 
@@ -331,21 +453,16 @@ object WhatsAppProtocol {
         private fun pushByte(b: Int) { data.add(b.toByte()) }
         private fun pushBytes(bytes: ByteArray) { bytes.forEach { data.add(it) } }
 
-        private fun pushInt8(value: Int) {
-            pushByte((value and 0xFF).toByte())
-        }
-
+        private fun pushInt8(value: Int) { pushByte((value and 0xFF).toByte()) }
         private fun pushInt16(value: Int) {
             pushByte((value shr 8 and 0xFF).toByte())
             pushByte((value and 0xFF).toByte())
         }
-
         private fun pushInt20(value: Int) {
             pushByte(((value shr 16) and 0x0F).toByte())
             pushByte(((value shr 8) and 0xFF).toByte())
             pushByte((value and 0xFF).toByte())
         }
-
         private fun pushInt32(value: Int) {
             pushByte((value shr 24 and 0xFF).toByte())
             pushByte((value shr 16 and 0xFF).toByte())
@@ -387,12 +504,18 @@ object WhatsAppProtocol {
             val tokenIndex = BinaryToken.indexOfSingleToken(value)
             if (tokenIndex >= 0) {
                 pushByte(tokenIndex)
-            } else if (validateNibble(value)) {
-                writePackedBytes(value, BinaryToken.NIBBLE_8)
-            } else if (validateHex(value)) {
-                writePackedBytes(value, BinaryToken.HEX_8)
             } else {
-                writeStringRaw(value)
+                val (dictIndex, tokIndex, found) = BinaryToken.indexOfDoubleByteToken(value)
+                if (found) {
+                    pushByte(BinaryToken.DICTIONARY_0 + dictIndex)
+                    pushByte(tokIndex)
+                } else if (validateNibble(value)) {
+                    writePackedBytes(value, BinaryToken.NIBBLE_8)
+                } else if (validateHex(value)) {
+                    writePackedBytes(value, BinaryToken.HEX_8)
+                } else {
+                    writeStringRaw(value)
+                }
             }
         }
 
@@ -430,7 +553,7 @@ object WhatsAppProtocol {
 
         private fun validateHex(value: String): Boolean {
             if (value.length > BinaryToken.PACKED_MAX) return false
-            return value.all { it in '0'..'9' || it in 'A'..'F' }
+            return value.all { it in '0'..'9' || it in 'A'..'F' || it in 'a'..'f' }
         }
 
         private fun writePackedBytes(value: String, dataType: Int) {
@@ -460,15 +583,12 @@ object WhatsAppProtocol {
         private fun packHex(c: Char): Int = when (c) {
             in '0'..'9' -> c - '0'
             in 'A'..'F' -> 10 + (c - 'A')
+            in 'a'..'f' -> 10 + (c - 'a')
             '\u0000' -> 15
             else -> throw IllegalArgumentException("Invalid hex char: $c")
         }
     }
 
-    /**
-     * Binary XML decoder — decodes WhatsApp binary wire format to Nodes.
-     * From whatsmeow/binary/decoder.go
-     */
     private class BinaryDecoder(private val data: ByteArray) {
         private var index = 0
 
@@ -482,14 +602,12 @@ object WhatsAppProtocol {
         }
 
         private fun readInt8(): Int = readByte()
-
         private fun readInt16(): Int {
             checkEOS(2)
             val v = ((data[index].toInt() and 0xFF) shl 8) or (data[index + 1].toInt() and 0xFF)
             index += 2
             return v
         }
-
         private fun readInt20(): Int {
             checkEOS(3)
             val v = ((data[index].toInt() and 0x0F) shl 16) or
@@ -498,7 +616,6 @@ object WhatsAppProtocol {
             index += 3
             return v
         }
-
         private fun readInt32(): Int {
             checkEOS(4)
             val v = ((data[index].toInt() and 0xFF) shl 24) or
@@ -525,9 +642,7 @@ object WhatsAppProtocol {
                 sb.append(unpackByte(tag, currByte and 0x0F))
             }
             var result = sb.toString()
-            if ((startByte shr 7) != 0) {
-                result = result.dropLast(1)
-            }
+            if ((startByte shr 7) != 0) result = result.dropLast(1)
             return result
         }
 
@@ -536,7 +651,6 @@ object WhatsAppProtocol {
             BinaryToken.HEX_8 -> unpackHex(value)
             else -> throw IllegalArgumentException("Unknown packed tag: $tag")
         }
-
         private fun unpackNibble(value: Int): Char = when {
             value < 10 -> ('0' + value)
             value == 10 -> '-'
@@ -544,7 +658,6 @@ object WhatsAppProtocol {
             value == 15 -> '\u0000'
             else -> throw IllegalArgumentException("Invalid nibble: $value")
         }
-
         private fun unpackHex(value: Int): Char = when {
             value < 10 -> ('0' + value)
             value < 16 -> ('A' + value - 10)
@@ -577,9 +690,27 @@ object WhatsAppProtocol {
                     if (asString) String(readRaw(size), Charsets.UTF_8) else readRaw(size)
                 }
                 in BinaryToken.DICTIONARY_0..BinaryToken.DICTIONARY_3 -> {
-                    // Double byte token — skip for now, return placeholder
                     val idx = readInt8()
-                    "dict_${tag - BinaryToken.DICTIONARY_0}_$idx"
+                    BinaryToken.getDoubleToken(tag - BinaryToken.DICTIONARY_0, idx)
+                }
+                BinaryToken.AD_JID -> {
+                    val agent = readByte()
+                    val device = readByte()
+                    val user = read(true) as? String ?: ""
+                    "$user.${agent}:${device}@s.whatsapp.net"
+                }
+                BinaryToken.FB_JID -> {
+                    val user = read(true) as? String ?: ""
+                    val device = readInt16()
+                    val server = read(true) as? String ?: "msgr"
+                    "$user:$device@$server"
+                }
+                BinaryToken.INTEROP_JID -> {
+                    val user = read(true) as? String ?: ""
+                    val device = readInt16()
+                    val integrator = readInt16()
+                    val server = read(true) as? String ?: ""
+                    "$user:$device:$integrator@$server"
                 }
                 BinaryToken.JID_PAIR.toInt() and 0xFF -> {
                     val user = read(true) as? String
@@ -634,55 +765,395 @@ object WhatsAppProtocol {
         }
     }
 
-    /**
-     * Encode node to WhatsApp binary XML format.
-     */
     fun encodeNode(node: Node): ByteArray {
         val encoder = BinaryEncoder()
         encoder.writeNode(node)
         return encoder.getData()
     }
 
-    /**
-     * Decode binary data to node.
-     */
     fun decodeNode(data: ByteArray): Node {
         val decoder = BinaryDecoder(data)
         return decoder.readNode()
     }
 
+    // -- Message node builders (from whatsmeow/send.go) --
+
     /**
-     * Build a message node for sending text.
+     * Build a text message node with E2E encrypted protobuf payload.
+     * The enc node contains the Signal-encrypted E2E.Message protobuf.
      */
     fun buildTextMessage(to: String, id: String, text: String): Node {
+        val e2eMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.Message.newBuilder()
+            .setConversation(text)
+            .build()
+        val plaintext = e2eMessage.toByteArray()
+
         return Node(
             tag = "message",
             attrs = mapOf(
                 "to" to to,
                 "id" to id,
-                "type" to "chat"
+                "type" to "text"
             ),
             content = listOf(
                 Node(
-                    tag = "body",
-                    data = text.toByteArray(Charsets.UTF_8)
+                    tag = "enc",
+                    attrs = mapOf("v" to "2", "type" to "msg"),
+                    data = padMessage(plaintext)
                 )
             )
         )
     }
 
     /**
-     * Parse incoming message node.
+     * Build a reaction message node.
+     * From whatsmeow/send.go BuildReaction()
      */
+    fun buildReactionMessage(
+        chatJid: String,
+        senderJid: String,
+        targetMessageId: String,
+        emoji: String,
+        ownJid: String,
+        id: String,
+    ): Node {
+        val isFromMe = senderJid.isEmpty() || senderJid == ownJid
+        val messageKey = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.MessageKey.newBuilder()
+            .setFromMe(isFromMe)
+            .setId(targetMessageId)
+            .setRemoteJid(chatJid)
+        if (!isFromMe && chatJid.contains("@g.us")) {
+            messageKey.setParticipant(senderJid)
+        }
+
+        val reactionMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.ReactionMessage.newBuilder()
+            .setKey(messageKey.build())
+            .setText(emoji)
+            .setSenderTimestampMs(System.currentTimeMillis())
+            .build()
+
+        val e2eMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.Message.newBuilder()
+            .setReactionMessage(reactionMessage)
+            .build()
+        val plaintext = e2eMessage.toByteArray()
+
+        return Node(
+            tag = "message",
+            attrs = mapOf(
+                "to" to chatJid,
+                "id" to id,
+                "type" to "text"
+            ),
+            content = listOf(
+                Node(
+                    tag = "enc",
+                    attrs = mapOf("v" to "2", "type" to "msg", "decrypt-fail" to "hide"),
+                    data = padMessage(plaintext)
+                )
+            )
+        )
+    }
+
+    /**
+     * Build a receipt node with configurable type.
+     * Supports: "read", "read-self", "played", "" (delivery), "inactive"
+     * From whatsmeow/receipt.go
+     */
+    fun buildReceipt(
+        chatJid: String,
+        messageIds: List<String>,
+        receiptType: String,
+        senderJid: String? = null,
+    ): Node {
+        if (messageIds.isEmpty()) throw IllegalArgumentException("No message IDs")
+
+        val attrs = mutableMapOf(
+            "id" to messageIds.first(),
+            "to" to chatJid,
+            "t" to (System.currentTimeMillis() / 1000).toString()
+        )
+        if (receiptType.isNotEmpty()) {
+            attrs["type"] = receiptType
+        }
+        if (senderJid != null && chatJid.contains("@g.us")) {
+            attrs["participant"] = senderJid
+        }
+
+        val children = mutableListOf<Node>()
+        if (messageIds.size > 1) {
+            val items = messageIds.drop(1).map { id ->
+                Node(tag = "item", attrs = mapOf("id" to id))
+            }
+            children.add(Node(tag = "list", content = items))
+        }
+
+        return Node(tag = "receipt", attrs = attrs, content = children)
+    }
+
+    /**
+     * Build a media message node.
+     * From whatsmeow/send.go + upload.go
+     */
+    fun buildMediaMessage(
+        to: String,
+        id: String,
+        url: String,
+        directPath: String,
+        mediaKey: ByteArray,
+        fileSha256: ByteArray,
+        fileEncSha256: ByteArray,
+        fileLength: Long,
+        mimeType: String,
+        caption: String?,
+        mediaType: String, // "image", "video", "audio", "document"
+    ): Node {
+        val e2eBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.Message.newBuilder()
+
+        when (mediaType) {
+            "image" -> {
+                val imgBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.ImageMessage.newBuilder()
+                    .setUrl(url)
+                    .setDirectPath(directPath)
+                    .setMediaKey(com.google.protobuf.ByteString.copyFrom(mediaKey))
+                    .setFileSha256(com.google.protobuf.ByteString.copyFrom(fileSha256))
+                    .setFileEncSha256(com.google.protobuf.ByteString.copyFrom(fileEncSha256))
+                    .setFileLength(fileLength.toULong().toLong())
+                    .setMimetype(mimeType)
+                if (caption != null) imgBuilder.setCaption(caption)
+                e2eBuilder.setImageMessage(imgBuilder.build())
+            }
+            "video" -> {
+                val vidBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.VideoMessage.newBuilder()
+                    .setUrl(url)
+                    .setDirectPath(directPath)
+                    .setMediaKey(com.google.protobuf.ByteString.copyFrom(mediaKey))
+                    .setFileSha256(com.google.protobuf.ByteString.copyFrom(fileSha256))
+                    .setFileEncSha256(com.google.protobuf.ByteString.copyFrom(fileEncSha256))
+                    .setFileLength(fileLength.toULong().toLong())
+                    .setMimetype(mimeType)
+                if (caption != null) vidBuilder.setCaption(caption)
+                e2eBuilder.setVideoMessage(vidBuilder.build())
+            }
+            "audio" -> {
+                val audBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.AudioMessage.newBuilder()
+                    .setUrl(url)
+                    .setDirectPath(directPath)
+                    .setMediaKey(com.google.protobuf.ByteString.copyFrom(mediaKey))
+                    .setFileSha256(com.google.protobuf.ByteString.copyFrom(fileSha256))
+                    .setFileEncSha256(com.google.protobuf.ByteString.copyFrom(fileEncSha256))
+                    .setFileLength(fileLength.toULong().toLong())
+                    .setMimetype(mimeType)
+                e2eBuilder.setAudioMessage(audBuilder.build())
+            }
+            "document" -> {
+                val docBuilder = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.DocumentMessage.newBuilder()
+                    .setUrl(url)
+                    .setDirectPath(directPath)
+                    .setMediaKey(com.google.protobuf.ByteString.copyFrom(mediaKey))
+                    .setFileSha256(com.google.protobuf.ByteString.copyFrom(fileSha256))
+                    .setFileEncSha256(com.google.protobuf.ByteString.copyFrom(fileEncSha256))
+                    .setFileLength(fileLength.toULong().toLong())
+                    .setMimetype(mimeType)
+                if (caption != null) docBuilder.setTitle(caption)
+                e2eBuilder.setDocumentMessage(docBuilder.build())
+            }
+        }
+
+        val plaintext = e2eBuilder.build().toByteArray()
+
+        val encMediaType = when (mediaType) {
+            "image" -> "image"
+            "video" -> "video"
+            "audio" -> "audio"
+            "document" -> "document"
+            else -> ""
+        }
+        val encAttrs = mutableMapOf("v" to "2", "type" to "msg")
+        if (encMediaType.isNotEmpty()) encAttrs["mediatype"] = encMediaType
+
+        return Node(
+            tag = "message",
+            attrs = mapOf(
+                "to" to to,
+                "id" to id,
+                "type" to "media"
+            ),
+            content = listOf(
+                Node(
+                    tag = "enc",
+                    attrs = encAttrs,
+                    data = padMessage(plaintext)
+                )
+            )
+        )
+    }
+
+    /**
+     * Build a read receipt node.
+     * From whatsmeow/receipt.go MarkRead()
+     */
+    fun buildReadReceipt(
+        chatJid: String,
+        messageIds: List<String>,
+        senderJid: String? = null,
+    ): Node {
+        if (messageIds.isEmpty()) throw IllegalArgumentException("No message IDs")
+
+        val attrs = mutableMapOf(
+            "id" to messageIds.first(),
+            "type" to "read",
+            "to" to chatJid,
+            "t" to (System.currentTimeMillis() / 1000).toString()
+        )
+        if (senderJid != null && chatJid.contains("@g.us")) {
+            attrs["participant"] = senderJid
+        }
+
+        val children = mutableListOf<Node>()
+        if (messageIds.size > 1) {
+            val items = messageIds.drop(1).map { id ->
+                Node(tag = "item", attrs = mapOf("id" to id))
+            }
+            children.add(Node(tag = "list", content = items))
+        }
+
+        return Node(tag = "receipt", attrs = attrs, content = children)
+    }
+
+    /**
+     * Build a keepalive (ping) IQ node.
+     * From whatsmeow/keepalive.go
+     */
+    fun buildKeepalive(id: String): Node {
+        return Node(
+            tag = "iq",
+            attrs = mapOf(
+                "id" to id,
+                "xmlns" to "w:p",
+                "type" to "get",
+                "to" to "s.whatsapp.net"
+            ),
+            content = listOf(Node(tag = "ping"))
+        )
+    }
+
+    /**
+     * Build an ack node for acknowledging received messages.
+     * From whatsmeow/receipt.go sendAck()
+     */
+    fun buildAck(
+        nodeClass: String,
+        nodeId: String,
+        from: String,
+        participant: String? = null,
+        recipient: String? = null,
+        type: String? = null,
+    ): Node {
+        val attrs = mutableMapOf(
+            "class" to nodeClass,
+            "id" to nodeId,
+            "to" to from
+        )
+        if (participant != null) attrs["participant"] = participant
+        if (recipient != null) attrs["recipient"] = recipient
+        if (type != null) attrs["type"] = type
+        return Node(tag = "ack", attrs = attrs)
+    }
+
+    // -- Frame helpers --
+
+    /**
+     * Build a framed message with optional header and 3-byte big-endian length prefix.
+     * From whatsmeow/socket/framesocket.go SendFrame()
+     */
+    fun buildFramedMessage(data: ByteArray, header: ByteArray?): ByteArray {
+        val headerLength = header?.size ?: 0
+        val dataLength = data.size
+        if (dataLength >= FRAME_MAX_SIZE) {
+            throw IllegalArgumentException("Frame too large: $dataLength bytes (max $FRAME_MAX_SIZE)")
+        }
+        val frame = ByteArray(headerLength + FRAME_LENGTH_SIZE + dataLength)
+
+        var offset = 0
+        if (header != null) {
+            System.arraycopy(header, 0, frame, offset, headerLength)
+            offset += headerLength
+        }
+        frame[offset] = (dataLength shr 16).toByte()
+        frame[offset + 1] = (dataLength shr 8).toByte()
+        frame[offset + 2] = dataLength.toByte()
+        offset += FRAME_LENGTH_SIZE
+        System.arraycopy(data, 0, frame, offset, dataLength)
+        return frame
+    }
+
+    /**
+     * Extract frame payload from raw data (strip 3-byte length prefix).
+     * From whatsmeow/socket/framesocket.go processData()
+     */
+    fun extractFrame(data: ByteArray): ByteArray {
+        if (data.size < FRAME_LENGTH_SIZE) return data
+        val length = ((data[0].toInt() and 0xFF) shl 16) or
+                ((data[1].toInt() and 0xFF) shl 8) or
+                (data[2].toInt() and 0xFF)
+        if (data.size < FRAME_LENGTH_SIZE + length) return data
+        return data.copyOfRange(FRAME_LENGTH_SIZE, FRAME_LENGTH_SIZE + length)
+    }
+
+    // -- Message parsing --
+
     fun parseMessage(node: Node): WhatsAppMessage? {
         if (node.tag != "message") return null
 
         val from = node.attrs["from"] ?: return null
         val id = node.attrs["id"] ?: return null
-        val type = node.attrs["type"] ?: "chat"
+        val type = node.attrs["type"] ?: "text"
         val timestamp = node.attrs["t"]?.toLongOrNull() ?: System.currentTimeMillis() / 1000
+        val participant = node.attrs["participant"]
 
-        val bodyNode = node.content.find { it.tag == "body" }
+        val encNode = node.getChildByTag("enc")
+        if (encNode?.data != null) {
+            return try {
+                val plaintext = unpadMessage(encNode.data)
+                val e2eMessage = com.vayunmathur.messages.whatsapp.proto.WhatsAppE2EProto.Message.parseFrom(plaintext)
+                val body = when {
+                    e2eMessage.hasConversation() -> e2eMessage.conversation
+                    e2eMessage.hasExtendedTextMessage() -> e2eMessage.extendedTextMessage.text
+                    e2eMessage.hasImageMessage() -> e2eMessage.imageMessage.caption.ifEmpty { "[Image]" }
+                    e2eMessage.hasVideoMessage() -> e2eMessage.videoMessage.caption.ifEmpty { "[Video]" }
+                    e2eMessage.hasAudioMessage() -> "[Audio]"
+                    e2eMessage.hasDocumentMessage() -> "[Document: ${e2eMessage.documentMessage.title}]"
+                    e2eMessage.hasStickerMessage() -> "[Sticker]"
+                    e2eMessage.hasReactionMessage() -> e2eMessage.reactionMessage.text
+                    else -> ""
+                }
+                val mediaUrl = when {
+                    e2eMessage.hasImageMessage() -> e2eMessage.imageMessage.url
+                    e2eMessage.hasVideoMessage() -> e2eMessage.videoMessage.url
+                    e2eMessage.hasAudioMessage() -> e2eMessage.audioMessage.url
+                    e2eMessage.hasDocumentMessage() -> e2eMessage.documentMessage.url
+                    else -> null
+                }
+                WhatsAppMessage(
+                    id = id,
+                    from = from,
+                    to = node.attrs["to"] ?: "",
+                    body = body,
+                    timestamp = timestamp,
+                    type = type,
+                    participant = participant,
+                    mediaUrl = mediaUrl,
+                    isReaction = e2eMessage.hasReactionMessage(),
+                    reactionTargetId = if (e2eMessage.hasReactionMessage()) e2eMessage.reactionMessage.key.id else null,
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to parse E2E message", e)
+                WhatsAppMessage(id = id, from = from, to = node.attrs["to"] ?: "", body = "", timestamp = timestamp, type = type, participant = participant)
+            }
+        }
+
+        // Fallback: plaintext body node
+        val bodyNode = node.getChildByTag("body")
         val body = bodyNode?.data?.let { String(it, Charsets.UTF_8) } ?: ""
 
         return WhatsAppMessage(
@@ -691,14 +1162,12 @@ object WhatsAppProtocol {
             to = node.attrs["to"] ?: "",
             body = body,
             timestamp = timestamp,
-            type = type
+            type = type,
+            participant = participant,
         )
     }
 }
 
-/**
- * Parsed WhatsApp message.
- */
 data class WhatsAppMessage(
     val id: String,
     val from: String,
@@ -706,4 +1175,8 @@ data class WhatsAppMessage(
     val body: String,
     val timestamp: Long,
     val type: String,
+    val participant: String? = null,
+    val mediaUrl: String? = null,
+    val isReaction: Boolean = false,
+    val reactionTargetId: String? = null,
 )

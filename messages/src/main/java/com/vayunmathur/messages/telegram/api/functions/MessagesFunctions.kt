@@ -150,3 +150,36 @@ data class MessagesSetTyping(val peer: TlObject) : TlMethod<TlObject> {
         buf.putId(0x16bf744e.toInt()) // sendMessageTypingAction
     }
 }
+
+// GeoPoint for sending locations
+data class InputGeoPoint(val lat: Double, val long: Double) : TlObject {
+    override val typeId = 0x48222faf.toInt()
+    override fun encode(buf: TlBuffer) {
+        buf.putId(typeId)
+        buf.putInt32(0) // flags
+        buf.putDouble(lat)
+        buf.putDouble(long)
+    }
+}
+
+// inputMediaGeoPoint for sending locations as media
+data class InputMediaGeoPoint(val geoPoint: InputGeoPoint) : TlObject {
+    override val typeId = 0xf9c44144.toInt()
+    override fun encode(buf: TlBuffer) {
+        buf.putId(typeId)
+        geoPoint.encode(buf)
+    }
+}
+
+// inputMediaGeoLive for sending live locations
+data class InputMediaGeoLive(val geoPoint: InputGeoPoint, val period: Int = 0, val heading: Int = 0) : TlObject {
+    override val typeId = 0x971fa843.toInt()
+    override fun encode(buf: TlBuffer) {
+        buf.putId(typeId)
+        val flags = (if (heading != 0) 1 shl 2 else 0) or (if (period != 0) 1 shl 1 else 0)
+        buf.putInt32(flags)
+        geoPoint.encode(buf)
+        if (heading != 0) buf.putInt32(heading)
+        if (period != 0) buf.putInt32(period)
+    }
+}

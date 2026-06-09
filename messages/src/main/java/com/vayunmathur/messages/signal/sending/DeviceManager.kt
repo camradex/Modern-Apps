@@ -52,6 +52,10 @@ class DeviceManager(
             null,
             mapOf("Content-Type" to "application/json")
         )
+        if (response.status == 404) {
+            Log.w(TAG, "Recipient $recipientAci not found (404)")
+            throw IOException("Recipient not registered: $recipientAci")
+        }
         val responseBody = String(response.body.toByteArray())
         Log.d(TAG, "Keys response for $recipientAci: $responseBody")
         val json = JSONObject(responseBody)
@@ -114,20 +118,20 @@ class DeviceManager(
 
     private fun parsePreKeyBundle(root: JSONObject, device: JSONObject, deviceId: Int): PreKeyBundle {
         val registrationId = device.getInt("registrationId")
-        val identityKeyBytes = Base64.decode(root.getString("identityKey"), Base64.NO_WRAP)
+        val identityKeyBytes = addBase64Padding(root.getString("identityKey"))
         val identityKey = IdentityKey(identityKeyBytes, 0)
 
         val signedPreKey = device.getJSONObject("signedPreKey")
         val signedPreKeyId = signedPreKey.getInt("keyId")
         val signedPreKeyPublic = ECPublicKey(
-            Base64.decode(signedPreKey.getString("publicKey"), Base64.NO_WRAP)
+            addBase64Padding(signedPreKey.getString("publicKey"))
         )
-        val signedPreKeySignature = Base64.decode(signedPreKey.getString("signature"), Base64.NO_WRAP)
+        val signedPreKeySignature = addBase64Padding(signedPreKey.getString("signature"))
 
         val preKey = device.optJSONObject("preKey")
         val preKeyId = preKey?.getInt("keyId") ?: -1
         val preKeyPublic = preKey?.let {
-            ECPublicKey(Base64.decode(it.getString("publicKey"), Base64.NO_WRAP))
+            ECPublicKey(addBase64Padding(it.getString("publicKey")))
         }
 
         // Parse PQ (post-quantum) Kyber pre-key if present
@@ -136,9 +140,9 @@ class DeviceManager(
             try {
                 val kyberPreKeyId = pqPreKey.getInt("keyId")
                 val kyberPreKeyPublic = org.signal.libsignal.protocol.kem.KEMPublicKey(
-                    Base64.decode(pqPreKey.getString("publicKey"), Base64.NO_WRAP)
+                    addBase64Padding(pqPreKey.getString("publicKey"))
                 )
-                val kyberPreKeySignature = Base64.decode(pqPreKey.getString("signature"), Base64.NO_WRAP)
+                val kyberPreKeySignature = addBase64Padding(pqPreKey.getString("signature"))
                 PreKeyBundle(
                     registrationId,
                     deviceId,
@@ -194,5 +198,14 @@ class DeviceManager(
 
     companion object {
         private const val TAG = "SignalSender"
+
+        private fun addBase64Padding(data: String): ByteArray {
+            val padded = when (data.length % 4) {
+                2 -> data + "=="
+                3 -> data + "="
+                else -> data
+            }
+            return Base64.decode(padded, Base64.NO_WRAP)
+        }
     }
 }

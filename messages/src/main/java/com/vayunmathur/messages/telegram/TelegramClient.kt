@@ -539,7 +539,19 @@ object TelegramClient {
                 }
                 currentPts = update.pts
             }
+            is UpdateDeleteChannelMessages -> {
+                for (id in update.messages) {
+                    _events.emit(GMEvent.MessageDeleted(source, id.toString()))
+                }
+                currentPts = update.pts
+            }
             is UpdateEditMessage -> {
+                val msg = update.message as? Message ?: return
+                val chatId = peerToId(msg.peerId)
+                _events.emit(msg.toMessageUpdate(chatId))
+                currentPts = update.pts
+            }
+            is UpdateEditChannelMessage -> {
                 val msg = update.message as? Message ?: return
                 val chatId = peerToId(msg.peerId)
                 _events.emit(msg.toMessageUpdate(chatId))
@@ -547,6 +559,19 @@ object TelegramClient {
             }
             is UpdateReadHistoryInbox -> {
                 val chatId = peerToId(update.peer)
+                _events.emit(GMEvent.ConversationUpdate(source, chatId, null, null, null, null, 0, 0))
+            }
+            is UpdateReadHistoryOutbox -> {
+                val chatId = peerToId(update.peer)
+                _events.emit(GMEvent.ConversationUpdate(source, chatId, null, null, null, null, 0, 0))
+            }
+            is UpdateReadChannelInbox -> {
+                val chatId = update.channelId.toString()
+                _events.emit(GMEvent.ConversationUpdate(source, chatId, null, null, null, null, 0, 0))
+            }
+            is UpdateChannel -> {
+                // Channel metadata changed; trigger a resync
+                val chatId = update.channelId.toString()
                 _events.emit(GMEvent.ConversationUpdate(source, chatId, null, null, null, null, 0, 0))
             }
         }
@@ -766,11 +791,27 @@ object TelegramClient {
     private fun extractPreview(msg: Message): String? {
         val text = msg.message
         if (text.isNotBlank()) return text
-        return when (msg.mediaTypeId) {
-            0x695150d7.toInt() -> "[Photo]"
-            0x4cf4d72d.toInt() -> "[File]"
-            0x70322949.toInt() -> "[Contact]"
-            0x56e0d474.toInt() -> "[Location]"
+        val media = msg.media
+        return when (media) {
+            is MessageMediaPhoto -> "[Photo]"
+            is MessageMediaDocument -> when {
+                media.isSticker -> media.stickerAlt.ifBlank { "[Sticker]" }
+                media.isVoice -> "[Voice message]"
+                media.isRoundVideo -> "[Video message]"
+                media.isVideo -> "[Video]"
+                media.isAnimated -> "[GIF]"
+                media.mimeType.startsWith("audio/") -> "[Audio]"
+                media.mimeType.startsWith("image/") -> "[Image]"
+                media.fileName.isNotBlank() -> "[File: ${media.fileName}]"
+                else -> "[File]"
+            }
+            is MessageMediaContact -> "[Contact: ${media.firstName} ${media.lastName}]".trim()
+            is MessageMediaGeo -> "[Location]"
+            is MessageMediaGeoLive -> "[Live Location]"
+            is MessageMediaVenue -> if (media.title.isNotBlank()) "[Venue: ${media.title}]" else "[Venue]"
+            is MessageMediaPoll -> if (media.pollQuestion.isNotBlank()) "[Poll: ${media.pollQuestion}]" else "[Poll]"
+            is MessageMediaDice -> "${media.emoticon} ${media.value}"
+            is MessageMediaUnsupported -> "[Unsupported message]"
             else -> if (msg.mediaTypeId != 0) "[Media]" else null
         }
     }

@@ -1,7 +1,6 @@
 package com.vayunmathur.messages.whatsapp
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.core.content.edit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -9,19 +8,32 @@ import kotlinx.serialization.json.Json as KotlinJson
 
 /**
  * Persistent auth data for WhatsApp Web companion device.
- * Stores device identity, encryption keys, and session data.
+ * Stores Noise key pair, Signal Protocol identity, and session data.
+ *
+ * Based on whatsmeow/store/clientpayload.go and store/store.go
  */
 @Serializable
 data class WhatsAppAuthData(
-    val deviceId: String,
     val phoneNumber: String,
     val pushName: String,
-    val clientId: String,
-    val serverToken: String,
-    val clientToken: String,
-    val encKey: String, // Base64 encoded
-    val macKey: String, // Base64 encoded
-    val wid: String, // WhatsApp ID (e.g., "1234567890@s.whatsapp.net")
+    val wid: String,
+    // Noise key pair (X25519) — used in every handshake
+    val noisePrivateKey: String, // Base64
+    val noisePublicKey: String, // Base64
+    // Signal identity key pair (Curve25519) — used for E2E encryption
+    val identityPrivateKey: String, // Base64
+    val identityPublicKey: String, // Base64
+    // Signal Protocol registration ID
+    val registrationId: Int,
+    // Signal signed pre-key
+    val signedPreKeyId: Int,
+    val signedPreKeyPublic: String, // Base64
+    val signedPreKeyPrivate: String, // Base64
+    val signedPreKeySignature: String, // Base64
+    // ADV secret key (used in QR pairing)
+    val advSecretKey: String, // Base64
+    // Device ID assigned by server after pairing
+    val deviceId: Int = 0,
 ) {
     companion object {
         private const val PREFS_NAME = "whatsapp_auth"
@@ -49,13 +61,3 @@ data class WhatsAppAuthData(
         }
     }
 }
-
-/**
- * QR code data for pairing a new WhatsApp Web device.
- */
-@Serializable
-data class WhatsAppQrData(
-    val ref: String,
-    val publicKey: String,
-    val clientId: String,
-)

@@ -32,7 +32,7 @@ data class MessagesMessages(
     val chats: List<TlObject>,
     val users: List<TlObject>,
 ) : TlObject {
-    override val typeId = 0x8c718e87.toInt()
+    override val typeId = 0x1d73e7ea.toInt()
     override fun encode(buf: TlBuffer) {}
 }
 
@@ -42,7 +42,7 @@ data class MessagesMessagesSlice(
     val chats: List<TlObject>,
     val users: List<TlObject>,
 ) : TlObject {
-    override val typeId = 0x3a54685e.toInt()
+    override val typeId = 0x5f206716.toInt()
     override fun encode(buf: TlBuffer) {}
 }
 

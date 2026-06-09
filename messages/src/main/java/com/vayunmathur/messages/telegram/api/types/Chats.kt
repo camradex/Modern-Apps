@@ -31,20 +31,23 @@ data class Chat(
 
 data class Channel(
     val id: Long,
-    val accessHash: Long,
-    val title: String,
-    val username: String,
-    val megagroup: Boolean,
+    val accessHash: Long = 0,
+    val title: String = "",
+    val username: String = "",
+    val megagroup: Boolean = false,
+    val forum: Boolean = false,
 ) : TlObject {
-    override val typeId = 0x94f592db.toInt()
+    override val typeId = 0x1c32b11c.toInt()
     override fun encode(buf: TlBuffer) {}
 
     companion object {
         fun decode(buf: TlBuffer): Channel {
             val flags = Fields.decode(buf)
             val flags2 = Fields.decode(buf)
+            val megagroup = flags.has(8)
+            val forum = flags.has(30)
             val id = buf.int64()
-            val accessHash = if (flags.has(13)) buf.int64() else 0L
+            val accessHash = if (flags.has(13)) buf.int64() else 0
             val title = buf.string()
             val username = if (flags.has(6)) buf.string() else ""
             TlSkip.skipChatPhoto(buf) // photo (mandatory)
@@ -56,7 +59,17 @@ data class Channel(
             if (flags.has(15)) TlSkip.skipBoxedType(buf) // banned_rights
             if (flags.has(18)) TlSkip.skipBoxedType(buf) // default_banned_rights
             if (flags.has(17)) buf.int32() // participants_count
-            return Channel(id, accessHash, title, username, megagroup = flags.has(8))
+            if (flags2.has(0)) TlSkip.skipVectorBoxed(buf) // usernames
+            if (flags2.has(4)) buf.int32() // stories_max_id
+            if (flags2.has(7)) TlSkip.skipBoxedType(buf) // color
+            if (flags2.has(8)) TlSkip.skipBoxedType(buf) // profile_color
+            if (flags2.has(9)) TlSkip.skipBoxedType(buf) // emoji_status
+            if (flags2.has(10)) buf.int32() // level
+            if (flags2.has(11)) buf.int32() // subscription_until_date
+            if (flags2.has(13)) buf.int64() // bot_verification_icon
+            if (flags2.has(14)) buf.int64() // send_paid_messages_stars
+            if (flags2.has(18)) buf.int64() // linked_monoforum_id
+            return Channel(id, accessHash, title, username, megagroup = megagroup, forum = forum)
         }
     }
 }
@@ -75,7 +88,11 @@ data class ChannelForbidden(val id: Long, val accessHash: Long, val title: Strin
     companion object {
         fun decode(buf: TlBuffer): ChannelForbidden {
             val flags = Fields.decode(buf)
-            return ChannelForbidden(buf.int64(), buf.int64(), buf.string())
+            val id = buf.int64()
+            val accessHash = buf.int64()
+            val title = buf.string()
+            if (flags.has(16)) buf.int32() // until_date
+            return ChannelForbidden(id, accessHash, title)
         }
     }
 }

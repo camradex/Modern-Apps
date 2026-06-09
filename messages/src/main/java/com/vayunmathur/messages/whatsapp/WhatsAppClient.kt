@@ -9,7 +9,7 @@ import com.vayunmathur.messages.util.ContactSuggestion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -130,7 +130,7 @@ object WhatsAppClient {
                     
                     scope.launch {
                         messages.collect { data ->
-                            handleProvisioningMessage(data, noisePub, identityPub, advSecretKey)
+                            handleProvisioningMessage(data, noisePriv, noisePub, identityPriv, identityPub, advSecretKey)
                         }
                     }
                     
@@ -161,7 +161,9 @@ object WhatsAppClient {
     
     private fun handleProvisioningMessage(
         data: ByteArray,
+        noisePriv: ByteArray,
         noisePub: ByteArray,
+        identityPriv: ByteArray,
         identityPub: ByteArray,
         advSecretKey: ByteArray,
     ) {
@@ -171,18 +173,22 @@ object WhatsAppClient {
                 Log.d(TAG, "Provisioning message: tag=${node.tag}")
                 
                 if (node.tag == "success") {
-                    // Phone scanned QR and server confirmed pairing
                     val wid = node.attrs["wid"] ?: ""
+                    val signedPreKP = WhatsAppProtocol.generateX25519KeyPair()
                     val auth = WhatsAppAuthData(
-                        deviceId = Base64.encodeToString(ByteArray(16).apply { random.nextBytes(this) }, Base64.NO_WRAP),
                         phoneNumber = wid.substringBefore("@"),
                         pushName = node.attrs["pushname"] ?: "User",
-                        clientId = Base64.encodeToString(noisePub.copyOfRange(0, 16), Base64.NO_WRAP),
-                        serverToken = node.attrs["server_token"] ?: "",
-                        clientToken = node.attrs["client_token"] ?: "",
-                        encKey = Base64.encodeToString(advSecretKey, Base64.NO_WRAP),
-                        macKey = Base64.encodeToString(identityPub, Base64.NO_WRAP),
-                        wid = wid
+                        wid = wid,
+                        noisePrivateKey = Base64.encodeToString(noisePriv, Base64.NO_WRAP),
+                        noisePublicKey = Base64.encodeToString(noisePub, Base64.NO_WRAP),
+                        identityPrivateKey = Base64.encodeToString(identityPriv, Base64.NO_WRAP),
+                        identityPublicKey = Base64.encodeToString(identityPub, Base64.NO_WRAP),
+                        registrationId = random.nextInt(16380) + 1,
+                        signedPreKeyId = 1,
+                        signedPreKeyPublic = Base64.encodeToString(signedPreKP.second, Base64.NO_WRAP),
+                        signedPreKeyPrivate = Base64.encodeToString(signedPreKP.first, Base64.NO_WRAP),
+                        signedPreKeySignature = Base64.encodeToString(ByteArray(64), Base64.NO_WRAP),
+                        advSecretKey = Base64.encodeToString(advSecretKey, Base64.NO_WRAP),
                     )
                     WhatsAppAuthData.save(appContext, auth)
                     authData = auth
@@ -229,19 +235,43 @@ object WhatsAppClient {
         scope.launch {
             try {
                 val node = WhatsAppProtocol.decodeNode(data)
+
+                // Ack messages, notifications, and receipts (whatsmeow/receipt.go)
+                if (node.tag == "message" || node.tag == "notification" || node.tag == "receipt") {
+                    val ack = WhatsAppProtocol.buildAck(
+                        nodeClass = node.tag,
+                        nodeId = node.attrs["id"] ?: "",
+                        from = node.attrs["from"] ?: "",
+                        participant = node.attrs["participant"],
+                        recipient = node.attrs["recipient"],
+                        type = if (node.tag != "message") node.attrs["type"] else null,
+                    )
+                    webSocket?.send(WhatsAppProtocol.encodeNode(ack))
+                }
+
+                if (node.tag != "message") return@launch
                 val message = WhatsAppProtocol.parseMessage(node) ?: return@launch
 
-                // Convert to GMEvent and emit
-                val event = GMEvent.IncomingMessage(
+                _events.emit(GMEvent.IncomingMessage(
                     source = MessageSource.WHATSAPP,
-                    conversationId = message.from,
+                    conversationId = "wa:${message.from}",
                     messageId = message.id,
                     body = message.body,
-                    peerName = resolveName(message.from),
+                    peerName = resolveName(message.participant ?: message.from),
                     peerPhone = null,
                     timestamp = message.timestamp * 1000,
+                ))
+
+                // Send delivery receipt
+                val receiptAttrs = mutableMapOf(
+                    "id" to message.id,
+                    "to" to message.from,
+                    "t" to (System.currentTimeMillis() / 1000).toString()
                 )
-                _events.emit(event)
+                node.attrs["participant"]?.let { receiptAttrs["participant"] = it }
+                node.attrs["recipient"]?.let { receiptAttrs["recipient"] = it }
+                val receipt = WhatsAppProtocol.Node(tag = "receipt", attrs = receiptAttrs)
+                webSocket?.send(WhatsAppProtocol.encodeNode(receipt))
 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to handle incoming message", e)
@@ -263,7 +293,7 @@ object WhatsAppClient {
         val ws = webSocket ?: return false
 
         val to = extractJid(conversationId) ?: return false
-        val id = generateMessageId()
+        val id = WhatsAppProtocol.generateMessageId(authData?.wid)
 
         val node = WhatsAppProtocol.buildTextMessage(to, id, body)
         val data = WhatsAppProtocol.encodeNode(node)
@@ -277,31 +307,65 @@ object WhatsAppClient {
         mimeType: String,
         fileName: String?
     ): Boolean {
-        // Media sending requires implementing WhatsApp's media upload protocol
-        // For now, return false to indicate not implemented
-        Log.w(TAG, "Media sending not yet implemented")
-        return false
+        if (_state.value !is State.Connected) return false
+        val ws = webSocket ?: return false
+        val to = extractJid(conversationId) ?: return false
+        val id = WhatsAppProtocol.generateMessageId(authData?.wid)
+
+        val mediaType = when {
+            mimeType.startsWith("image/") -> "image"
+            mimeType.startsWith("video/") -> "video"
+            mimeType.startsWith("audio/") -> "audio"
+            else -> "document"
+        }
+        val mediaKeyStr = when (mediaType) {
+            "image" -> WhatsAppProtocol.MEDIA_KEY_IMAGE
+            "video" -> WhatsAppProtocol.MEDIA_KEY_VIDEO
+            "audio" -> WhatsAppProtocol.MEDIA_KEY_AUDIO
+            else -> WhatsAppProtocol.MEDIA_KEY_DOCUMENT
+        }
+
+        return try {
+            val enc = WhatsAppProtocol.encryptMedia(bytes, mediaKeyStr)
+            val token = Base64.encodeToString(enc.fileEncSha256, Base64.URL_SAFE or Base64.NO_WRAP)
+            val directPath = "/mms/$mediaType/$token"
+            val node = WhatsAppProtocol.buildMediaMessage(
+                to, id, "https://mmg.whatsapp.net$directPath", directPath,
+                enc.mediaKey, enc.fileSha256, enc.fileEncSha256, enc.fileLength,
+                mimeType, fileName, mediaType
+            )
+            ws.send(WhatsAppProtocol.encodeNode(node))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send media", e)
+            false
+        }
     }
 
-    suspend fun markRead(conversationId: String) {
-        // Send read receipt
+    suspend fun markRead(conversationId: String, messageIds: List<String> = emptyList()) {
         val to = extractJid(conversationId) ?: return
         val ws = webSocket ?: return
+        if (messageIds.isEmpty()) return
 
-        val node = WhatsAppProtocol.Node(
-            tag = "read",
-            attrs = mapOf(
-                "to" to to,
-                "type" to "chat"
-            )
-        )
-        val data = WhatsAppProtocol.encodeNode(node)
-        ws.send(data)
+        val node = WhatsAppProtocol.buildReadReceipt(chatJid = to, messageIds = messageIds)
+        ws.send(WhatsAppProtocol.encodeNode(node))
     }
 
     suspend fun sendReaction(conversationId: String, messageId: String, emoji: String) {
-        // Reaction sending requires implementing WhatsApp's reaction protocol
-        Log.w(TAG, "Reaction sending not yet implemented")
+        if (_state.value !is State.Connected) return
+        val ws = webSocket ?: return
+        val chatJid = extractJid(conversationId) ?: return
+        val id = WhatsAppProtocol.generateMessageId(authData?.wid)
+        val ownJid = authData?.wid ?: ""
+
+        val node = WhatsAppProtocol.buildReactionMessage(
+            chatJid = chatJid,
+            senderJid = "",
+            targetMessageId = messageId,
+            emoji = emoji,
+            ownJid = ownJid,
+            id = id,
+        )
+        ws.send(WhatsAppProtocol.encodeNode(node))
     }
 
     private fun extractJid(conversationId: String): String? {
@@ -310,9 +374,7 @@ object WhatsAppClient {
     }
 
     private fun generateMessageId(): String {
-        val bytes = ByteArray(16)
-        random.nextBytes(bytes)
-        return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE)
+        return WhatsAppProtocol.generateMessageId(authData?.wid)
     }
 
     private fun generateRef(): String {

@@ -21,4 +21,13 @@ class SignalRecipientStore(private val db: SignalDatabase) {
     suspend fun getAllRecipients(): List<SignalRecipientEntity> {
         return db.recipientDao().getAll()
     }
+
+    suspend fun storeProfileKey(aci: String, profileKey: ByteArray) {
+        val existing = getRecipient(aci)
+        if (existing != null) {
+            storeRecipient(existing.copy(profileKey = profileKey))
+        } else {
+            storeRecipient(SignalRecipientEntity(aci = aci, profileKey = profileKey))
+        }
+    }
 }

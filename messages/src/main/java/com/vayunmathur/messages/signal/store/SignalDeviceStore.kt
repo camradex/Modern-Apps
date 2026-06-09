@@ -17,6 +17,10 @@ data class SignalDeviceData(
     val aciRegistrationId: Int,
     val pniRegistrationId: Int,
     val profileKey: String? = null,
+    val masterKey: String? = null,
+    val accountEntropyPool: String? = null,
+    val ephemeralBackupKey: String? = null,
+    val mediaRootBackupKey: String? = null,
 ) {
     suspend fun save(context: Context) {
         DataStoreUtils.getInstance(context).setString(

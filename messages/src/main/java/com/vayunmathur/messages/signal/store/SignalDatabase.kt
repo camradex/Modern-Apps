@@ -90,6 +90,9 @@ interface SignalSessionDao {
 
     @Query("DELETE FROM signal_sessions WHERE address = :address")
     suspend fun deleteAll(address: String)
+
+    @Query("DELETE FROM signal_sessions")
+    suspend fun deleteAllSessions()
 }
 
 @Dao
@@ -117,6 +120,9 @@ interface SignalPreKeyDao {
 
     @Query("DELETE FROM signal_pre_keys WHERE id = :id")
     suspend fun delete(id: Int)
+
+    @Query("DELETE FROM signal_pre_keys")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -135,6 +141,9 @@ interface SignalSignedPreKeyDao {
 
     @Query("DELETE FROM signal_signed_pre_keys WHERE id = :id")
     suspend fun delete(id: Int)
+
+    @Query("DELETE FROM signal_signed_pre_keys")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -156,6 +165,9 @@ interface SignalKyberPreKeyDao {
 
     @Query("DELETE FROM signal_kyber_pre_keys WHERE lastResort = 0")
     suspend fun deleteAllNonLastResort()
+
+    @Query("DELETE FROM signal_kyber_pre_keys")
+    suspend fun deleteAll()
 }
 
 @Dao

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import org.signal.libsignal.protocol.IdentityKey
 import org.signal.libsignal.protocol.IdentityKeyPair
+import org.signal.libsignal.protocol.SignalProtocolAddress
 import org.signal.libsignal.protocol.ecc.ECKeyPair
 import org.signal.libsignal.protocol.ecc.ECPublicKey
 import org.signal.libsignal.protocol.ecc.ECPrivateKey
@@ -115,6 +116,10 @@ object Provisioning {
 
             // Store generated keys in the local protocol stores
             val database = SignalDatabase.getInstance(context)
+            database.sessionDao().deleteAllSessions()
+            database.preKeyDao().deleteAll()
+            database.signedPreKeyDao().deleteAll()
+            database.kyberPreKeyDao().deleteAll()
             val preKeyStore = SignalPreKeyStore(database)
             preKeyStore.storeSignedPreKey(aciSignedPreKey.id, aciSignedPreKey)
             preKeyStore.storeSignedPreKey(pniSignedPreKey.id, pniSignedPreKey)
@@ -159,7 +164,46 @@ object Provisioning {
             val pni = respJson.getString("pni")
             val deviceId = respJson.optInt("deviceId", 1)
 
+            // Store identity keys
+            val identityKeyStore = com.vayunmathur.messages.signal.store.SignalIdentityKeyStore(
+                database,
+                Base64.encodeToString(aciIdentityKeyPair.serialize(), Base64.NO_WRAP),
+                aciRegistrationId,
+            )
+            identityKeyStore.saveIdentity(
+                SignalProtocolAddress(aci, 1),
+                aciIdentityKeyPair.publicKey,
+            )
+            identityKeyStore.saveIdentity(
+                SignalProtocolAddress(pni, 1),
+                pniIdentityKeyPair.publicKey,
+            )
+
+            // Store own profile key as recipient
+            if (provMsg.profileKey != null) {
+                val recipientStore = com.vayunmathur.messages.signal.store.SignalRecipientStore(database)
+                recipientStore.storeRecipient(com.vayunmathur.messages.signal.store.SignalRecipientEntity(
+                    aci = aci,
+                    profileKey = provMsg.profileKey.toByteArray(),
+                ))
+            }
+
             // Step 10: Build and emit device data
+            val accountEntropyPool = if (provMsg.hasAccountEntropyPool()) provMsg.accountEntropyPool else null
+
+            // Derive master key from account entropy pool (matches Go reference)
+            val derivedMasterKey = if (accountEntropyPool != null) {
+                try {
+                    deriveMasterKeyFromAEP(accountEntropyPool)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to derive master key from account entropy pool", e)
+                    null
+                }
+            } else {
+                Log.w(TAG, "No account entropy pool in provisioning message")
+                null
+            }
+
             val deviceData = SignalDeviceData(
                 aci = aci,
                 pni = pni,
@@ -171,6 +215,8 @@ object Provisioning {
                 aciRegistrationId = aciRegistrationId,
                 pniRegistrationId = pniRegistrationId,
                 profileKey = provMsg.profileKey?.let { Base64.encodeToString(it.toByteArray(), Base64.NO_WRAP) },
+                accountEntropyPool = accountEntropyPool,
+                masterKey = derivedMasterKey?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
             )
             send(ProvisioningEvent.Success(deviceData))
             Log.d(TAG, "Provisioning complete, deviceId=$deviceId")
@@ -202,6 +248,15 @@ object Provisioning {
         put("keyId", record.id)
         put("publicKey", Base64.encodeToString(record.keyPair.publicKey.serialize(), Base64.NO_WRAP))
         put("signature", Base64.encodeToString(record.signature, Base64.NO_WRAP))
+    }
+
+    private fun deriveMasterKeyFromAEP(aep: String): ByteArray? {
+        return try {
+            org.signal.libsignal.messagebackup.AccountEntropyPool.deriveSvrKey(aep)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to derive SVR key from account entropy pool", e)
+            null
+        }
     }
 
     private fun encryptDeviceName(name: String, identityPublicKey: ECPublicKey): String {

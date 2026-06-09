@@ -14,7 +14,7 @@ data class User(
     val bot: Boolean = false,
     val deleted: Boolean = false,
 ) : TlObject {
-    override val typeId = 0x215c4438.toInt()
+    override val typeId = 0x31774388.toInt()
     override fun encode(buf: TlBuffer) {}
 
     companion object {
@@ -40,8 +40,11 @@ data class User(
                 TlSkip.skipVectorBoxed(buf)
             }
             if (flags2.has(5)) buf.int32() // stories_max_id
-            if (flags2.has(2)) TlSkip.skipBoxedType(buf) // color
-            if (flags2.has(3)) TlSkip.skipBoxedType(buf) // profile_color
+            if (flags2.has(8)) TlSkip.skipBoxedType(buf) // color
+            if (flags2.has(9)) TlSkip.skipBoxedType(buf) // profile_color
+            if (flags2.has(12)) buf.int32() // bot_active_users
+            if (flags2.has(14)) buf.int64() // bot_verification_icon
+            if (flags2.has(15)) buf.int64() // send_paid_messages_stars
             return User(
                 id = id,
                 accessHash = accessHash,
@@ -50,7 +53,7 @@ data class User(
                 phone = phone,
                 username = username,
                 bot = flags.has(14),
-                deleted = flags.has(11),
+                deleted = flags.has(13),
             )
         }
     }

@@ -37,6 +37,7 @@ import conversations.Conversations.MessageContent
 import conversations.Conversations.ReactionData
 import events.Events.UpdateEvents
 import java.util.UUID
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -124,6 +125,12 @@ object GMessagesClient {
     private val outgoingIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     @Volatile private var conversationsFetchedOnce = false
+
+    // --- Message deduplication ring buffer (port of Go's recentUpdates) ---
+    private data class UpdateDedupItem(val id: String, val hash: ByteArray)
+    private val recentUpdates = arrayOfNulls<UpdateDedupItem>(8)
+    private var recentUpdatesPtr = 0
+    private val dedupLock = Any()
 
     fun init(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
@@ -497,7 +504,7 @@ object GMessagesClient {
      * has handlers for stickers / settings / participant events; those
      * are out of scope for v1.
      */
-    private suspend fun handleGetUpdates(data: ByteArray) {
+    private suspend fun handleGetUpdates(data: ByteArray, isOld: Boolean = false) {
         val updates = runCatching { UpdateEvents.parseFrom(data) }.getOrNull() ?: run {
             Log.w(TAG, "GET_UPDATES: failed to parse UpdateEvents")
             return
@@ -506,22 +513,71 @@ object GMessagesClient {
             updates.hasMessageEvent() -> {
                 val msgs = updates.messageEvent.dataList
                 Log.i(TAG, "GET_UPDATES: ${msgs.size} message event(s)")
-                msgs.forEach { emitMessage(it) }
+                msgs.forEach { msg ->
+                    if (deduplicateUpdate(msg.messageID, data)) return
+                    emitMessage(msg)
+                }
             }
             updates.hasConversationEvent() -> {
                 val convs = updates.conversationEvent.dataList
                 Log.i(TAG, "GET_UPDATES: ${convs.size} conversation event(s)")
-                convs.forEach { emitConversation(it) }
+                convs.forEach { conv ->
+                    if (deduplicateUpdate(conv.conversationID, data)) return
+                    if (isOld) {
+                        Log.d(TAG, "ignoring old conversation event conv=${conv.conversationID}")
+                        return@forEach
+                    }
+                    emitConversation(conv)
+                }
             }
             updates.hasTypingEvent() -> {
+                if (isOld) return
                 val data2 = updates.typingEvent.data
                 Log.d(TAG, "GET_UPDATES typing conv=${data2.conversationID} type=${data2.type}")
             }
             updates.hasUserAlertEvent() -> {
+                if (isOld) return
                 Log.d(TAG, "GET_UPDATES user-alert: ${updates.userAlertEvent.alertType}")
+            }
+            updates.hasSettingsEvent() -> {
+                Log.d(TAG, "GET_UPDATES settings event")
+            }
+            updates.hasBrowserPresenceCheckEvent() -> {
+                Log.d(TAG, "GET_UPDATES: browser presence check, sending ack")
+                ackBrowserPresence()
+            }
+            updates.hasAccountChange() -> {
+                Log.d(TAG, "GET_UPDATES: account change event")
             }
             else -> Log.d(TAG, "GET_UPDATES: unhandled event kind")
         }
+    }
+
+    private suspend fun ackBrowserPresence() {
+        sessionHandler.sendMessageNoResponse(SendMessageParams(
+            action = ActionType.ACK_BROWSER_PRESENCE,
+        ))
+    }
+
+    /** SHA-256 based deduplication ring buffer. Port of Go's deduplicateUpdate. */
+    private fun deduplicateUpdate(id: String, data: ByteArray): Boolean {
+        val hash = MessageDigest.getInstance("SHA-256").digest(data)
+        synchronized(dedupLock) {
+            for (i in recentUpdatesPtr + recentUpdates.size - 1 downTo recentUpdatesPtr) {
+                val item = recentUpdates[i % recentUpdates.size] ?: continue
+                if (item.id == id) {
+                    return if (item.hash.contentEquals(hash)) {
+                        Log.d(TAG, "dedup: ignoring duplicate update id=$id")
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            recentUpdates[recentUpdatesPtr] = UpdateDedupItem(id, hash)
+            recentUpdatesPtr = (recentUpdatesPtr + 1) % recentUpdates.size
+        }
+        return false
     }
 
     /**
@@ -549,12 +605,23 @@ object GMessagesClient {
 
     /**
      * Post-connect sequence matching Go's `postConnect`:
-     * wait for long-poll to settle, set active session, then backfill.
+     * send pending acks, wait for long-poll to settle, set active session, then backfill.
      */
     private suspend fun postConnect() {
         kotlinx.coroutines.delay(2_000)
-        sessionHandler.setActiveSession()
+        // Send acks before set active session (matches Go's postConnect)
+        sessionHandler.sendAckRequest()
         kotlinx.coroutines.delay(1_000)
+        sessionHandler.setActiveSession()
+        // Start the periodic ack sender
+        sessionHandler.startAckInterval(scope)
+        kotlinx.coroutines.delay(1_000)
+        // Check IsBugleDefault (matches Go's postConnect)
+        val bugleResp = sessionHandler.sendAndWait(ActionType.IS_BUGLE_DEFAULT, null, timeoutMs = 10_000)
+        if (bugleResp?.decryptedData != null) {
+            val parsed = runCatching { client.Client.IsBugleDefaultResponse.parseFrom(bugleResp.decryptedData) }.getOrNull()
+            Log.d(TAG, "IsBugleDefault: success=${parsed?.success}")
+        }
         kickoffBackfill()
     }
 
@@ -602,7 +669,7 @@ object GMessagesClient {
             val authMessage = Authentication.AuthMessage.newBuilder()
                 .setRequestID(requestId)
                 .setTachyonAuthToken(ByteString.copyFrom(tachyonToken))
-                .setNetwork(PairFlow.QrNetwork)
+                .setNetwork(currentAuth.authNetwork())
                 .setConfigVersion(PairFlow.ConfigVersion)
                 .build()
 
@@ -619,19 +686,14 @@ object GMessagesClient {
                 .setMessageType(2)
                 .build()
 
-            val response = rpc.postProtobuf(
+            val response = rpc.postPbLiteDecoded(
                 url = Endpoints.RegisterRefreshUrl,
                 body = refreshRequest,
                 responseTemplate = Authentication.RegisterRefreshResponse.getDefaultInstance()
             )
-            if (response == null) {
-                Log.w(TAG, "Token refresh failed: no response")
-                return
-            }
-
             val tokenData = response.tokenData
             val newToken = tokenData.tachyonAuthToken
-            if (newToken == null || newToken.isEmpty()) {
+            if (newToken.isEmpty) {
                 Log.w(TAG, "Token refresh failed: no token in response")
                 return
             }
@@ -672,6 +734,10 @@ object GMessagesClient {
                 _state.value = State.Disconnected("Pair revoked")
             }
             is LongPollEvent.Data -> handleDataMessage(evt.msg)
+            is LongPollEvent.FatalError -> {
+                Log.e(TAG, "long-poll fatal error: ${evt.reason}")
+                _state.value = State.Disconnected(evt.reason)
+            }
         }
     }
 
@@ -711,6 +777,20 @@ object GMessagesClient {
     }
 
     private suspend fun handleDataMessage(msg: IncomingRpc) {
+        // Detect GAIA logout signal — port of Go's hackyLoggedOutBytes check.
+        // When the relay sends GET_UPDATES with no encrypted payload and
+        // unencrypted bytes [0x72, 0x00], it means the Google account was
+        // logged out on the phone side.
+        if (msg.action == ActionType.GET_UPDATES && msg.decryptedData == null) {
+            val unenc = msg.unencryptedData
+            if (unenc != null && unenc.size == 2 &&
+                unenc[0] == 0x72.toByte() && unenc[1] == 0x00.toByte()
+            ) {
+                Log.w(TAG, "detected GAIA logout signal (hackyLoggedOutBytes)")
+                _state.value = State.Disconnected("Logged out from Google account")
+                return
+            }
+        }
         val data = msg.decryptedData ?: return
         when (msg.action) {
             ActionType.LIST_CONVERSATIONS -> {
@@ -721,16 +801,12 @@ object GMessagesClient {
             ActionType.LIST_MESSAGES -> {
                 val resp = runCatching { ListMessagesResponse.parseFrom(data) }.getOrNull() ?: return
                 Log.i(TAG, "thread fill: ${resp.messagesCount} messages")
-                // Build all rows up-front then bulk-write in one Room
-                // transaction. Per-message events would trigger one Flow
-                // emission each — noticeably slow when opening a thread
-                // with hundreds of historical messages.
                 val rows = (0 until resp.messagesCount).map { idx ->
                     buildMessageRow(resp.getMessages(idx))
                 }
                 com.vayunmathur.messages.util.MessagesSessionManager.bulkUpsertMessages(rows)
             }
-            ActionType.GET_UPDATES -> handleGetUpdates(data)
+            ActionType.GET_UPDATES -> handleGetUpdates(data, msg.isOld)
             else -> Log.d(TAG, "unhandled data action ${msg.action}")
         }
     }

@@ -54,9 +54,27 @@ data class AuthData(
     /** Stable session ID used as the sessionID on every outgoing RPC.
      *  Regenerated on each fresh pair. */
     val sessionId: String,
+
+    /** GAIA destination registration UUID. Non-null for Google-account pairing. */
+    val destRegId: String? = null,
+
+    /** GAIA pairing attempt UUID. */
+    val pairingId: String? = null,
+
+    /** Cookies for Google-account (GAIA) authentication. */
+    val cookies: Map<String, String>? = null,
+
+    /** Web encryption key (unused but stored for completeness). */
+    val webEncryptionKeyB64: String? = null,
 ) {
 
     fun isPaired(): Boolean = !tachyonAuthTokenB64.isNullOrBlank() && mobileDeviceB64 != null
+
+    fun isGoogleAccount(): Boolean = !destRegId.isNullOrBlank()
+
+    fun authNetwork(): String = if (isGoogleAccount()) "GDitto" else ""
+
+    fun hasCookies(): Boolean = if (!isGoogleAccount()) true else cookies != null
 
     /** Decode the tachyon token back to raw bytes. */
     fun tachyonToken(): ByteArray? =
@@ -76,6 +94,14 @@ data class AuthData(
     fun crypto(): AesCtrHmac = AesCtrHmac(
         aesKey = Base64.decode(requestCrypto.aesKeyB64, Base64.NO_WRAP),
         hmacKey = Base64.decode(requestCrypto.hmacKeyB64, Base64.NO_WRAP),
+    )
+
+    /** Update the mutable AES/HMAC keys (used by GAIA key derivation). */
+    fun withCryptoKeys(aesKey: ByteArray, hmacKey: ByteArray): AuthData = copy(
+        requestCrypto = AesCtrHmacBlob(
+            aesKeyB64 = Base64.encodeToString(aesKey, Base64.NO_WRAP),
+            hmacKeyB64 = Base64.encodeToString(hmacKey, Base64.NO_WRAP),
+        ),
     )
 
     suspend fun save(context: Context) {
