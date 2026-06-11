@@ -1,17 +1,17 @@
 [versions]
 # Build & Core Language
 agp = "9.2.1"
-comAutonomousappsDependencyAnalysisGradlePlugin = "3.12.1"
+comAutonomousappsDependencyAnalysisGradlePlugin = "3.14.1"
 fhirModel = "1.0.0-beta02"
 flatgeobuf = "3.29.0"
-kotlin = "2.3.21"
+kotlin = "2.4.0"
 kotlinGradlePlugin = "2.3.20"
 ksp = "2.3.6"
 
 # AndroidX Core & Lifecycle
-coreKtx = "1.18.0"
+coreKtx = "1.19.0"
 lifecycle = "2.10.0"
-litertlmAndroid = "0.12.0"
+litertlmAndroid = "0.13.1"
 newpipeextractor = "v0.26.2"
 sqlcipherAndroid = "4.16.0"
 sqlite = "2.6.2"
@@ -21,7 +21,7 @@ datastorePreferences = "1.2.1"
 # Compose & UI Foundations
 composeBom = "2026.05.01"
 activityCompose = "1.13.0"
-material3 = "1.5.0-alpha20"
+material3 = "1.5.0-alpha21"
 reorderable = "3.1.0"
 material = "1.14.0"
 
@@ -36,8 +36,8 @@ jaudiotagger = "3.0.1"
 exifinterface = "1.4.2"
 camerax = "1.6.1"
 geckoview = "151.0.20260601110758"
-jsoup = "1.18.3"
-webkit = "1.12.1"
+jsoup = "1.22.2"
+webkit = "1.16.0"
 
 # Networking & Data
 ktor = "3.5.0"
@@ -45,9 +45,8 @@ okio = "3.17.0"
 kotlinxSerializationJson = "1.11.0"
 kotlinxDatetime = "0.8.0"
 room = "2.8.4"
-autofill = "1.1.0"
+autofill = "1.3.0"
 credentials = "1.6.0"
-googleid = "1.2.0"
 
 # Special Features (PDF, Maps, Health, Crypto)
 biometric = "1.2.0-alpha05"
@@ -55,16 +54,13 @@ pdfViewer = "1.0.0-alpha18"
 glance = "1.1.1"
 connectClient = "1.2.0-alpha04"
 cryptographyCore = "0.6.0"
-sol4k = "0.7.0"
-libphonenumber = "9.0.30"
+libphonenumber = "9.0.32"
 material3AdaptiveNavigationSuite = "1.4.0"
 maplibre = "0.13.0"
 foundation = "1.11.2"
-materialkolor = "4.1.1"
-protobuf = "4.28.3"
-protobufPlugin = "0.9.4"
+protobuf = "4.35.0"
 keepassJava2 = "2.2.4"
-zxing = "3.5.3"
+zxing = "3.5.4"
 
 [libraries]
 # AndroidX Core & Lifecycle
@@ -150,15 +146,12 @@ androidx-connect-client = { module = "androidx.health.connect:connect-client", v
 cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptographyCore" }
 cryptography-provider-jdk = { module = "dev.whyoleg.cryptography:cryptography-provider-jdk", version.ref = "cryptographyCore" }
 jaudiotagger = { module = "net.jthink:jaudiotagger", version.ref = "jaudiotagger" }
-sol4k = { group = "org.sol4k", name = "sol4k", version.ref = "sol4k" }
 libphonenumber = { module = "com.googlecode.libphonenumber:libphonenumber", version.ref = "libphonenumber" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-jakarta-mail = { module = "com.sun.mail:android-mail", version = "1.6.7" }
-jakarta-activation = { module = "com.sun.mail:android-activation", version = "1.6.7" }
+jakarta-mail = { module = "com.sun.mail:android-mail", version = "1.6.8" }
+jakarta-activation = { module = "com.sun.mail:android-activation", version = "1.6.8" }
 androidx-autofill = { group = "androidx.autofill", name = "autofill", version.ref = "autofill" }
 androidx-credentials-lib = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
-androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
 gradle = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 kotlin-compose-gradle = { module = "org.jetbrains.kotlin:compose-compiler-gradle-plugin", version.ref = "kotlin" }
@@ -166,9 +159,7 @@ kotlin-serialization-gradle = { module = "org.jetbrains.kotlin:kotlin-serializat
 sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "sqlcipherAndroid" }
 symbol-processing-gradle-plugin = { module = "com.google.devtools.ksp:symbol-processing-gradle-plugin", version.ref = "ksp" }
 androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
-materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
-protobuf-protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 keepassjava2-dom = { module = "org.linguafranca.pwdb:KeePassJava2-dom", version.ref = "keepassJava2" }
 
@@ -179,4 +170,3 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 dependency-analysis = { id="com.autonomousapps.dependency-analysis", version.ref = "comAutonomousappsDependencyAnalysisGradlePlugin" }
-protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
