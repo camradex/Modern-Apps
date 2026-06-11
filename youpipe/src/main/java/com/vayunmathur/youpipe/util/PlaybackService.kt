@@ -18,6 +18,12 @@ import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import okhttp3.OkHttpClient
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.isAndroidStreamingUrl
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.isIosStreamingUrl
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.isVisionOsStreamingUrl
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getAndroidUserAgent
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getIosUserAgent
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getVisionOsUserAgent
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -31,9 +37,27 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val okHttpClient = OkHttpClient()
+        val defaultUserAgent = "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0"
+
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val url = request.url.toString()
+                val userAgent = when {
+                    isAndroidStreamingUrl(url) -> getAndroidUserAgent(null)
+                    isIosStreamingUrl(url) -> getIosUserAgent(null)
+                    isVisionOsStreamingUrl(url) -> getVisionOsUserAgent(null)
+                    else -> defaultUserAgent
+                }
+                chain.proceed(
+                    request.newBuilder()
+                        .header("User-Agent", userAgent)
+                        .build()
+                )
+            }
+            .build()
+
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
-            .setUserAgent("Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0")
 
         val dataSourceFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
 
